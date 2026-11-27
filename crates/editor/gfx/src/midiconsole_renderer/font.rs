@@ -7,7 +7,10 @@ use ab_glyph::{Font, FontArc, FontVec, Point, PxScale, ScaleFont};
 use super::{ATLAS_CELL_H, ATLAS_CELL_W, ATLAS_COLS, ATLAS_ROWS};
 
 /// 加载等宽字体（与 CPU 预览一致：Consolas / DejaVu 候选）
-fn load_monospace_font() -> Option<FontArc> {
+///
+/// 候选表是**跨 crate 单一来源**：根 crate 的视频导出 MIDI 控制台也调用本函数
+/// （它自己只保留线程内缓存）。平台选择规则只在此维护。
+pub fn load_monospace_font() -> Option<FontArc> {
     let candidates: Vec<PathBuf> = if cfg!(windows) {
         let dir =
             std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()) + "\\Fonts\\";

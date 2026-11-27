@@ -464,7 +464,7 @@ fn test_undo_with_uncommitted_ghost_auto_commits_then_undoes() {
     assert!(editor.undo(), "幽灵态 Undo 应先提交再撤销，不得失败");
     assert_eq!(track_ticks(&editor), vec![0], "撤销后应回到原位置");
     assert!(
-        editor.pending_drag_state.is_none(),
+        editor.transient.pending_drag.is_none(),
         "撤销后幽灵应已清理（显示与内存一致）"
     );
 

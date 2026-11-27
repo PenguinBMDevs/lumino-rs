@@ -11,7 +11,7 @@ fn test_commit_pending_drag_when_none_returns_false() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     assert!(!commit_pending_drag_and_drain(&mut editor));
-    assert!(editor.pending_drag_state.is_none());
+    assert!(editor.transient.pending_drag.is_none());
 }
 
 #[test]
@@ -20,13 +20,13 @@ fn test_commit_pending_drag_with_zero_delta_returns_false_and_clears() {
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     // 直接设置一个 delta 为零的 pending
     let zero_drag = DragState::from_single(0, 1, 0, 60); // delta = (0, 0)
-    editor.pending_drag_state = Some(zero_drag);
+    editor.transient.pending_drag = Some(zero_drag);
 
     assert!(
         !commit_pending_drag_and_drain(&mut editor),
         "delta 零应返回 false"
     );
-    assert!(editor.pending_drag_state.is_none(), "pending 应被清空");
+    assert!(editor.transient.pending_drag.is_none(), "pending 应被清空");
     // notes 未被修改
     assert_eq!(
         editor
@@ -61,7 +61,7 @@ fn test_commit_pending_drag_applies_delta_to_notes() {
     // 选中索引 0，delta=(200, 7)
     let mut drag = DragState::from_indices([0], 2, 0, 60);
     drag.set_delta(200, 7);
-    editor.pending_drag_state = Some(drag);
+    editor.transient.pending_drag = Some(drag);
 
     assert!(commit_pending_drag_and_drain(&mut editor));
     let data = &editor.editor_state.data;
@@ -83,7 +83,7 @@ fn test_commit_pending_drag_applies_delta_to_notes() {
         62
     );
     // pending 已清空
-    assert!(editor.pending_drag_state.is_none());
+    assert!(editor.transient.pending_drag.is_none());
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn test_commit_pending_drag_clamps_negative_tick_to_zero() {
 
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(-200, 0); // 50 - 200 = -150，应 clamp 到 0
-    editor.pending_drag_state = Some(drag);
+    editor.transient.pending_drag = Some(drag);
 
     assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(
@@ -114,7 +114,7 @@ fn test_commit_pending_drag_clamps_negative_tick_to_zero() {
 fn test_is_editing_returns_true_when_pending_drag_exists() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
-    editor.pending_drag_state = Some(DragState::from_single(0, 1, 0, 60));
+    editor.transient.pending_drag = Some(DragState::from_single(0, 1, 0, 60));
     assert!(
         editor.is_editing(),
         "pending 状态应视为编辑中（拦截 Undo/Save）"
@@ -143,13 +143,13 @@ fn test_undo_blocked_when_pending_drag_exists() {
     }
 
     // 现在 pending_drag_state 存在（模拟用户拖动后未点击空白处，零位移）
-    editor.pending_drag_state = Some(DragState::from_single(0, 1, 0, 60));
+    editor.transient.pending_drag = Some(DragState::from_single(0, 1, 0, 60));
     assert!(
         editor.undo(),
         "零位移 pending 应先丢弃再撤销上一条，Undo 应成功"
     );
     assert!(
-        editor.pending_drag_state.is_none(),
+        editor.transient.pending_drag.is_none(),
         "Undo 后幽灵 pending 应已清理"
     );
 }

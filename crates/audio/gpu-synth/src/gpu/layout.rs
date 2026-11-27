@@ -34,12 +34,15 @@ impl VoiceParamsStatic {
     pub const SIZE: usize = std::mem::size_of::<Self>();
 }
 
-/// REF-LGS-010: 声部**动态**参数（44 B）——每块上传，按声部下标（紧凑顺序）
+/// REF-LGS-010: 声部**动态**参数（52 B）——每块上传，按声部下标（紧凑顺序）
 /// 索引；`slot` 指向 [`VoiceParamsStatic`]。
 ///
 /// 这些字段都会在声部生命周期内变化：`speed` 受弯音/调音影响，
 /// `sample_offset*` 在采样上传后才解析出真实偏移，
-/// `env_*` 随包络阶段切换/淡出改写，`release_at` 随 NoteOff 变化。
+/// `env_*` 随包络阶段切换/淡出改写，`release_at` 随 NoteOff 变化；
+/// `sample_gain*` 是 REF-LGS-007 的归一化增益，随采样解析写入。
+///
+/// 稳态每声部每块上传 = 本表 52 B + [`VoiceState`] 68 B = 120 B。
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct VoiceParamsDyn {

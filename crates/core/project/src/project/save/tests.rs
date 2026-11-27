@@ -1,6 +1,6 @@
 //! 工程保存测试
 //!
-//! 从 `save.rs` 拆出（REF-001：单文件 ≤400 行，含测试不豁免）。
+//! 从 `save.rs` 拆出（REF-001：单文件 ≤600 行，含测试不豁免）。
 
 use super::*;
 use crate::project::data_formats::LmshapesData;

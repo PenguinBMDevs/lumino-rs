@@ -1,50 +1,17 @@
-//! 纵向卷帘鼠标光标（从 `vertical_program.rs` 拆出，控制文件长度）
+//! 纵向卷帘鼠标光标。
+//!
+//! 直接复用横向 `cursor::handle_at` 的完整命中链（I2M / 切割 / 编辑态 / 循环手柄 /
+//! 选框 / 指示线 / hover_state），只把「局部坐标」来源换成调用方传入的 `position`。
+//! 旧实现只覆盖区域着色、橡皮与曲线三类，纵向卷帘因此少了四类光标反馈。
 
 use crate::Editor;
-use lumino_message::Tool;
 use lumino_ui_core::geom::{Point, mouse};
 
-/// 光标形态：区域着色/橡皮/曲线命中 → 十字或 Pointer，其余 Idle
+/// 光标形态：与横向网格同一套判定，局部坐标由调用方提供。
 pub(crate) fn handle(editor: &Editor, position: Option<Point>) -> mouse::Interaction {
-    let in_grid = position.is_some_and(|pos| {
-        let view = &editor.editor_state.view;
-        pos.x >= view.keyboard_width && pos.y >= view.ruler_height
-    });
-    if editor.area_paint_active() {
-        return if in_grid {
-            mouse::Interaction::Crosshair
-        } else {
-            mouse::Interaction::Idle
-        };
-    }
-    if matches!(editor.current_tool(), Tool::Eraser | Tool::DrawEraser) {
-        return if in_grid {
-            mouse::Interaction::Crosshair
-        } else {
-            mouse::Interaction::Idle
-        };
-    }
-    if editor.current_tool() == Tool::Curve {
-        if let Some(local_pos) = position
-            && editor.line_tool_hit_test(local_pos).is_some()
-        {
-            return mouse::Interaction::Pointer;
-        }
-        return if in_grid {
-            mouse::Interaction::Crosshair
-        } else {
-            mouse::Interaction::Idle
-        };
-    }
-    if editor.current_tool() == Tool::ShapeSelect {
-        if editor.is_shape_editing() {
-            return mouse::Interaction::Grabbing;
-        }
-        if let Some(local_pos) = position
-            && let Some(interaction) = editor.shape_handle_interaction(local_pos)
-        {
-            return interaction;
-        }
-    }
-    mouse::Interaction::Idle
+    let state = crate::grid::GridInteractionState {
+        position,
+        ..Default::default()
+    };
+    crate::grid::cursor::handle_at(editor, &state, position)
 }

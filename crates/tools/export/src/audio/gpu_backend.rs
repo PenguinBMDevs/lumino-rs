@@ -13,7 +13,7 @@
 //! `GpuSynth::render_midi_file(path)`，会在调用方已 mmap 之后**再读一次磁盘**，
 //! 同一次导出把同一个文件解析两遍；现在改为复用调用方持有的字节。
 //!
-//! 实现按职责拆分（保持各文件 < 400 行，子模块经 `use super::*;` 复用本文件的导入）：
+//! 实现按职责拆分（保持各文件 ≤600 行，子模块经 `use super::*;` 复用本文件的导入）：
 //! - `synth_config`（synth_config.rs）：SynthConfig 与 MidiExportData 构建
 //! - `progress`（progress.rs）：暂停/中止检查与渲染进度回调
 //! - `render`（render.rs）：GPU 渲染入口与结果写盘

@@ -348,9 +348,9 @@ impl Editor {
             drawer: None,
             mould_cuts,
         });
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         if let Some(id) = self
@@ -371,9 +371,9 @@ impl Editor {
         for source in &item.sources {
             self.restore_pending_source(source.clone());
         }
-        self.pending_composed_redo.push(item);
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.push(item);
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true
@@ -381,15 +381,15 @@ impl Editor {
 
     /// 重做上一次 Bake 前组合
     pub(crate) fn redo_pending_compose(&mut self) -> bool {
-        let Some(item) = self.pending_composed_redo.pop() else {
+        let Some(item) = self.shape_tools.pending_composed_redo.pop() else {
             return false;
         };
         for source in &item.sources {
             self.remove_pending_source(source);
         }
         self.editor_state.pending_composed.push(item);
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true

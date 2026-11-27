@@ -64,7 +64,7 @@ fn cancel_leaves_no_residue() {
     editor.handle_action(lumino_ui_core::message::EditorAction::ShapeToolCancel);
 
     assert!(!editor.bake_placement_active());
-    assert!(editor.bake_placement.is_none());
+    assert!(editor.shape_tools.bake_placement.is_none());
     assert!(
         editor.editor_state.pending_composed.is_empty(),
         "pending 应清空"

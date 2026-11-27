@@ -54,7 +54,7 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
     };
 
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.playback_key_state.key_colors.enabled = true;
     editor.editor_state.data.document = Some(doc);
 
     // tick=100：每轨仅 start<=100<end 的音符活跃 → i=2 (start=80,end=120)
@@ -62,17 +62,17 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
     editor.playback_position = 100.0;
     editor.update_playback_key_colors();
     assert_ne!(
-        editor.playback_key_colors[62 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[62 * 4 + 3],
         0,
         "key 62 应被着色 (track0)"
     );
     assert_ne!(
-        editor.playback_key_colors[74 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[74 * 4 + 3],
         0,
         "key 74 应被着色 (track1)"
     );
     assert_eq!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "key 60 不应着色（i=0 已结束）"
     );
@@ -80,5 +80,5 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
     // 继续推进到 tick=9000（所有音符 tick<8000 已结束），索引路径不应 panic 且颜色清空
     editor.playback_position = 9000.0;
     editor.update_playback_key_colors();
-    assert_eq!(editor.playback_key_colors, [0u8; 1024]);
+    assert_eq!(editor.playback_key_state.key_colors.colors, [0u8; 1024]);
 }

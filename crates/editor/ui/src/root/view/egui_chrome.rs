@@ -3,6 +3,7 @@
 //! 只做数据搬运，不含任何渲染逻辑；渲染在 `lumino_ui_egui::chrome::show_bands`。
 //! 这样叠加层与离线场景共用同一份绘制代码，也避免 `lumino-ui-egui` 反向依赖 上一代。
 
+mod apply_actions;
 mod area_palette;
 mod arrangement;
 mod audio_export_panel;
@@ -441,82 +442,6 @@ impl Root {
         self.egui_chrome_model_for(viewport_width)
     }
 
-    /// 原生运行时：应用一帧 egui 动作（菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏）。
-    ///
-    /// 与 `Host::apply_overlay_actions` 共用同一批 `*_action_message` 映射；
-    /// 区别是不经过 上一代 窗口上下文，直接 `Root::update`。返回已应用的动作数。
-    pub fn apply_egui_chrome_actions(&mut self, ctx: &egui::Context) -> usize {
-        use lumino_ui_egui::chrome as ui;
-
-        let mut applied = 0;
-        if let Some(index) = ui::menu::take_action(ctx)
-            && let Some(message) = self.menu_action_message(index)
-        {
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = ui::toolbar_popup::take_action(ctx)
-            && let Some(message) = self.toolbar_action_message(&action)
-        {
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(blur) = ui::take_rename_blur(ctx) {
-            // 先落草稿再收口：点另一条音轨时同一帧还有 `SelectTrack`，两者都要送达。
-            for message in self.sidebar_rename_blur_messages(blur) {
-                self.update(message);
-            }
-            applied += 1;
-        }
-        if let Some(action) = ui::take_panel_action(ctx) {
-            let message = self.sidebar_panel_action_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = ui::take_menu_action(ctx)
-            && let Some(message) = self.sidebar_menu_action_message(action)
-        {
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = ui::statusbar::take_action(ctx) {
-            let message = self.statusbar_action_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = ui::take_titlebar_action(ctx) {
-            let message = self.titlebar_action_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = lumino_ui_egui::piano_roll_context_menu::take_action(ctx) {
-            let message = self.piano_roll_context_menu_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = lumino_ui_egui::editor_action_buttons::take_action(ctx) {
-            let message = self.editor_button_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(bend) = lumino_ui_egui::bend_buttons::take_action(ctx) {
-            let message = self.bend_button_message(bend);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = lumino_ui_egui::text_tool::take_action(ctx) {
-            let message = self.text_tool_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        if let Some(action) = lumino_ui_egui::velocity_panel::take_action(ctx) {
-            let message = self.velocity_panel_message(action);
-            self.update(message);
-            applied += 1;
-        }
-        applied
-    }
-
     /// 按真实视口宽度构造 egui 外壳快照。
     pub(crate) fn egui_chrome_model_for(&self, viewport_width: f32) -> ChromeModel {
         // 非主窗口：独立对话框 / 进度窗 / 设备警告窗都不画主窗口外壳。
@@ -771,68 +696,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod about_tests;
-#[cfg(test)]
-mod audio_export_tests;
-#[cfg(test)]
-mod batch_edit_tests;
-#[cfg(test)]
-mod brush_settings_tests;
-#[cfg(test)]
-mod cloud_browser_tests;
-#[cfg(test)]
-mod cloud_connect_tests;
-#[cfg(test)]
-mod collaboration_tests;
-#[cfg(test)]
-mod custom_precision_tests;
-#[cfg(test)]
-mod dialog_draw045_tests;
-#[cfg(test)]
-mod draw_settings_tests;
-#[cfg(test)]
-mod export_progress_tests;
-#[cfg(test)]
-mod help_tests;
-#[cfg(test)]
-mod history_tests;
-#[cfg(test)]
-mod key_colors_tests;
-#[cfg(test)]
-mod load_confirm_tests;
-#[cfg(test)]
-mod memory_monitor_tests;
-#[cfg(test)]
-mod menu_tests;
-#[cfg(test)]
-mod mixer_tests;
-#[cfg(test)]
-mod project_settings_tests;
-#[cfg(test)]
-mod recover_track_tests;
-#[cfg(test)]
-mod right_sidebar_tests;
-#[cfg(test)]
-mod save_confirm_tests;
-#[cfg(test)]
-mod settings_audio_tests;
-#[cfg(test)]
-mod settings_cloud_tests;
-#[cfg(test)]
-mod settings_page_tests;
-#[cfg(test)]
-mod shape_canvas_tests;
-#[cfg(test)]
-mod shape_drawer_tests;
-#[cfg(test)]
-mod sidebar_rename_blur_tests;
-#[cfg(test)]
-mod speed_change_tests;
-#[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tool_panel_tests;
-#[cfg(test)]
-mod video_export_overlay_tests;
-#[cfg(test)]
-mod video_export_tests;

@@ -1,4 +1,4 @@
-//! `NoteRenderer` 的缓冲 / 绑定组构造（从 `init.rs` 拆出，REF-001 < 400 行）。
+//! `NoteRenderer` 的缓冲 / 绑定组构造（从 `init.rs` 拆出，REF-001 ≤600 行）。
 //!
 //! 这里全是 `new_with_depth` 的机械步骤，与管线状态无关；拆开只为让 `init.rs`
 //! 保持可读长度，调用顺序与语义完全不变。

@@ -26,7 +26,7 @@ impl Editor {
         if !self.pending_single_selection() {
             return false;
         }
-        self.slice_cut = Some(SliceCutState {
+        self.shape_tools.slice_cut = Some(SliceCutState {
             from: (0.0, 0.0),
             to: (0.0, 0.0),
             dragging: false,
@@ -36,21 +36,21 @@ impl Editor {
 
     /// 是否处于切割布防
     pub fn slice_cut_active(&self) -> bool {
-        self.slice_cut.is_some()
+        self.shape_tools.slice_cut.is_some()
     }
 
     /// 退出布防
     pub fn end_slice_cut(&mut self) {
-        self.slice_cut.take();
+        self.shape_tools.slice_cut.take();
     }
 
     /// 按下：记录起点（`shift` = 不吸附）
     pub(crate) fn slice_cut_pressed(&mut self, pos: Point, shift: bool) -> bool {
-        if self.slice_cut.is_none() {
+        if self.shape_tools.slice_cut.is_none() {
             return false;
         }
         let point = self.slice_logical(pos, shift);
-        let Some(state) = &mut self.slice_cut else {
+        let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
         state.from = point;
@@ -61,15 +61,19 @@ impl Editor {
 
     /// 拖动：更新终点（未按 Shift 时把方向吸附到 0°/45°/90°）
     pub(crate) fn slice_cut_moved(&mut self, pos: Point) -> bool {
-        if !self.slice_cut.is_some_and(|state| state.dragging) {
+        if !self
+            .shape_tools
+            .slice_cut
+            .is_some_and(|state| state.dragging)
+        {
             return false;
         }
         let shift = self.shift_pressed();
-        let Some(state) = self.slice_cut else {
+        let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
-        let point = self.constrain_end(state.from, self.slice_logical(pos, shift), shift);
-        let Some(state) = &mut self.slice_cut else {
+        let point = constrain_end(self, state.from, self.slice_logical(pos, shift), shift);
+        let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
         state.to = point;
@@ -80,17 +84,17 @@ impl Editor {
     ///
     /// 唯一选中已不是待确认形状时（选区被改），布防一并退出。
     pub(crate) fn slice_cut_released(&mut self) -> bool {
-        let Some(state) = self.slice_cut else {
+        let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
         if !state.dragging {
             return false;
         }
-        if let Some(armed) = &mut self.slice_cut {
+        if let Some(armed) = &mut self.shape_tools.slice_cut {
             armed.dragging = false;
         }
         if self.compose_pending_slice(state.from, state.to) {
-            self.slice_cut = None;
+            self.shape_tools.slice_cut = None;
             true
         } else {
             false
@@ -104,31 +108,31 @@ impl Editor {
             self.pos_to_raw_key(pos).clamp(0.0, 255.0),
         )
     }
+}
 
-    /// 方向约束：把拖拽向量吸附到 0°/45°/90°（屏幕空间）；Shift 关闭
-    ///
-    /// 网格吸附会把竖线端点拉到最近的 beat，导致切线变斜；切割要的是
-    /// 可预期的方向，因此这里只约束角度，位置完全跟随鼠标。
-    fn constrain_end(&self, start: (f32, f32), end: (f32, f32), shift: bool) -> (f32, f32) {
-        if shift {
-            return end;
-        }
-        let view = &self.editor_state.view;
-        let dx = ((end.0 - start.0) * view.zoom_x).abs();
-        let dy = ((end.1 - start.1) * view.zoom_y).abs();
-        if dx <= 1.0 && dy <= 1.0 {
-            return end;
-        }
-        // tan(22.5°)：落在 ±22.5° 内视为该轴方向
-        if dy <= dx * 0.4142 {
-            (end.0, start.1)
-        } else if dx <= dy * 0.4142 {
-            (start.0, end.1)
-        } else {
-            let dkey = (dx / view.zoom_y).max(0.0);
-            let sign = if end.1 >= start.1 { 1.0 } else { -1.0 };
-            (end.0, (start.1 + dkey * sign).clamp(0.0, 255.0))
-        }
+/// 方向约束：把拖拽向量吸附到 0°/45°/90°（屏幕空间）；Shift 关闭
+///
+/// 网格吸附会把竖线端点拉到最近的 beat，导致切线变斜；切割要的是
+/// 可预期的方向，因此这里只约束角度，位置完全跟随鼠标。
+fn constrain_end(editor: &Editor, start: (f32, f32), end: (f32, f32), shift: bool) -> (f32, f32) {
+    if shift {
+        return end;
+    }
+    let view = &editor.editor_state.view;
+    let dx = ((end.0 - start.0) * view.zoom_x).abs();
+    let dy = ((end.1 - start.1) * view.zoom_y).abs();
+    if dx <= 1.0 && dy <= 1.0 {
+        return end;
+    }
+    // tan(22.5°)：落在 ±22.5° 内视为该轴方向
+    if dy <= dx * 0.4142 {
+        (end.0, start.1)
+    } else if dx <= dy * 0.4142 {
+        (start.0, end.1)
+    } else {
+        let dkey = (dx / view.zoom_y).max(0.0);
+        let sign = if end.1 >= start.1 { 1.0 } else { -1.0 };
+        (end.0, (start.1 + dkey * sign).clamp(0.0, 255.0))
     }
 }
 

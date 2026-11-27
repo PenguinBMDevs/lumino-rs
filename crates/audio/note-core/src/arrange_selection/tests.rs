@@ -1,6 +1,6 @@
 //! `ArrangeSelection` 单元测试
 //!
-//! 2026-09 自 `arrange_selection.rs` 拆出，保持主文件 ≤400 行。
+//! 2026-09 自 `arrange_selection.rs` 拆出，保持主文件 ≤600 行。
 
 use super::ArrangeSelection;
 use crate::arrange_selection::FrozenNotes;

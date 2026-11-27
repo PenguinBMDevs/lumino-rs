@@ -1,0 +1,449 @@
+use super::*;
+use crate::Message;
+use crate::message::{ProjectSettingsAction, SettingsDialogAction};
+use crate::root::handlers::MessageHandler;
+
+// ================================================================
+// 对话框关闭处理器 —— dialog_type 不复位测试
+//
+// 修复背景：关闭对话框时 handler 曾将 dialog_type 复位为 None，
+// 导致 view_dialog() 在窗口销毁前的最后一帧通过 _ 通配符渲染出精度面板。
+// 修复后 handler 不再修改 dialog_type，以下测试确保这一行为。
+// ================================================================
+
+#[test]
+fn test_shape_drawer_save_delete_and_insert_action() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("时间")
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "lumino_shape_drawer_b2_{}_{}",
+        std::process::id(),
+        stamp
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("创建测试目录");
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.shapes_dir = dir.clone();
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Line,
+        anchors: vec![ShapeAnchor::new((0.1, 0.1)), ShapeAnchor::new((0.9, 0.9))],
+        rect: None,
+    });
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "b2-test".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
+    assert!(
+        dir.join("b2-test.lmshape").exists(),
+        "保存动作应写出 .lmshape"
+    );
+
+    root.state.shape_drawer.selected = Some("square".to_string());
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::SetName(
+        "333".to_string(),
+    )));
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Save));
+    assert!(
+        dir.join("333.lmshape").exists(),
+        "选中内置图形另存时必须生成用户 id，不能写 square.lmshape"
+    );
+    assert!(
+        !dir.join("square.lmshape").exists(),
+        "不得用内置 id 覆盖用户库"
+    );
+    root.state.shape_drawer.selected = Some("b2-test".to_string());
+    root.state.shape_drawer.insert_beats_text = "8".to_string();
+    root.state.shape_drawer.insert_keys_text = "24".to_string();
+    root.state.shape_drawer.insert_fit_contain = true;
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
+    match root.state.dialog_result.as_ref() {
+        Some(crate::host::DialogResult::InsertShapeDrawing { options, .. }) => {
+            assert_eq!(options.beats, 8.0);
+            assert_eq!(options.keys, 24.0);
+            assert!(options.fit_contain);
+        }
+        other => panic!("插入动作应携带尺寸/比例，实为 {other:?}"),
+    }
+
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Delete));
+    assert!(!dir.join("b2-test.lmshape").exists(), "删除应移除库文件");
+
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::PanelDragStart,
+    ));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(320.0),
+    ));
+    assert_eq!(root.state.shape_drawer.panel_width, 320.0);
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::PanelDragEnd));
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::SetPanelWidth(500.0),
+    ));
+    assert_eq!(
+        root.state.shape_drawer.panel_width, 320.0,
+        "未拖动时 on_move 不应改变面板宽度"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_history_dialog_actions_route_to_dialog_results() {
+    use crate::host::DialogResult;
+    use crate::message::HistoryAction;
+
+    let mut root = Root::new_dialog("dark", DialogType::History);
+    root.update(crate::Message::History(HistoryAction::Jump(3)));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::HistoryJump(3))
+    ));
+
+    root.state.dialog_result = None;
+    root.update(crate::Message::History(HistoryAction::Close));
+    assert!(matches!(
+        root.state.dialog_result.as_ref(),
+        Some(DialogResult::Cancel)
+    ));
+}
+
+#[test]
+fn test_shape_drawer_area_paint_and_insert_result() {
+    use crate::message::ShapeDrawerAction;
+    use lumino_core::shape::{ShapeAnchor, Stroke, StrokeKind};
+
+    let mut root = Root::new_dialog("dark", DialogType::ShapeDrawer);
+    root.state.shape_drawer.doc.borrow_mut().add_stroke(Stroke {
+        kind: StrokeKind::Polyline,
+        anchors: vec![
+            ShapeAnchor::new((0.1, 0.1)),
+            ShapeAnchor::new((0.9, 0.1)),
+            ShapeAnchor::new((0.9, 0.9)),
+            ShapeAnchor::new((0.1, 0.9)),
+            ShapeAnchor::new((0.1, 0.1)),
+        ],
+        rect: None,
+    });
+    assert!(root.state.shape_drawer.doc.borrow().can_area_paint());
+    root.update(crate::Message::ShapeDrawer(
+        ShapeDrawerAction::ToggleAreaMode,
+    ));
+    assert!(root.state.shape_drawer.doc.borrow().area_mode);
+    assert!(
+        root.state
+            .shape_drawer
+            .doc
+            .borrow_mut()
+            .paint_area(0.5, 0.5, 3)
+    );
+    root.update(crate::Message::ShapeDrawer(ShapeDrawerAction::Insert));
+    match root.state.dialog_result.as_ref() {
+        Some(crate::host::DialogResult::InsertShapeDrawing { drawing, .. }) => {
+            assert_eq!(drawing.areas.len(), 1);
+            assert_eq!(drawing.areas[0].colour, 3);
+        }
+        other => panic!("应产生插入结果，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn test_shape_drawer_open_close_switches_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::None);
+    root.set_shape_drawer_dialog_open(true);
+    assert_eq!(root.state.dialog_type, DialogType::ShapeDrawer);
+    root.set_shape_drawer_dialog_open(false);
+    assert_eq!(root.state.dialog_type, DialogType::None);
+}
+
+#[test]
+fn test_close_settings_dialog_preserves_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::Settings);
+    let mut handler = handlers::DialogHandler::new();
+    handler.handle(
+        &mut root,
+        Message::SettingsDialog(SettingsDialogAction::CloseDialog),
+    );
+
+    // 关闭设置对话框不应复位 dialog_type（防止窗口销毁前一帧闪跳到精度面板）
+    assert_eq!(
+        root.state.dialog_type,
+        DialogType::Settings,
+        "CloseSettingsDialog 不应修改 dialog_type"
+    );
+    assert!(
+        root.state.dialog_result.is_some(),
+        "CloseSettingsDialog 应设置 dialog_result"
+    );
+}
+
+#[test]
+fn test_close_project_settings_dialog_preserves_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::ProjectSettings);
+    let mut handler = handlers::DialogHandler::new();
+    handler.handle(
+        &mut root,
+        Message::ProjectSettings(ProjectSettingsAction::CloseDialog),
+    );
+
+    assert_eq!(
+        root.state.dialog_type,
+        DialogType::ProjectSettings,
+        "CloseProjectSettingsDialog 不应修改 dialog_type"
+    );
+    assert!(
+        root.state.dialog_result.is_some(),
+        "CloseProjectSettingsDialog 应设置 dialog_result"
+    );
+}
+
+#[test]
+fn test_confirm_load_preserves_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::LoadConfirm);
+    root.handle_confirm_load();
+
+    assert_eq!(
+        root.state.dialog_type,
+        DialogType::LoadConfirm,
+        "handle_confirm_load 不应修改 dialog_type"
+    );
+    assert!(
+        root.state.dialog_result.is_some(),
+        "handle_confirm_load 应设置 dialog_result"
+    );
+}
+
+#[test]
+fn test_cancel_load_preserves_dialog_type() {
+    let mut root = Root::new_dialog("dark", DialogType::LoadConfirm);
+    root.handle_cancel_load();
+
+    assert_eq!(
+        root.state.dialog_type,
+        DialogType::LoadConfirm,
+        "handle_cancel_load 不应修改 dialog_type"
+    );
+    // handle_cancel_load 仅关闭对话框，不设置结果
+    assert!(
+        !root.state.load_confirm_dialog.is_open,
+        "handle_cancel_load 应关闭加载确认对话框"
+    );
+}
+
+// ================================================================
+// view_dialog None 测试
+//
+// DialogType::None 应渲染空容器而不是回退到精度面板（修复前的 bug）。
+// 此处验证 view() 不 panic，类型已由 match 分支的显式匹配保证。
+// ================================================================
+
+#[test]
+fn test_view_dialog_none_does_not_panic() {
+    // DialogType::None 匹配专门的空容器分支，不应 panic
+    let root = Root::new_dialog("dark", DialogType::None);
+    let _element = root.egui_chrome_model();
+}
+
+// ================================================================
+// 工程走带视图最大 tick 缓存测试
+//
+// 播放时每帧需要最大 tick 来计算滚动范围；若每帧全量扫描 track_notes，
+// 大型 MIDI 会在主线程造成卡顿。此测试验证缓存按 track_notes_gen 失效。
+// ================================================================
+
+#[test]
+fn test_arrangement_max_tick_end_caches_by_gen() {
+    use lumino_core::storage::config::UiConfig;
+
+    let ui_config = UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    // 无音符时返回 DEFAULT_MIN_TICKS
+    assert_eq!(
+        root.arrangement_max_tick_end(),
+        crate::constants::editor::DEFAULT_MIN_TICKS
+    );
+
+    // 在非指挥轨道添加音符（tick=4000, length=100，终点=4100）
+    // 必须超过 DEFAULT_MIN_TICKS（3840），否则会被最小值覆盖
+    // 单一权威源：先挂载 document（音符写入 document）
+    let doc = crate::test_helpers::make_test_document();
+    root.set_midi_document(doc);
+    root.editor.editor_state.data.current_track = 1;
+    let _ = root
+        .editor
+        .editor_state
+        .data
+        .finish_drawing(4000.0, 60, 4100.0, 1.0, 10.0);
+
+    // track_notes_gen 已变化，缓存应重新计算
+    let max_tick = root.arrangement_max_tick_end();
+    assert!((max_tick - 4100.0).abs() < f32::EPSILON);
+
+    // 缓存已写入
+    assert!((root.arrangement_view.viewport.cached_max_tick_end - 4100.0).abs() < f32::EPSILON);
+    assert_eq!(
+        root.arrangement_view.viewport.cached_track_notes_gen,
+        root.editor.editor_state.data.track_notes_gen
+    );
+}
+
+// ================================================================
+// 工程设置重置测试
+//
+// 修复背景：工程设置（标题/作者/版权/BPM/拍号）属于工程级数据，
+// 但存放在程序全局 Root 状态中。关闭工程/新建工程只调用
+// clear_editor()，曾遗漏重置 project_settings_dialog，导致旧工程的
+// 数据残留到下一个工程。以下测试锁定 reset 行为。
+// ================================================================
+
+#[test]
+fn test_reset_project_settings_restores_defaults() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    // 模拟用户在工程设置面板填写了数据
+    root.set_project_settings_data(crate::root::ProjectSettingsDialogData {
+        title: "我的工程".to_string(),
+        tempo: "96".to_string(),
+        copyright: "© 2026".to_string(),
+        author: "张三".to_string(),
+        created_display: "2026-07-01 10:00:00".to_string(),
+        total_editing_time_seconds: 3600.0,
+        note_count: 12345,
+        note_count_display: lumino_core::storage::config::NoteCountDisplay::ProjectSettings,
+        time_signatures: vec![(0, 6, 8)],
+        use10: true,
+        port_soundfonts: lumino_midi_model::multi_port::PortSoundfontMap::default(),
+    });
+    assert_eq!(root.state.project_settings_dialog.title, "我的工程");
+    assert_eq!(root.state.project_settings_dialog.tempo, "96");
+    assert_eq!(root.state.project_settings_dialog.author, "张三");
+    assert_eq!(root.state.project_settings_dialog.note_count, 12345);
+    assert!(
+        root.state.project_settings_dialog.use10,
+        "启用通道 10 应随对话框数据回填（独立窗口快照）"
+    );
+
+    // 关闭工程：工程设置必须恢复默认值，不得残留
+    root.reset_project_settings();
+
+    let dialog = &root.state.project_settings_dialog;
+    assert!(dialog.title.is_empty(), "关闭工程后标题应为空");
+    assert_eq!(dialog.tempo, "120", "关闭工程后 BPM 应恢复默认 120");
+    assert!(dialog.copyright.is_empty(), "关闭工程后版权应为空");
+    assert!(dialog.author.is_empty(), "关闭工程后作者应为空");
+    assert!(
+        dialog.created_display.is_empty(),
+        "关闭工程后创建日期应为空"
+    );
+    assert_eq!(
+        dialog.total_editing_time_seconds, 0.0,
+        "关闭工程后累计创作时间应为 0"
+    );
+    assert_eq!(
+        dialog.time_signature_numerator, "4",
+        "关闭工程后拍号分子应恢复默认 4"
+    );
+    assert_eq!(
+        dialog.time_signature_denominator, "4",
+        "关闭工程后拍号分母应恢复默认 4"
+    );
+}
+
+// ================================================================
+// 设置面板主题即时全局应用
+//
+// 设置面板为独立窗口 + 独立 Root，面板内切换主题需记录待应用主题，
+// 由 Runner 逐帧取走并广播到主窗口与所有对话框（切换即全局生效）。
+// 主窗口与「主题未变化」的场景不得入队，避免 Runner 回灌造成循环。
+// ================================================================
+
+#[test]
+fn test_settings_dialog_records_pending_theme_apply() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new_settings_dialog("Dark", &ui_config);
+
+    root.handle_window_event(crate::window::Event::Theme("Dracula".to_string()));
+
+    assert_eq!(
+        root.window.theme.to_string(),
+        "Dracula",
+        "设置对话框自身的主题应立即更新"
+    );
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        Some("Dracula".to_string()),
+        "设置对话框切换主题应记录待全局应用的主题"
+    );
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "待应用主题取出后应清空"
+    );
+}
+
+#[test]
+fn test_main_window_does_not_record_pending_theme_apply() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    root.handle_window_event(crate::window::Event::Theme("Dracula".to_string()));
+
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "主窗口本身应用主题不应记录待全局应用主题"
+    );
+}
+
+#[test]
+fn test_settings_dialog_same_theme_not_requeued() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new_settings_dialog("Dark", &ui_config);
+    let current = root.window.theme.to_string();
+
+    root.handle_window_event(crate::window::Event::Theme(current));
+
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "主题未变化时不应入队（防止 Runner 回灌循环）"
+    );
+}
+
+// ================================================================
+// 拆分说明（避免单文件超 600 行）：
+// - `root_tests/speed_change.rs`：变速按钮 Ctrl+Click 测试
+// - `root_tests/sidebar.rs`：右侧栏跟随钢琴卷帘 UI 显隐测试
+// - `root_tests/cloud_snapshot.rs`：云存储快照同步边界测试
+// - `root_tests/canvas_visibility.rs`：编辑器画布可见性判定（渲染闸门）测试
+// - `root_tests/about_egg.rs`：关于页 logo 彩蛋（UI-007）接线测试
+// - `root_tests/echo_cave.rs`：关于页回声洞彩蛋（UI-006）接线测试
+// - `root_tests/fill_division_panel.rs`：颜料桶「分音符填充」面板触发/关闭链路测试
+// - `root_tests/draw_settings_panel.rs`：音符画悬浮条「设置按钮」（右端齿轮 → 总面板）链路测试
+// - `root_tests/draw_thickness_entry.rs`：音符画悬浮条右端「粗细」按钮（本轮只有入口）链路测试
+// ================================================================
+
+mod about_egg;
+mod canvas_visibility;
+mod channel;
+mod cloud_snapshot;
+mod debt19_cost;
+mod document_mount;
+mod draw_settings_panel;
+mod draw_thickness_entry;
+mod echo_cave;
+mod fill_division_panel;
+mod port;
+mod port_soundfonts;
+mod sidebar;
+mod speed_change;
+mod tempo_single_source;
+mod tool_panel_switch;
+mod track_visibility;

@@ -14,7 +14,7 @@ impl Editor {
         color: std::sync::Arc<str>,
         username: std::sync::Arc<str>,
     ) {
-        self.remote_cursors.insert(
+        self.transient.remote_cursors.insert(
             user_id.to_string(),
             (
                 lumino_ui_core::geom::Point::new(x, y),
@@ -26,7 +26,7 @@ impl Editor {
 
     /// 移除远端鼠标
     pub fn remove_remote_cursor(&mut self, user_id: &str) {
-        self.remote_cursors.remove(user_id);
+        self.transient.remote_cursors.remove(user_id);
     }
 
     /// 记录 Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动）

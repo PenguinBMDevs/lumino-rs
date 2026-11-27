@@ -52,7 +52,14 @@ impl DialogHandler {
                 // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
                 // （code -22）退出，而帧生成线程已经白跑一轮。入口拦截并明确提示；
                 // 不置 Exporting 状态（否则面板会显示一个注定失败的进度覆盖层）。
-                if root.state.video_export_dialog.output_path.trim().is_empty() {
+                if root
+                    .state
+                    .video_export_dialog
+                    .basic
+                    .output_path
+                    .trim()
+                    .is_empty()
+                {
                     root.toast
                         .push(ToastLevel::Warning, tr!("请先选择视频输出路径"));
                     return None;
@@ -71,8 +78,8 @@ impl DialogHandler {
                     if document.is_some() {
                         tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
                         tr!("内存模式").to_string()
-                    } else if !st.midi_path.is_empty() {
-                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
+                    } else if !st.basic.midi_path.is_empty() {
+                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.basic.midi_path);
                         tr!("流式读取").to_string()
                     } else {
                         tracing::warn!("视频导出未配置 MIDI 数据源");
@@ -81,15 +88,15 @@ impl DialogHandler {
                 };
 
                 // 设置导出中状态
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Exporting;
                 // 清掉上一次导出的尾帧，避免新导出首帧到达前显示陈旧画面。
-                root.state.video_export_dialog.preview_frame = None;
-                root.state.video_export_dialog.progress = 0.0;
-                root.state.video_export_dialog.status_message =
+                root.state.video_export_dialog.basic.preview_frame = None;
+                root.state.video_export_dialog.basic.progress = 0.0;
+                root.state.video_export_dialog.basic.status_message =
                     trf!("正在初始化... [{source}]", source = midi_source);
-                root.state.video_export_dialog.current_frame = 0;
-                root.state.video_export_dialog.total_frames = 0;
-                root.state.video_export_dialog.render_fps = 0.0;
+                root.state.video_export_dialog.basic.current_frame = 0;
+                root.state.video_export_dialog.basic.total_frames = 0;
+                root.state.video_export_dialog.basic.render_fps = 0.0;
 
                 let st = &root.state.video_export_dialog;
                 let video_config = build_video_config(
@@ -109,83 +116,83 @@ impl DialogHandler {
             }
             V::ForceFinish => {
                 let st = &root.state.video_export_dialog;
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Completed {
-                    total_frames: st.total_frames,
-                    elapsed_secs: st.elapsed_secs,
-                    avg_fps: st.render_fps,
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Completed {
+                    total_frames: st.basic.total_frames,
+                    elapsed_secs: st.basic.elapsed_secs,
+                    avg_fps: st.basic.render_fps,
                 };
             }
             V::DismissOverlay => {
                 reset_video_export_overlay(root);
             }
             V::ContainerChanged(v) => {
-                root.state.video_export_dialog.container = v;
+                root.state.video_export_dialog.basic.container = v;
             }
             V::CodecChanged(v) => {
-                root.state.video_export_dialog.codec = v;
+                root.state.video_export_dialog.basic.codec = v;
             }
             V::BackendChanged(v) => {
-                root.state.video_export_dialog.backend = v;
+                root.state.video_export_dialog.basic.backend = v;
             }
             V::QualityChanged(v) => {
-                root.state.video_export_dialog.quality = v;
+                root.state.video_export_dialog.basic.quality = v;
             }
             V::WidthChanged(v) => {
                 if let Some(w) = parse_uint(&v) {
-                    root.state.video_export_dialog.width = w;
+                    root.state.video_export_dialog.basic.width = w;
                 }
             }
             V::HeightChanged(v) => {
                 if let Some(h) = parse_uint(&v) {
-                    root.state.video_export_dialog.height = h;
+                    root.state.video_export_dialog.basic.height = h;
                 }
             }
             V::RenderModeChanged(v) => {
-                root.state.video_export_dialog.render_mode = v;
+                root.state.video_export_dialog.basic.render_mode = v;
             }
             V::MidiConsoleBackendChanged(v) => {
-                root.state.video_export_dialog.midi_console_backend = v;
+                root.state.video_export_dialog.basic.midi_console_backend = v;
             }
             V::WaterfallSpeedChanged(v) => {
-                root.state.video_export_dialog.waterfall_speed = v;
+                root.state.video_export_dialog.basic.waterfall_speed = v;
             }
             V::MiditrailViewModeChanged(v) => {
                 // 仅接受 Normal/Top，非预期值回退 Normal（防两套设置污染）。
-                root.state.video_export_dialog.miditrail_view_mode = match v.as_str() {
+                root.state.video_export_dialog.miditrail.view_mode = match v.as_str() {
                     "Top" => "Top".to_string(),
                     _ => "Normal".to_string(),
                 };
             }
             V::MiditrailNormalSpeedChanged(v) => {
-                root.state.video_export_dialog.miditrail_normal_speed = v;
+                root.state.video_export_dialog.miditrail.normal_speed = v;
             }
             V::MiditrailTopSpeedChanged(v) => {
-                root.state.video_export_dialog.miditrail_top_speed = v;
+                root.state.video_export_dialog.miditrail.top_speed = v;
             }
             V::MiditrailZFarChanged(v) => {
-                root.state.video_export_dialog.miditrail_z_far = v;
+                root.state.video_export_dialog.miditrail.z_far = v;
             }
             V::Miditrail3DNotesChanged(v) => {
-                root.state.video_export_dialog.miditrail_3d_notes = v;
+                root.state.video_export_dialog.miditrail.notes_3d = v;
             }
             V::CounterTextChanged(text) => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_text = text;
+                st.counter.text = text;
             }
             V::CounterAlignmentChanged(v) => {
-                root.state.video_export_dialog.counter_alignment = v;
+                root.state.video_export_dialog.counter.alignment = v;
             }
             V::CounterFontSizeChanged(v) => {
-                root.state.video_export_dialog.counter_font_size = v.clamp(7, 512);
+                root.state.video_export_dialog.counter.font_size = v.clamp(7, 512);
             }
             V::CounterFontModeChanged(v) => {
-                root.state.video_export_dialog.counter_font_mode = v;
+                root.state.video_export_dialog.counter.font_mode = v;
             }
             V::CounterFontFamilyChanged(v) => {
-                root.state.video_export_dialog.counter_font_family = v;
+                root.state.video_export_dialog.counter.font_family = v;
             }
             V::CounterFontPathChanged(v) => {
-                root.state.video_export_dialog.counter_font_path = v;
+                root.state.video_export_dialog.counter.font_path = v;
             }
             V::CounterBrowseFont => {
                 // 浏览字体文件（TTF/OTF/TTC）：后台线程打开对话框（防 UI 冻结）
@@ -196,44 +203,44 @@ impl DialogHandler {
                 });
             }
             V::CounterUseCommasChanged(v) => {
-                root.state.video_export_dialog.counter_use_commas = v;
+                root.state.video_export_dialog.counter.use_commas = v;
             }
             V::CounterPaddingZeroesChanged(v) => {
-                root.state.video_export_dialog.counter_padding_zeroes = v;
+                root.state.video_export_dialog.counter.padding_zeroes = v;
             }
             V::CounterSaveCsvChanged(v) => {
-                root.state.video_export_dialog.counter_save_csv = v;
+                root.state.video_export_dialog.counter.save_csv = v;
             }
             V::CounterCsvPathChanged(v) => {
-                root.state.video_export_dialog.counter_csv_output = v;
+                root.state.video_export_dialog.counter.csv_output = v;
             }
             V::CounterCsvFormatChanged(v) => {
-                root.state.video_export_dialog.counter_csv_format = v;
+                root.state.video_export_dialog.counter.csv_format = v;
             }
             V::CounterPadChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "bpm_int" => st.counter_bpm_int_pad = value,
-                    "bpm_dec" => st.counter_bpm_dec_pad = value.min(12),
-                    "nc" => st.counter_note_count_pad = value,
-                    "plph" => st.counter_polyphony_pad = value,
-                    "nps" => st.counter_nps_pad = value,
-                    "ticks" => st.counter_ticks_pad = value,
-                    "bars" => st.counter_bars_pad = value,
-                    "frames" => st.counter_frames_pad = value,
+                    "bpm_int" => st.counter.bpm_int_pad = value,
+                    "bpm_dec" => st.counter.bpm_dec_pad = value.min(12),
+                    "nc" => st.counter.note_count_pad = value,
+                    "plph" => st.counter.polyphony_pad = value,
+                    "nps" => st.counter.nps_pad = value,
+                    "ticks" => st.counter.ticks_pad = value,
+                    "bars" => st.counter.bars_pad = value,
+                    "frames" => st.counter.frames_pad = value,
                     _ => {}
                 }
             }
             V::CounterResetPadding => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_bpm_int_pad = 3;
-                st.counter_bpm_dec_pad = 2;
-                st.counter_note_count_pad = 5;
-                st.counter_polyphony_pad = 3;
-                st.counter_nps_pad = 3;
-                st.counter_ticks_pad = 5;
-                st.counter_bars_pad = 3;
-                st.counter_frames_pad = 5;
+                st.counter.bpm_int_pad = 3;
+                st.counter.bpm_dec_pad = 2;
+                st.counter.note_count_pad = 5;
+                st.counter.polyphony_pad = 3;
+                st.counter.nps_pad = 3;
+                st.counter.ticks_pad = 5;
+                st.counter.bars_pad = 3;
+                st.counter.frames_pad = 5;
             }
             V::CounterLoadTemplate(name) => {
                 let st = &mut root.state.video_export_dialog;
@@ -241,11 +248,11 @@ impl DialogHandler {
                     "full" => crate::state::root_state::COUNTER_FULL_TEXT,
                     _ => crate::state::root_state::COUNTER_DEFAULT_TEXT,
                 };
-                st.counter_text = template.to_string();
+                st.counter.text = template.to_string();
             }
             V::CounterResetText => {
                 let st = &mut root.state.video_export_dialog;
-                st.counter_text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
+                st.counter.text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
             }
             V::CounterBrowseCsv => {
                 root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {
@@ -258,46 +265,46 @@ impl DialogHandler {
             V::DataCurveNumberChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "graph_duration" => st.dc_graph_duration = fmt_num(value, 2),
-                    "zoom_smoothness" => st.dc_zoom_smoothness = fmt_num(value, 2),
-                    "graph_smoothness" => st.dc_graph_smoothness = fmt_num(value, 0),
-                    "padding_mul" => st.dc_padding_mul = fmt_num(value, 2),
-                    "line_thickness" => st.dc_line_thickness = fmt_num(value, 0),
-                    "bar_thickness" => st.dc_bar_thickness = fmt_num(value, 0),
-                    "text_x_offset" => st.dc_text_x_offset = fmt_num(value, 0),
-                    "text_y_offset" => st.dc_text_y_offset = fmt_num(value, 0),
-                    "milestone_scale_mul" => st.dc_milestone_scale_mul = fmt_num(value, 2),
-                    "abbreviate_digits" => st.dc_abbreviate_digits = fmt_num(value, 0),
+                    "graph_duration" => st.data_curve.graph_duration = fmt_num(value, 2),
+                    "zoom_smoothness" => st.data_curve.zoom_smoothness = fmt_num(value, 2),
+                    "graph_smoothness" => st.data_curve.graph_smoothness = fmt_num(value, 0),
+                    "padding_mul" => st.data_curve.padding_mul = fmt_num(value, 2),
+                    "line_thickness" => st.data_curve.line_thickness = fmt_num(value, 0),
+                    "bar_thickness" => st.data_curve.bar_thickness = fmt_num(value, 0),
+                    "text_x_offset" => st.data_curve.text_x_offset = fmt_num(value, 0),
+                    "text_y_offset" => st.data_curve.text_y_offset = fmt_num(value, 0),
+                    "milestone_scale_mul" => st.data_curve.milestone_scale_mul = fmt_num(value, 2),
+                    "abbreviate_digits" => st.data_curve.abbreviate_digits = fmt_num(value, 0),
                     _ => {}
                 }
             }
             V::DataCurveBoolChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "abbreviate" => st.dc_abbreviate = value,
-                    "show_text" => st.dc_show_text = value,
-                    "show_bars" => st.dc_show_bars = value,
+                    "abbreviate" => st.data_curve.abbreviate = value,
+                    "show_text" => st.data_curve.show_text = value,
+                    "show_bars" => st.data_curve.show_bars = value,
                     _ => {}
                 }
             }
             V::DataCurveTextChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
-                    "metric" => st.dc_metric = value,
-                    "bg_color" => st.dc_bg_color = value,
-                    "line_color" => st.dc_line_color = value,
-                    "text_color" => st.dc_text_color = value,
-                    "bar_color" => st.dc_bar_color = value,
-                    "font_family" => st.dc_font_family = value,
-                    "font_path" => st.dc_font_path = value,
+                    "metric" => st.data_curve.metric = value,
+                    "bg_color" => st.data_curve.bg_color = value,
+                    "line_color" => st.data_curve.line_color = value,
+                    "text_color" => st.data_curve.text_color = value,
+                    "bar_color" => st.data_curve.bar_color = value,
+                    "font_family" => st.data_curve.font_family = value,
+                    "font_path" => st.data_curve.font_path = value,
                     _ => {}
                 }
             }
             V::DataCurveFontSizeChanged(v) => {
-                root.state.video_export_dialog.dc_font_size = v.clamp(7, 256);
+                root.state.video_export_dialog.data_curve.font_size = v.clamp(7, 256);
             }
             V::DataCurveFontModeChanged(v) => {
-                root.state.video_export_dialog.dc_font_mode = v;
+                root.state.video_export_dialog.data_curve.font_mode = v;
             }
             V::DataCurveBrowseFont => {
                 root.spawn_path_dialog(PathDialogTask::VideoDataCurveFont, || {
@@ -307,14 +314,14 @@ impl DialogHandler {
                 });
             }
             V::FpsChanged(v) => {
-                root.state.video_export_dialog.fps = v;
+                root.state.video_export_dialog.basic.fps = v;
             }
             V::OutputPathChanged(v) => {
-                root.state.video_export_dialog.output_path = v;
+                root.state.video_export_dialog.basic.output_path = v;
             }
             V::BrowseOutput => {
                 let st = &root.state.video_export_dialog;
-                let container = st.container.clone();
+                let container = st.basic.container.clone();
                 let ext = container.to_lowercase();
                 let default_name = format!("output.{ext}");
                 root.spawn_path_dialog(PathDialogTask::VideoExportOutput, move || {
@@ -325,7 +332,7 @@ impl DialogHandler {
                 });
             }
             V::MidiPathChanged(v) => {
-                root.state.video_export_dialog.midi_path = v;
+                root.state.video_export_dialog.basic.midi_path = v;
             }
             V::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
@@ -345,17 +352,17 @@ impl DialogHandler {
                 fps,
             } => {
                 let st = &mut root.state.video_export_dialog;
-                st.status_message = message;
-                st.progress = progress;
-                st.current_frame = current_frame;
-                st.total_frames = total_frames;
-                st.render_fps = fps;
+                st.basic.status_message = message;
+                st.basic.progress = progress;
+                st.basic.current_frame = current_frame;
+                st.basic.total_frames = total_frames;
+                st.basic.render_fps = fps;
             }
             V::ExportCompleted => {
                 // 由 Runner 回调设置具体字段，此处不处理
             }
             V::ExportFailed(err) => {
-                root.state.video_export_dialog.overlay = VideoExportOverlayState::Error(err);
+                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Error(err);
             }
             V::UpdatePreviewFrame { .. } => {
                 // 由 Host 直接处理，此处不需要

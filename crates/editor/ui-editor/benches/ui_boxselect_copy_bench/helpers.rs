@@ -1,6 +1,6 @@
 //! UI 路径基准支撑：单轮执行、统计报告、渲染侧实例构建代理
 //!
-//! 由 `ui_boxselect_copy_bench.rs` 拆出（保持单文件 < 400 行）。
+//! 由 `ui_boxselect_copy_bench.rs` 拆出（保持单文件 ≤600 行）。
 
 use std::env;
 

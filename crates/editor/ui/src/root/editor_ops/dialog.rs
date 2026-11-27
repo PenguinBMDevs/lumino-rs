@@ -32,12 +32,18 @@ impl Root {
 
     /// 更新编辑器鼠标位置
     pub fn update_editor_cursor(&mut self, position: Option<lumino_ui_core::geom::Point>) {
-        self.editor.update_cursor_position(position);
+        self.editor
+            .editor_state
+            .canvas
+            .update_cursor_position(position.map(|p| (p.x, p.y)));
     }
 
     /// 更新编辑器 Canvas 偏移量
     pub fn set_editor_canvas_offset(&mut self, offset: lumino_ui_core::geom::Point) {
-        self.editor.set_canvas_offset(offset);
+        self.editor
+            .editor_state
+            .canvas
+            .set_offset(offset.x, offset.y);
     }
 
     /// 获取并清空对话框结果
@@ -52,4 +58,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod dialog_tests;
+mod tests;

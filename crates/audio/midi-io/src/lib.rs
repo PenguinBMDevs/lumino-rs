@@ -361,4 +361,4 @@ pub enum ApiKind {
 }
 
 #[cfg(test)]
-mod output_tests;
+mod tests;

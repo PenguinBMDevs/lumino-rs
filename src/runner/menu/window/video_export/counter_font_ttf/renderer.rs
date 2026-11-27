@@ -4,8 +4,16 @@ use ab_glyph::{Font, Point, PxScale, ScaleFont};
 use lumino_message::events::window::video::CounterFont;
 
 use super::super::counter_font_ttf_load::load_font;
-use super::blend::blend_pixel;
 use super::{DrawLineScaledInput, GlyphCacheEntry, TtfFontRenderer};
+
+/// 按 `color` 与 `alpha`（0-255 线性混合），仅改 BGRA 颜色，保留原透明度通道。
+fn blend_pixel(dst: &mut [u8], color: [u8; 4], alpha: u32) {
+    let a = alpha;
+    let inv = 255 - a;
+    dst[0] = ((color[0] as u32 * a + dst[0] as u32 * inv) / 255) as u8;
+    dst[1] = ((color[1] as u32 * a + dst[1] as u32 * inv) / 255) as u8;
+    dst[2] = ((color[2] as u32 * a + dst[2] as u32 * inv) / 255) as u8;
+}
 
 impl TtfFontRenderer {
     /// 创建渲染器。字号为像素高度（em 尺寸）。
@@ -121,9 +129,11 @@ impl TtfFontRenderer {
         width
     }
 
-    /// 在 BGRA 帧上绘制单行文本，返回绘制宽度。
+    /// 在 BGRA 帧上绘制单行文本，返回绘制宽度（测试入口）。
     ///
-    /// `x`、`y` 为行左上角；逐字符 blit 缓存位图（alpha 混合到背景）。
+    /// 生产路径经 [`CounterFontRenderer::draw_line`] 委托到 `draw_line_scaled`；
+    /// 本方法只服务 `counter_font_ttf/tests.rs` 的基础路径断言，故随测试编译。
+    #[cfg(test)]
     pub(crate) fn draw_line(
         &mut self,
         frame: &mut [u8],
@@ -133,46 +143,15 @@ impl TtfFontRenderer {
         y: u32,
         color: [u8; 4],
     ) -> u32 {
-        let frame_w = frame_width as usize;
-        let row_bytes = frame_w * 4;
-        let frame_len = frame.len();
-        let mut cur_x = x as i64;
-
-        for ch in line.chars() {
-            self.ensure_glyph(ch);
-            let Some(g) = self.glyph(ch) else { continue };
-            let dst_x = cur_x + g.offset_x as i64;
-            let dst_y = y as i64 + g.offset_y as i64;
-            let (w, h) = (g.width as i64, g.height as i64);
-            if g.width > 0 && g.height > 0 {
-                for row in 0..h {
-                    let fy = dst_y + row;
-                    if fy < 0 || fy >= frame_len as i64 / row_bytes as i64 {
-                        continue;
-                    }
-                    let row_start = (fy as usize) * row_bytes;
-                    // 注意：必须用一段切片 [a..b]，两段 [a..][b..] 会在第二次切片时越界
-                    let row_off = (row as usize) * g.width as usize;
-                    let alpha_row = &g.alpha[row_off..row_off + g.width as usize];
-                    for col in 0..w {
-                        let fx = dst_x + col;
-                        if fx < 0 || fx >= frame_w as i64 {
-                            continue;
-                        }
-                        let a = alpha_row[col as usize] as u32;
-                        if a == 0 {
-                            continue;
-                        }
-                        let px = row_start + (fx as usize) * 4;
-                        if px + 4 <= frame_len {
-                            blend_pixel(&mut frame[px..px + 4], color, a);
-                        }
-                    }
-                }
-            }
-            cur_x += g.advance as i64;
-        }
-        cur_x.saturating_sub(x as i64).min(u32::MAX as i64) as u32
+        self.draw_line_scaled(DrawLineScaledInput {
+            frame,
+            frame_width,
+            line,
+            x,
+            y,
+            color,
+            extra_scale: 1,
+        })
     }
 
     /// 绘制单行文本（带最近邻放大倍率），返回绘制宽度。

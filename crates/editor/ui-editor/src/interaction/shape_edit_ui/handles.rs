@@ -1,6 +1,6 @@
 //! 020「编辑图形」锚点布局（屏幕坐标）。
 //!
-//! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
+//! 从 `shape_edit_ui.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_editor_state::editor_state::{HandleKind, Zoom, box_handles};
 use lumino_ui_core::geom::Point;
@@ -19,14 +19,14 @@ pub struct ShapeEditHandles {
 impl Editor {
     /// 编辑态锚点（屏幕坐标）：8 个箱体锚点 + 可选中心锚点。
     pub fn shape_edit_handles(&self) -> ShapeEditHandles {
-        let Some((target, model)) = self.armed_edit_target() else {
+        let Some((target, model)) = super::cursor::armed_edit_target(self) else {
             return ShapeEditHandles::default();
         };
         let zoom = Zoom {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let include_center = self.edit_allows_center(target);
+        let include_center = super::cursor::edit_allows_center(target);
         let Some(layout) = box_handles(&model, zoom, include_center) else {
             return ShapeEditHandles::default();
         };

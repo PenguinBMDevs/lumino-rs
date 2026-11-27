@@ -403,7 +403,7 @@ fn test_clear_pending_discards_strokes_and_history() {
         !state.can_undo_path() && !state.can_redo_path(),
         "历史一并清空"
     );
-    assert_eq!(state.path_history.len(), 1, "保留空基准状态");
+    assert_eq!(state.history.len(), 1, "保留空基准状态");
 }
 
 #[test]

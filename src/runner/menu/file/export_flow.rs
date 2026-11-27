@@ -17,16 +17,7 @@ impl RunnerInner {
         }
         // 2. 自动提交当前编辑（ghost 方案：松手即提交），
         // 保证导出的数据包含用户正在编辑（拖动/绘制/调整大小）的音符。
-        let committed = self
-            .window_state
-            .window
-            .ui_mut()
-            .root_mut()
-            .editor
-            .commit_current_edit();
-        if committed {
-            tracing::debug!("导出 MIDI 前自动提交编辑");
-        }
+        self.commit_edit_before_io("导出 MIDI");
 
         // 3. 便宜的内容预检：没有内容就不让用户白选保存路径。
         let has_content = {

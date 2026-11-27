@@ -37,6 +37,10 @@ mod mixer_dialog;
 mod mixer_panel;
 mod state;
 pub(crate) mod video_clip_math;
+
+/// tick → 秒（tempo 分段积分）。转出为跨 crate 单一实现，
+/// 供根 crate 的视频导出计数器直接调用，避免同算法双份维护。
+pub use video_clip_math::ticks_to_seconds;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;
@@ -131,6 +135,65 @@ struct RootInitParams {
 }
 
 impl Root {
+    /// Runner 侧的命令入口：推送一条 Toast。
+    ///
+    /// Runner 不再直接 `root_mut().toast.push(...)`；所有 UI 侧写操作走命名方法，
+    /// 便于统一加脏标记 / 测试替身（T-23）。
+    pub fn push_toast(
+        &mut self,
+        level: crate::toast::ToastLevel,
+        message: impl Into<String>,
+    ) -> u64 {
+        self.toast.push(level, message)
+    }
+
+    /// Runner 侧的命令入口：把工程标记为已修改（自动保存恢复等场景）。
+    pub fn mark_project_modified(&mut self) {
+        self.editor.editor_state.data.modified = true;
+    }
+
+    /// Runner 侧的命令入口：放大视图（锚定中心）。
+    pub fn zoom_in(&mut self) {
+        const FACTOR: f32 = 1.2;
+        let view = &self.editor.editor_state.view;
+        let (x, y) = (view.zoom_x * FACTOR, view.zoom_y * FACTOR);
+        self.editor.set_zoom_x(x, 0.5);
+        self.editor.set_zoom_y(y, 0.5);
+    }
+
+    /// Runner 侧的命令入口：缩小视图（锚定中心）。
+    pub fn zoom_out(&mut self) {
+        const FACTOR: f32 = 1.2;
+        let view = &self.editor.editor_state.view;
+        let (x, y) = (view.zoom_x / FACTOR, view.zoom_y / FACTOR);
+        self.editor.set_zoom_x(x, 0.5);
+        self.editor.set_zoom_y(y, 0.5);
+    }
+
+    /// Runner 侧的命令入口：重置视图缩放。
+    pub fn zoom_reset(&mut self) {
+        self.editor.set_zoom_x(0.1, 0.5);
+        self.editor.set_zoom_y(20.0, 0.5);
+    }
+
+    /// Runner 侧的命令入口：提交当前编辑（输入框失焦 / IO 前）。
+    pub fn commit_current_edit(&mut self) -> bool {
+        self.editor.commit_current_edit()
+    }
+
+    /// Runner 侧的命令入口：批量载入形状。
+    pub fn load_shapes(&mut self, shapes: Vec<lumino_core::shape::ShapeModel>) {
+        self.editor.load_shapes(shapes);
+    }
+
+    /// Runner 侧的命令入口：协作同步开关。
+    pub fn set_collab_sync_enabled(&mut self, enabled: bool) {
+        self.editor
+            .editor_state
+            .data
+            .set_collab_sync_enabled(enabled);
+    }
+
     /// 内部构造函数（消除 new/new_progress/new_dialog 的重复代码）
     fn from_params(params: RootInitParams) -> Self {
         puffin::profile_scope!("root_from_params");
@@ -377,4 +440,4 @@ impl Root {
 }
 
 #[cfg(test)]
-mod root_tests;
+mod tests;

@@ -5,7 +5,7 @@ use crate::device_status;
 use crate::epoch::GpuEpoch;
 
 // REND-020（#166）：构造路径拆到 `context/create.rs`，运行时操作在
-// `context/ops.rs`——主文件守住 400 行红线（红线 10），行为不变。
+// `context/ops.rs`——主文件守住 600 行红线（红线 10），行为不变。
 mod create;
 mod ops;
 

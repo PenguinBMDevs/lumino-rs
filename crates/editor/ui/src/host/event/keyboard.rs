@@ -235,8 +235,8 @@ impl Host {
             return true;
         }
         let editor = &self.root.editor;
-        editor.fill_enabled()
-            || editor.line_arc_mode()
+        editor.editor_state.line_tool.fill_enabled
+            || editor.editor_state.line_tool.arc_mode
             || editor.editor_state.shape_tool.fill_enabled
             || self.root.state.fill_division_dialog.is_open
             // 首次使用提示尚未弹出：`maybe_show_help_tip` 只在 `ToolSelected` 里调用，
@@ -328,7 +328,7 @@ impl Host {
             if Self::tool_shortcut_redundant(
                 tool,
                 self.root.toolbar.current_tool,
-                self.root.editor.current_tool(),
+                self.root.editor.editor_state.current_tool(),
                 self.toolbar_transient_open(tool),
             ) {
                 return;

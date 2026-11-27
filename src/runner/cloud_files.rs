@@ -1,6 +1,6 @@
 //! Runner 云存储文件操作 — 重命名/删除/移动/复制（后台线程执行）
 //!
-//! 从 `cloud_ops` 拆分而来（文件长度红线 <400 行）：
+//! 从 `cloud_ops` 拆分而来（文件长度红线 ≤600 行）：
 //! - 后台执行 CloudManager 的文件操作
 //! - 复制 = 下载到本地临时 + 上传（不依赖服务器端 COPY 支持）
 //! - 结果统一经 `OperationResult`（带 kind）回传注入
@@ -16,46 +16,39 @@ use crate::storage;
 use super::cloud::lock_cloud;
 
 impl RunnerInner {
-    /// 后台重命名（同目录），结果回传
-    pub(super) fn run_cloud_rename(&mut self, id: String, from: String, to: String) {
+    /// 在后台线程执行一次云操作，并通过 `OperationResult` 回传。
+    ///
+    /// `kind` 为结果事件的操作标识（rename/delete/move/paste_cut/paste_copy），
+    /// `operation` 拿到已加锁的 manager；网络阻塞不占用 UI 线程。
+    fn spawn_cloud_operation<F>(&self, kind: &'static str, operation: F)
+    where
+        F: FnOnce(&mut lumino_cloud::CloudManager) -> lumino_cloud::Result<()> + Send + 'static,
+    {
         let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
-            let result = mgr.rename(&id, &from, &to);
+            let result = operation(&mut mgr);
             event::emit(event::Event::cloud(cloud_event::Event::OperationResult {
                 ok: result.is_ok(),
                 error: result.err().map(|e| e.to_string()),
-                kind: "rename".to_string(),
+                kind: kind.to_string(),
             }));
         });
+    }
+
+    /// 后台重命名（同目录），结果回传
+    pub(super) fn run_cloud_rename(&mut self, id: String, from: String, to: String) {
+        self.spawn_cloud_operation("rename", move |mgr| mgr.rename(&id, &from, &to));
     }
 
     /// 后台删除文件/目录，结果回传
     pub(super) fn run_cloud_delete(&mut self, id: String, path: String, is_dir: bool) {
-        let mgr = Arc::clone(&self.cloud);
-        std::thread::spawn(move || {
-            let mut mgr = lock_cloud(&mgr);
-            let result = mgr.delete(&id, &path, is_dir);
-            event::emit(event::Event::cloud(cloud_event::Event::OperationResult {
-                ok: result.is_ok(),
-                error: result.err().map(|e| e.to_string()),
-                kind: "delete".to_string(),
-            }));
-        });
+        self.spawn_cloud_operation("delete", move |mgr| mgr.delete(&id, &path, is_dir));
     }
 
     /// 后台移动（剪切，云内部），结果回传
     pub(super) fn run_cloud_move(&mut self, id: String, from: String, to_dir: String) {
-        let mgr = Arc::clone(&self.cloud);
-        std::thread::spawn(move || {
-            let mut mgr = lock_cloud(&mgr);
-            let result = mgr.move_file(&id, &from, &to_dir);
-            event::emit(event::Event::cloud(cloud_event::Event::OperationResult {
-                ok: result.is_ok(),
-                error: result.err().map(|e| e.to_string()),
-                kind: "move".to_string(),
-            }));
-        });
+        self.spawn_cloud_operation("move", move |mgr| mgr.move_file(&id, &from, &to_dir));
     }
 
     /// 后台复制/剪切：剪切 = 云内部移动；复制 = 下载到临时 + 上传（跨协议通用）
@@ -66,23 +59,13 @@ impl RunnerInner {
         to_dir: String,
         is_cut: bool,
     ) {
-        let mgr = Arc::clone(&self.cloud);
-        std::thread::spawn(move || {
-            let mut mgr = lock_cloud(&mgr);
-            let result = if is_cut {
+        let kind = if is_cut { "paste_cut" } else { "paste_copy" };
+        self.spawn_cloud_operation(kind, move |mgr| {
+            if is_cut {
                 mgr.move_file(&id, &from, &to_dir)
             } else {
-                copy_via_tmp(&mut mgr, &id, &from, &to_dir)
-            };
-            event::emit(event::Event::cloud(cloud_event::Event::OperationResult {
-                ok: result.is_ok(),
-                error: result.err().map(|e| e.to_string()),
-                kind: if is_cut {
-                    "paste_cut".to_string()
-                } else {
-                    "paste_copy".to_string()
-                },
-            }));
+                copy_via_tmp(mgr, &id, &from, &to_dir)
+            }
         });
     }
 

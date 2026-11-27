@@ -36,51 +36,55 @@ impl Editor {
         if group == 0 {
             return;
         }
-        self.baked_pending.insert(group, pending);
+        self.shape_tools.baked_pending.insert(group, pending);
         // 历史本身有上限；这里同步给一个宽松上限，避免会话内无限增长。
-        while self.baked_pending.len() > 256 {
-            let Some(oldest) = self.baked_pending.keys().next().copied() else {
+        while self.shape_tools.baked_pending.len() > 256 {
+            let Some(oldest) = self.shape_tools.baked_pending.keys().next().copied() else {
                 break;
             };
-            self.baked_pending.remove(&oldest);
+            self.shape_tools.baked_pending.remove(&oldest);
         }
     }
 
     /// undo 一个 Bake group：恢复待确认矢量
     pub(crate) fn restore_baked_group(&mut self, group: u64) -> bool {
-        let Some(pending) = self.baked_pending.get(&group).cloned() else {
+        let Some(pending) = self.shape_tools.baked_pending.get(&group).cloned() else {
             return false;
         };
         // DRAW-049：撤销回到 pending 时，Bake 放置会话/手柄必须收口，
         // 否则残留的 `bake_placement_active` 会让预览音符块继续被隐藏，
         // 用户只看到黄色选框、看不到 pending 音符预览。
-        self.bake_placement = None;
-        self.shape_edit = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.bake_placement = None;
+        self.shape_tools.edit = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         let mut restored_composed = 0usize;
         match pending {
             BakePending::Line(mut state) => {
                 // 当前状态是权威：恢复后不应再走“路径 redo”而跳过 Bake redo。
-                state.path_history.truncate(state.path_history_index + 1);
+                state.history.truncate_redo();
                 self.editor_state.line_tool = state;
             }
             BakePending::Shape { state, composed } => {
                 restored_composed = composed.len();
                 self.editor_state.shape_tool = state;
                 self.editor_state.pending_composed = composed;
-                self.pending_edit_undo.clear();
-                self.pending_edit_redo.clear();
+                self.shape_tools.pending_edit_undo.clear();
+                self.shape_tools.pending_edit_redo.clear();
             }
             BakePending::Brush { mut state, config } => {
-                state.path_history.truncate(state.path_history_index + 1);
+                state.history.truncate_redo();
                 self.editor_state.brush_tool = state;
                 self.brush = config;
             }
         }
         // 组合结果只在形状 / 鼠标工具下可交互；撤销回到 pending 时自动切过去，
         // 避免用户「撤销后还要手动切工具才看到 pending」。
-        if restored_composed > 0 && !matches!(self.current_tool(), Tool::Shape | Tool::ShapeSelect)
+        if restored_composed > 0
+            && !matches!(
+                self.editor_state.current_tool(),
+                Tool::Shape | Tool::ShapeSelect
+            )
         {
             self.set_tool(Tool::ShapeSelect);
         }
@@ -128,10 +132,10 @@ impl Editor {
                     Some((owner, original_model, original_notes))
                         if owner == self.current_track() =>
                     {
-                        if self.current_tool() != Tool::ShapeSelect {
+                        if self.editor_state.current_tool() != Tool::ShapeSelect {
                             self.set_tool(Tool::ShapeSelect);
                         }
-                        self.bake_placement = Some(
+                        self.shape_tools.bake_placement = Some(
                             crate::interaction::shape_bake_placement::BakePlacementSession {
                                 pending_index: index,
                                 original_model,
@@ -139,15 +143,15 @@ impl Editor {
                                 marquee_active: false,
                             },
                         );
-                        self.shape_edit = None;
-                        self.shape_edit_armed = None;
-                        self.shape_group_edit = None;
+                        self.shape_tools.edit = None;
+                        self.shape_tools.edit_armed = None;
+                        self.shape_tools.group_edit = None;
                         let _ = self.enable_shape_edit();
                     }
                     _ => {
                         // 归属在别的轨：会话不建立、手柄不布防、黄色框不残留；
                         // pending 保留，切回归属轨后按 ✓ 可重新进入放置态。
-                        self.bake_placement = None;
+                        self.shape_tools.bake_placement = None;
                         self.editor_state.shape_select.clear_selection();
                     }
                 }
@@ -158,21 +162,21 @@ impl Editor {
 
     /// redo 一个 Bake group：再次丢弃矢量
     pub(crate) fn discard_baked_group(&mut self, group: u64) -> bool {
-        let Some(pending) = self.baked_pending.get(&group).cloned() else {
+        let Some(pending) = self.shape_tools.baked_pending.get(&group).cloned() else {
             return false;
         };
         // DRAW-049：redo 再次丢弃矢量；放置会话/手柄一并收口。
-        self.bake_placement = None;
-        self.shape_edit = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.bake_placement = None;
+        self.shape_tools.edit = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         match pending {
             BakePending::Line(_) => self.editor_state.line_tool.reset(),
             BakePending::Shape { .. } => {
                 self.editor_state.shape_tool.clear_pending();
                 self.editor_state.pending_composed.clear();
-                self.pending_edit_undo.clear();
-                self.pending_edit_redo.clear();
+                self.shape_tools.pending_edit_undo.clear();
+                self.shape_tools.pending_edit_redo.clear();
             }
             BakePending::Brush { .. } => self.editor_state.brush_tool.reset(),
         }

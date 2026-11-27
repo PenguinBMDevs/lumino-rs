@@ -75,7 +75,7 @@ fn test_build_ghost_delta_positions_disabled_when_copy_pending() {
     // → ghost 增量必须禁用（副本实例破坏 GPU 布局）
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 0);
-    editor.pending_copy_drag_state = Some(d1);
+    editor.transient.pending_copy = Some(d1);
 
     let positions = editor.build_ghost_delta_positions(&[0usize]);
     assert!(
@@ -110,7 +110,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
         2,
         "第一次复制松手后副本应已写入内存"
     );
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
 
     // 保持 Ctrl，在副本框位置（tick 100 中心，音符长度 480 → 中心 340）再次按下
     // 预计算所有屏幕坐标（避免借用跨越可变调用）
@@ -155,7 +155,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
 
     // 松手：新副本提交入内存（count=3），选中副本2（tick 150）
     editor.handle_released();
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
         3,
@@ -200,7 +200,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     );
     editor.handle_moved(lumino_ui_core::geom::Point::new(moved_x_alt, copy_center_y));
     editor.handle_released();
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
         4,

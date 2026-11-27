@@ -5,7 +5,7 @@
 use super::super::window_manager::WindowManager;
 use super::*;
 
-// 纯判据辅助函数拆到子模块，保持本文件 < 400 行（REF-001）
+// 纯判据辅助函数拆到子模块，保持本文件 ≤600 行（REF-001）
 mod helpers;
 use helpers::{
     display_or_empty, parse_autosave_interval_mins, should_persist_language,
@@ -382,7 +382,7 @@ impl RunnerInner {
     }
 }
 
-/// 落盘守卫测试（独立文件，保持本文件 < 400 行）
+/// 落盘守卫测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "persist/tests.rs"]
 mod tests;

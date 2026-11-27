@@ -1,6 +1,6 @@
 //! 计数器位图字体数据表（ASCII 5x7，共 95 字符）
 //!
-//! 与 counter_font.rs 分离存放，避免主逻辑文件超过 400 行限制。
+//! 与 counter_font.rs 分离存放，避免主逻辑文件超过 600 行限制。
 //! 每字符 7 行、每行 5 位掩码（bit4 = 左端像素，与 DIGIT_BITMAPS 一致）。
 
 pub(super) const FONT5X7: [[u8; 7]; 95] = [

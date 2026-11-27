@@ -375,3 +375,4 @@ fn overview_note_estimate_remains_diagnostic_only() {
     index.measure_counts = vec![1];
     assert_eq!(overview_note_estimate(&index, &camera), 0);
 }
+mod grow;

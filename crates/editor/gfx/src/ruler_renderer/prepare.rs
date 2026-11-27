@@ -69,27 +69,16 @@ impl RulerRenderer {
             let instances = &self.cached_instances;
             let instance_count = instances.len();
 
-            if instance_count > self.capacity {
-                let new_capacity = (self.capacity * GROWTH_FACTOR).max(instance_count);
-                self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
-                self.capacity = new_capacity;
+            if instance_count > self.instances.capacity() {
+                self.instances
+                    .ensure_capacity(device, instance_count, GROWTH_FACTOR);
             }
 
-            if instance_count > 0 {
-                queue.write_buffer(
-                    self.instance_buffer.inner(),
-                    0,
-                    bytemuck::cast_slice(instances),
-                );
-            }
+            self.instances.write(queue, instances);
         }
 
         // viewport uniform 每帧更新（体积极小，含 scroll_x 等视口参数）
-        let viewport_uniform = RulerViewportUniform::from_params(params);
-        queue.write_buffer(
-            self.viewport_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&[viewport_uniform]),
-        );
+        self.viewport
+            .write(queue, RulerViewportUniform::from_params(params));
     }
 }

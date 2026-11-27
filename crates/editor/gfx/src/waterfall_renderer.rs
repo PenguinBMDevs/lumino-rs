@@ -14,8 +14,6 @@
 //! 3. `storage_texture()` — 获取输出纹理，供 export pipeline 读回
 
 mod active;
-#[cfg(test)]
-mod active_tests;
 mod bind;
 mod init;
 mod render;

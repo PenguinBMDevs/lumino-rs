@@ -45,7 +45,7 @@ mod band;
 mod buffer;
 mod compose;
 mod notes;
-mod simd;
+pub mod simd;
 mod slot;
 
 pub use camera::CanvasCamera;

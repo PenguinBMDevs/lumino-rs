@@ -341,7 +341,7 @@ fn flush_chunk(
     }
 }
 
-/// CPU 单轨会话计划测试（独立文件，保持本文件 < 400 行）
+/// CPU 单轨会话计划测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "stream/tests.rs"]
 mod tests;

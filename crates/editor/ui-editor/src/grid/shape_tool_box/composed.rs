@@ -1,6 +1,6 @@
 //! DRAW-041C 组合结果预览辅助：屏幕包围盒 + 027/028 音符块。
 //!
-//! 从 `shape_tool_box.rs` 拆出，避免主文件超过 400 行。
+//! 从 `shape_tool_box.rs` 拆出，避免主文件超过 600 行。
 
 use lumino_editor_state::{PendingComposed, ShapeNote};
 

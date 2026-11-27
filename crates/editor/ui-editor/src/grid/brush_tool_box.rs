@@ -122,7 +122,7 @@ pub struct BrushButtonRects {
 /// 若照抄曲线工具的 Conductor 隐藏规则，用户在待确认期间切到 Conductor 轨
 /// 会导致笔画被卡死（既不能 √ 也不能 ×）。Conductor 只在**落笔**时拦截（`pressed.rs`）。
 pub fn brush_button_rects(editor: &Editor) -> Option<BrushButtonRects> {
-    if editor.current_tool() != Tool::Brush {
+    if editor.editor_state.current_tool() != Tool::Brush {
         return None;
     }
     if !editor.editor_state.brush_tool.has_pending() {

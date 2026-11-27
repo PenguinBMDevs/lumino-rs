@@ -12,6 +12,7 @@ use super::PianoRollGrid;
 use super::state::GridInteractionState;
 use crate::Editor;
 
+mod shared;
 pub mod vertical;
 
 /// 画布鼠标按钮。
@@ -69,14 +70,10 @@ pub fn dispatch(
     event: CanvasEvent,
 ) -> Option<Message> {
     let grid = PianoRollGrid::new(editor);
-    let local = |local: (f32, f32)| lumino_ui_core::geom::Point::new(local.0, local.1);
+    let local = shared::point;
 
     match event {
-        CanvasEvent::Modifiers { shift, ctrl } => {
-            state.shift_pressed = shift;
-            state.control_pressed = ctrl;
-            None
-        }
+        CanvasEvent::Modifiers { shift, ctrl } => shared::apply_modifiers(state, shift, ctrl),
         CanvasEvent::FocusLost => {
             state.shift_pressed = false;
             state.control_pressed = false;
@@ -96,7 +93,7 @@ pub fn dispatch(
             }
             CanvasButton::Right => {
                 let local_pos = local(pos);
-                if editor.shape_list_open {
+                if editor.shape_tools.list_open {
                     return Some(Message::EditorAction(EditorAction::ShapeListClose));
                 }
                 // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
@@ -114,7 +111,7 @@ pub fn dispatch(
                             .map_or(ContextMenuTarget::Notes, |_| {
                                 ContextMenuTarget::PendingDrawnShape
                             }),
-                        Some(false) if editor.current_tool() == Tool::ShapeSelect => {
+                        Some(false) if editor.editor_state.current_tool() == Tool::ShapeSelect => {
                             ContextMenuTarget::DrawnShape
                         }
                         _ => ContextMenuTarget::Notes,
@@ -155,7 +152,7 @@ pub fn dispatch(
         }
         CanvasEvent::Release => {
             // 清除框选框动画状态
-            editor.selection_box_anim.set(None);
+            editor.selection_ui.anim.set(None);
 
             if state.is_loop_dragging {
                 state.is_loop_dragging = false;
@@ -164,7 +161,7 @@ pub fn dispatch(
             if state.is_dragging_indicator {
                 state.is_dragging_indicator = false;
             }
-            Some(Message::EditorAction(EditorAction::Released))
+            shared::released(editor)
         }
         CanvasEvent::Wheel {
             local: pos,
@@ -204,8 +201,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.view.snap_precision = 1.0;
-        editor.set_canvas_size(lumino_ui_core::geom::Point::new(4000.0, 4000.0));
-        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
+        editor.editor_state.canvas.set_size(4000.0, 4000.0);
+        editor.editor_state.canvas.set_offset(0.0, 0.0);
         editor
     }
 

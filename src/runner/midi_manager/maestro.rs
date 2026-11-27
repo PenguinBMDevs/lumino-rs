@@ -16,7 +16,7 @@ impl MidiManager {
     /// 返回 `true` = 已接管启动路径；返回 `false` = 平台不支持（Android），
     /// 调用方应立即回退 System。
     pub(super) fn start_maestro_async_init(&mut self, _ui_config: &UiConfig) -> bool {
-        if self.is_maestro_initializing {
+        if matches!(self.pending_init, Some(PendingInit::Maestro(_))) {
             return true;
         }
 
@@ -27,12 +27,11 @@ impl MidiManager {
         }
 
         tracing::info!("Maestro: 启动后台初始化...");
-        self.is_maestro_initializing = true;
         let desired_midi_max_port = self.desired_midi_max_port;
         self.spawned_midi_max_port = desired_midi_max_port;
 
         let (tx, rx) = channel();
-        self.maestro_init_rx = Some(rx);
+        self.pending_init = Some(PendingInit::Maestro(rx));
 
         std::thread::spawn(move || {
             let result = init_maestro_blocking(desired_midi_max_port);

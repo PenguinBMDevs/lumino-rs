@@ -20,6 +20,26 @@ impl CanvasState {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// 更新鼠标位置（tuple 与字段同形，避免 editor-state 依赖 ui-core）。
+    pub fn update_cursor_position(&mut self, position: Option<(f32, f32)>) {
+        if self.cursor_position == position {
+            return;
+        }
+        self.cursor_position = position;
+    }
+
+    /// 更新 Canvas 偏移量。
+    pub fn set_offset(&mut self, x: f32, y: f32) {
+        self.offset_x = x;
+        self.offset_y = y;
+    }
+
+    /// 更新 Canvas 尺寸。
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        self.size_x = width;
+        self.size_y = height;
+    }
 }
 
 #[cfg(test)]

@@ -31,10 +31,6 @@ mod upload;
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_partial;
-#[cfg(test)]
-mod tests_support;
 
 pub use frame::CpuOnionFrame;
 pub use rect::CpuOnionUploadRect;

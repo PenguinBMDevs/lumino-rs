@@ -86,6 +86,10 @@ impl CounterFontRenderer {
     }
 
     /// 绘制单行文本，返回绘制宽度。
+    ///
+    /// 等价于 `extra_scale = 1` 的缩放绘制：点阵后端 `bitmap_scale` 已保证
+    /// `scale >= 1`，TTF 后端在 `extra = 1` 时与缩放路径逐像素一致。
+    /// 保留本入口是因为计数器布局调用点众多（`counter_frame_layout`）。
     pub(crate) fn draw_line(
         &mut self,
         frame: &mut [u8],
@@ -95,21 +99,15 @@ impl CounterFontRenderer {
         y: u32,
         color: [u8; 4],
     ) -> u32 {
-        match &mut self.backend {
-            FontBackend::Bitmap { scale } => {
-                let scale = *scale;
-                let mut cur_x = x;
-                for ch in line.chars() {
-                    // 非 ASCII 字符点阵不支持：按空格宽度推进（不 panic）
-                    if ch.is_ascii() {
-                        draw_char(frame, frame_width, ch as u8, cur_x, y, scale, color);
-                    }
-                    cur_x = cur_x.saturating_add((CHAR_BITMAP_W + CHAR_SPACING) * scale);
-                }
-                cur_x.saturating_sub(x)
-            }
-            FontBackend::Ttf(ttf) => ttf.draw_line(frame, frame_width, line, x, y, color),
-        }
+        self.draw_line_scaled(DrawLineScaledInput {
+            frame,
+            frame_width,
+            line,
+            x,
+            y,
+            color,
+            extra_scale: 1,
+        })
     }
 
     /// 绘制单行文本（带额外放大倍率），返回绘制宽度。
@@ -372,6 +370,30 @@ mod tests {
         // 测量宽度（不含尾部间距）：2 中文按空格宽 + 1 数字 = 2*6 + 5 = 17
         assert_eq!(r.measure_line("音符1"), 17);
         assert_eq!(r.measure_line("音符"), 11, "中文按空格宽度测量");
+    }
+
+    /// 委托契约：`draw_line` 必须与 `extra_scale = 1` 的缩放绘制逐字节一致
+    #[test]
+    fn test_draw_line_equals_scaled_one() {
+        let color = [10, 20, 30, 255];
+        let mut plain = vec![0u8; 64 * 32 * 4];
+        let mut scaled = vec![0u8; 64 * 32 * 4];
+        let mut r_plain = CounterFontRenderer::new(&CounterFont::Bitmap, 14).expect("创建渲染器");
+        let mut r_scaled = CounterFontRenderer::new(&CounterFont::Bitmap, 14).expect("创建渲染器");
+
+        let w_plain = r_plain.draw_line(&mut plain, 64, "AB1:7", 3, 5, color);
+        let w_scaled = r_scaled.draw_line_scaled(DrawLineScaledInput {
+            frame: &mut scaled,
+            frame_width: 64,
+            line: "AB1:7",
+            x: 3,
+            y: 5,
+            color,
+            extra_scale: 1,
+        });
+
+        assert_eq!(w_plain, w_scaled, "绘制宽度应一致");
+        assert_eq!(plain, scaled, "像素必须逐字节一致");
     }
 
     /// 字号为 0 → 强制 1px，不 panic

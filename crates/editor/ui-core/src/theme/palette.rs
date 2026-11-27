@@ -2,8 +2,6 @@
 use crate::color;
 use crate::geom::Color;
 
-use std::sync::LazyLock;
-
 /// A color palette.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Palette {
@@ -302,92 +300,6 @@ pub struct Extended {
     pub is_dark: bool,
 }
 
-/// The built-in light variant of an [`Extended`] palette.
-pub static EXTENDED_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::LIGHT));
-
-/// The built-in dark variant of an [`Extended`] palette.
-pub static EXTENDED_DARK: LazyLock<Extended> = LazyLock::new(|| Extended::generate(Palette::DARK));
-
-/// The built-in Dracula variant of an [`Extended`] palette.
-pub static EXTENDED_DRACULA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::DRACULA));
-
-/// The built-in Nord variant of an [`Extended`] palette.
-pub static EXTENDED_NORD: LazyLock<Extended> = LazyLock::new(|| Extended::generate(Palette::NORD));
-
-/// The built-in Solarized Light variant of an [`Extended`] palette.
-pub static EXTENDED_SOLARIZED_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::SOLARIZED_LIGHT));
-
-/// The built-in Solarized Dark variant of an [`Extended`] palette.
-pub static EXTENDED_SOLARIZED_DARK: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::SOLARIZED_DARK));
-
-/// The built-in Gruvbox Light variant of an [`Extended`] palette.
-pub static EXTENDED_GRUVBOX_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::GRUVBOX_LIGHT));
-
-/// The built-in Gruvbox Dark variant of an [`Extended`] palette.
-pub static EXTENDED_GRUVBOX_DARK: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::GRUVBOX_DARK));
-
-/// The built-in Catppuccin Latte variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_LATTE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_LATTE));
-
-/// The built-in Catppuccin Frappé variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_FRAPPE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_FRAPPE));
-
-/// The built-in Catppuccin Macchiato variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_MACCHIATO: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_MACCHIATO));
-
-/// The built-in Catppuccin Mocha variant of an [`Extended`] palette.
-pub static EXTENDED_CATPPUCCIN_MOCHA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::CATPPUCCIN_MOCHA));
-
-/// The built-in Tokyo Night variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT));
-
-/// The built-in Tokyo Night Storm variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT_STORM: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT_STORM));
-
-/// The built-in Tokyo Night variant of an [`Extended`] palette.
-pub static EXTENDED_TOKYO_NIGHT_LIGHT: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::TOKYO_NIGHT_LIGHT));
-
-/// The built-in Kanagawa Wave variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_WAVE: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_WAVE));
-
-/// The built-in Kanagawa Dragon variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_DRAGON: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_DRAGON));
-
-/// The built-in Kanagawa Lotus variant of an [`Extended`] palette.
-pub static EXTENDED_KANAGAWA_LOTUS: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::KANAGAWA_LOTUS));
-
-/// The built-in Moonfly variant of an [`Extended`] palette.
-pub static EXTENDED_MOONFLY: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::MOONFLY));
-
-/// The built-in Nightfly variant of an [`Extended`] palette.
-pub static EXTENDED_NIGHTFLY: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::NIGHTFLY));
-
-/// The built-in Oxocarbon variant of an [`Extended`] palette.
-pub static EXTENDED_OXOCARBON: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::OXOCARBON));
-
-/// The built-in Ferra variant of an [`Extended`] palette.
-pub static EXTENDED_FERRA: LazyLock<Extended> =
-    LazyLock::new(|| Extended::generate(Palette::FERRA));
-
 impl Extended {
     /// Generates an [`Extended`] palette from a simple [`Palette`].
     pub fn generate(palette: Palette) -> Self {
@@ -472,19 +384,23 @@ impl Background {
     }
 }
 
-/// A set of primary colors.
+/// A set of accent colors (primary / success / warning / danger share one shape).
+///
+/// The four roles previously had four byte-identical `struct` + `impl` pairs; a
+/// theme now only supplies the base color, and every role is an alias of this
+/// type, so adding or retuning one place cannot drift from the others.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Primary {
-    /// The base primary color.
+pub struct Tone {
+    /// The base color.
     pub base: Pair,
-    /// A weaker version of the base primary color.
+    /// A weaker version of the base color.
     pub weak: Pair,
-    /// A stronger version of the base primary color.
+    /// A stronger version of the base color.
     pub strong: Pair,
 }
 
-impl Primary {
-    /// Generates a set of [`Primary`] colors from the base, background, and text colors.
+impl Tone {
+    /// Generates a set of [`Tone`] colors from the base, background, and text colors.
     pub fn generate(base: Color, background: Color, text: Color) -> Self {
         let weak = mix(base, background, 0.4);
         let strong = deviate(base, 0.1);
@@ -496,6 +412,15 @@ impl Primary {
         }
     }
 }
+
+/// A set of primary colors.
+pub type Primary = Tone;
+/// A set of success colors.
+pub type Success = Tone;
+/// A set of warning colors.
+pub type Warning = Tone;
+/// A set of danger colors.
+pub type Danger = Tone;
 
 /// A set of secondary colors.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -516,81 +441,6 @@ impl Secondary {
         let weak = mix(deviate(base, 0.1), text, factor);
         let strong = mix(deviate(base, 0.3), text, factor);
         let base = mix(deviate(base, 0.2), text, factor);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of success colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Success {
-    /// The base success color.
-    pub base: Pair,
-    /// A weaker version of the base success color.
-    pub weak: Pair,
-    /// A stronger version of the base success color.
-    pub strong: Pair,
-}
-
-impl Success {
-    /// Generates a set of [`Success`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of warning colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Warning {
-    /// The base warning color.
-    pub base: Pair,
-    /// A weaker version of the base warning color.
-    pub weak: Pair,
-    /// A stronger version of the base warning color.
-    pub strong: Pair,
-}
-
-impl Warning {
-    /// Generates a set of [`Warning`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
-
-        Self {
-            base: Pair::new(base, text),
-            weak: Pair::new(weak, text),
-            strong: Pair::new(strong, text),
-        }
-    }
-}
-
-/// A set of danger colors.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Danger {
-    /// The base danger color.
-    pub base: Pair,
-    /// A weaker version of the base danger color.
-    pub weak: Pair,
-    /// A stronger version of the base danger color.
-    pub strong: Pair,
-}
-
-impl Danger {
-    /// Generates a set of [`Danger`] colors from the base, background, and text colors.
-    pub fn generate(base: Color, background: Color, text: Color) -> Self {
-        let weak = mix(base, background, 0.4);
-        let strong = deviate(base, 0.1);
 
         Self {
             base: Pair::new(base, text),

@@ -67,9 +67,13 @@ impl Root {
             }
             Message::CanvasBoundsChanged { offset, size } => {
                 self.editor
-                    .set_canvas_offset(lumino_ui_core::geom::Point::new(offset.x, offset.y));
+                    .editor_state
+                    .canvas
+                    .set_offset(offset.x, offset.y);
                 self.editor
-                    .set_canvas_size(lumino_ui_core::geom::Point::new(size.width, size.height));
+                    .editor_state
+                    .canvas
+                    .set_size(size.width, size.height);
 
                 // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
                 // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
@@ -319,7 +323,7 @@ impl Root {
     /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理 + 关于页 logo 彩蛋）
     ///
     /// 模式切换动画与平滑滚动两个子步骤在 [`super::animation_tick`]（逐行等价搬迁，
-    /// 目的：`state_update.rs` 回到 400 行内，且把「翻转 `AppMode` 的状态机」与
+    /// 目的：`state_update.rs` 回到 600 行内，且把「翻转 `AppMode` 的状态机」与
     /// CPU 后端的过渡守卫放在同一模块）。
     pub(crate) fn handle_animation_tick(&mut self) -> bool {
         // 每次 tick 只取一次时钟，避免同一帧内多个动画读到不同时间基准

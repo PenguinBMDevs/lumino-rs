@@ -1,6 +1,6 @@
 //! `SettingsPanel::new` — 设置面板的构造器
 //!
-//! 从 `panel.rs` 纯结构拆出（把 `panel.rs` 保持在 400 行以内），**语义零变化**：
+//! 从 `panel.rs` 纯结构拆出（把 `panel.rs` 保持在 600 行以内），**语义零变化**：
 //! 只做 `UiConfig → SettingsPanel` 的字段搬运与调色板解析，不持有分发状态。
 //!
 //! 事件分发（`SettingsPanel::update`）仍留在 `panel.rs`，其 `match` 保持对

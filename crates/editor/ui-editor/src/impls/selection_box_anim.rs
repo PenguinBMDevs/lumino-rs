@@ -2,7 +2,7 @@
 //!
 //! 包含：`update_selection_box_animation` 方法。
 //!
-//! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
+//! 拆分原因：`editor_impl.rs` 接近 600 行限制，按职责拆分。
 
 use crate::Editor;
 use lumino_ui_core::geom::Point;
@@ -32,7 +32,7 @@ impl Editor {
             || self.editor_state.tool == lumino_message::Tool::PointerYSelect
         {
             // 清除任何残留的动画状态
-            self.selection_box_anim.set(None);
+            self.selection_ui.anim.set(None);
             return;
         }
 
@@ -66,7 +66,7 @@ impl Editor {
                 // 取 `marquee_edges(..).1` 即移动端（方向保持语义下与 current_tick 相等）。
                 let snapped_tick = if let Some(pos) = mouse_pos {
                     let mouse_tick = self.pos_to_tick(pos);
-                    match self.marquee_anchor_tick {
+                    match self.selection_ui.marquee_anchor {
                         Some(anchor) => self.marquee_edges(anchor, mouse_tick).1,
                         None => mouse_tick,
                     }
@@ -80,7 +80,7 @@ impl Editor {
                 };
 
                 // 获取或初始化动画状态
-                let anim = self.selection_box_anim.get();
+                let anim = self.selection_ui.anim.get();
 
                 let (display_current, mut velocity, last_snapped_tick, last_snapped_key) =
                     if let Some(state) = anim {
@@ -167,7 +167,7 @@ impl Editor {
 
                 let converged = dist_sq < POS_THRESHOLD_SQ && speed_sq < VEL_THRESHOLD_SQ;
 
-                self.selection_box_anim.set(Some(SelectionBoxAnimState {
+                self.selection_ui.anim.set(Some(SelectionBoxAnimState {
                     start_pos,
                     current_pos: current,
                     velocity,
@@ -178,7 +178,7 @@ impl Editor {
             }
             _ => {
                 // 非选择状态，清除动画状态
-                self.selection_box_anim.set(None);
+                self.selection_ui.anim.set(None);
             }
         }
     }

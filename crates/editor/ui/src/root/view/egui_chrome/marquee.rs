@@ -44,8 +44,7 @@ impl Root {
             editor.get_selection_box()
         } else {
             editor
-                .selection_box_anim
-                .get()
+                .selection_box_anim()
                 .map(|anim| (anim.start_pos, anim.current_pos))
                 .or_else(|| editor.get_selection_box())
         };

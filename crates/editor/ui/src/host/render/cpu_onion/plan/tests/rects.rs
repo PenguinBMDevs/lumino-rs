@@ -1,4 +1,4 @@
-//! 脏矩形换算验收（`plan/tests.rs` 的子模块，保持每个测试文件 < 400 行）。
+//! 脏矩形换算验收（`plan/tests.rs` 的子模块，保持每个测试文件 ≤600 行）。
 
 use lumino_midi_model::NoteEvent;
 

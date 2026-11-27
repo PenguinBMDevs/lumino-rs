@@ -29,7 +29,7 @@ impl super::Editor {
         // 必须放在两个 early return 之后：被拒绝的切轨（同轨 / 异步提交中）
         // 不能误清会话。会话清掉后 `bake_placement_active` 为 false，8 手柄与
         // 黄色选择框随之消失，✓ 也不会再把旧轨模型写进新轨。
-        if self.bake_placement.is_some() {
+        if self.shape_tools.bake_placement.is_some() {
             self.exit_bake_placement_to_pending();
         }
 
@@ -56,8 +56,8 @@ impl super::Editor {
         self.editor_state.interaction.clear_preview_sequence();
         // 丢弃未提交的批量拖动/复制：pending 的 selected 位图是旧轨的全局索引，
         // 换轨后继续保留会导致 ghost 渲染错位、提交时误伤新轨音符。
-        self.pending_drag_state = None;
-        self.pending_copy_drag_state = None;
+        self.transient.pending_drag = None;
+        self.transient.pending_copy = None;
         // 切轨只是切换当前显示的音轨（current_track_notes 换轨），并非用户编辑。
         // 空间索引与最长音符长度会因 `current_track` 参与失效键而自动重算
         // （见 `SpatialIndexState` 文档），故此处无需手工置脏；也不能设置

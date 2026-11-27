@@ -14,7 +14,7 @@ use super::*;
 fn test_keyboard_colors_incremental_scan() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.playback_key_state.key_colors.enabled = true;
     editor.editor_state.data.document = Some(doc);
 
     // === 阶段 1：tick=240，首次调用 → 全量重建路径 ===
@@ -22,17 +22,17 @@ fn test_keyboard_colors_incremental_scan() {
     editor.playback_position = 240.0;
     editor.update_playback_key_colors();
     assert_ne!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "C4 should be colored at tick 240 (full rebuild)"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[67 * 4 + 3],
         0,
         "G4 should be colored at tick 240 (full rebuild)"
     );
     assert_eq!(
-        editor.playback_key_colors[64 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[64 * 4 + 3],
         0,
         "E4 should NOT be colored at tick 240"
     );
@@ -43,17 +43,17 @@ fn test_keyboard_colors_incremental_scan() {
     editor.playback_position = 480.0;
     editor.update_playback_key_colors();
     assert_eq!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "C4 should be cleaned by retain at tick 480 (incremental)"
     );
     assert_ne!(
-        editor.playback_key_colors[64 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[64 * 4 + 3],
         0,
         "E4 should be added by incremental scan at tick 480"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[67 * 4 + 3],
         0,
         "G4 should remain active at tick 480"
     );
@@ -63,12 +63,12 @@ fn test_keyboard_colors_incremental_scan() {
     editor.playback_position = 960.0;
     editor.update_playback_key_colors();
     assert_eq!(
-        editor.playback_key_colors[64 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[64 * 4 + 3],
         0,
         "E4 should be cleaned by retain at tick 960"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[67 * 4 + 3],
         0,
         "G4 should still be active at tick 960"
     );
@@ -78,17 +78,17 @@ fn test_keyboard_colors_incremental_scan() {
     editor.playback_position = 300.0;
     editor.update_playback_key_colors();
     assert_ne!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "C4 should be active again after seek backward (full rebuild)"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[67 * 4 + 3],
         0,
         "G4 should still be active after seek backward"
     );
     assert_eq!(
-        editor.playback_key_colors[64 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[64 * 4 + 3],
         0,
         "E4 should not be active at tick 300"
     );
@@ -100,7 +100,7 @@ fn test_keyboard_colors_incremental_scan() {
 fn test_keyboard_colors_incremental_no_growth() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.playback_key_state.key_colors.enabled = true;
     editor.editor_state.data.document = Some(doc);
 
     // 从 tick=0 开始连续推进到 tick=2000，每步 10 tick
@@ -108,7 +108,7 @@ fn test_keyboard_colors_incremental_no_growth() {
     for tick in (0..=2000u32).step_by(10) {
         editor.playback_position = tick as f32;
         editor.update_playback_key_colors();
-        let active_len = editor.playback_scan_state.active_notes.len();
+        let active_len = editor.playback_key_state.scan.active_notes.len();
         // 活跃音符集合不会随 tick 累积——测试文档只有 3 个音符，活跃数应 ≤ 3
         assert!(
             active_len <= 3,
@@ -131,13 +131,17 @@ fn test_keyboard_colors_incremental_no_growth() {
 #[test]
 fn test_keyboard_colors_index_follows_notes_generation() {
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.playback_key_state.key_colors.enabled = true;
     editor.editor_state.data.document = Some(make_test_doc());
 
     // 建索引：tick=240 时 C4(60) 与 G4(67) 活跃
     editor.playback_position = 240.0;
     editor.update_playback_key_colors();
-    assert_ne!(editor.playback_key_colors[60 * 4 + 3], 0, "C4 初始应着色");
+    assert_ne!(
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
+        0,
+        "C4 初始应着色"
+    );
 
     // 就地删除 C4（track 0 中 start_tick 最小者，即 index 0），并 bump 音符世代
     // ——所有直接改动音符的入口都必须 `mark_track_notes_changed`（marks.rs 契约）
@@ -152,12 +156,12 @@ fn test_keyboard_colors_index_follows_notes_generation() {
     editor.playback_position = 120.0;
     editor.update_playback_key_colors();
     assert_eq!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "已删除的 C4 不得再着色：索引必须随音符世代失效并重建"
     );
     assert_ne!(
-        editor.playback_key_colors[67 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[67 * 4 + 3],
         0,
         "G4 仍活跃，应保持着色"
     );
@@ -172,13 +176,13 @@ fn test_keyboard_colors_index_follows_notes_generation() {
 #[test]
 fn test_keyboard_colors_index_follows_document_replacement() {
     let mut editor = Editor::new();
-    editor.playback_key_colors_enabled = true;
+    editor.playback_key_state.key_colors.enabled = true;
     editor.editor_state.data.document = Some(make_test_doc());
 
     editor.playback_position = 240.0;
     editor.update_playback_key_colors();
     assert_ne!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "旧文档 C4 应着色"
     );
@@ -190,12 +194,12 @@ fn test_keyboard_colors_index_follows_document_replacement() {
     // 同一 tick（不落入 tick 回退 / seek 分支）也必须触发索引重建
     editor.update_playback_key_colors();
     assert_eq!(
-        editor.playback_key_colors[60 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[60 * 4 + 3],
         0,
         "旧文档的 C4 不得残留：索引必须随世代重建"
     );
     assert_ne!(
-        editor.playback_key_colors[62 * 4 + 3],
+        editor.playback_key_state.key_colors.colors[62 * 4 + 3],
         0,
         "新文档的 D4 应着色"
     );

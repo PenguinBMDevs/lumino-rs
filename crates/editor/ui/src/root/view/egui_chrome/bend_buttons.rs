@@ -16,7 +16,7 @@ impl Root {
         let editor = &self.editor;
         if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
             tracing::info!(
-                tool = ?editor.current_tool(),
+                tool = ?editor.editor_state.current_tool(),
                 selected = ?editor.editor_state.line_tool.selected_anchor(),
                 paths = ?editor
                     .editor_state

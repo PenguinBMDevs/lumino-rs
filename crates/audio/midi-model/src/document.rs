@@ -4,7 +4,7 @@
 //! 每轨独立一个 Vec，按 start_tick 排序，查询时无需 active-table 配对。
 //!
 //! 本文件仅保留类型定义（`MidiDocument` / `TrackNoteView` / `TICK_SEARCH_BUFFER`）
-//! 与子模块声明，实现按职责拆分（保持各文件 < 400 行）：
+//! 与子模块声明，实现按职责拆分（保持各文件 ≤600 行）：
 //! - `scan`（document_scan.rs）：音轨名称扫描
 //! - `build`（document_build.rs）：构造与加载
 //! - `query`（document_query.rs）：只读查询
@@ -179,12 +179,6 @@ impl Clone for MidiDocument {
     }
 }
 
-/// MidiDocument 可写 API 单元测试（独立文件，保持本文件 < 400 行）
+/// MidiDocument 读写/加载测试（`tests/` 子模块，T-40b）
 #[cfg(test)]
-#[path = "document_write_tests.rs"]
 mod tests;
-
-/// MidiDocument 加载链路验收单测（EXP-006 数据保留，独立文件）
-#[cfg(test)]
-#[path = "document_load_tests.rs"]
-mod load_tests;

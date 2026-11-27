@@ -24,8 +24,6 @@
 mod confirm;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_triangle;
 
 use lumino_editor_state::shape_tool::point_in_shape;
 
@@ -50,7 +48,7 @@ impl Editor {
         // Ctrl+单击 = 打开「分音符填充」对话框（与曲线工具下的填充桶同行为），
         // 不标记填充、不开始拖拽。弹窗为主窗口覆盖层：只置请求位，由 Root 取走。
         if self.ctrl_pressed() {
-            self.fill_division_dialog_requested = true;
+            self.editor_state.line_tool.fill_division_dialog_requested = true;
             tracing::info!("形状工具: Ctrl+单击 → 请求打开分音符填充对话框");
             return;
         }

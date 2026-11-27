@@ -262,7 +262,17 @@ fn draw_segment(
     let (pixels, owner) = (&mut buffer.pixels, &mut buffer.owner);
     let row = &mut pixels[row_start..row_start + width];
     let own = &mut owner[row_start..row_start + width];
-    masked_fill_row(row, own, lx0, lx1, color, owner_value, owner_limit, simd)
+    masked_fill_row(
+        row,
+        own,
+        lx0,
+        lx1,
+        color,
+        owner_value,
+        owner_limit,
+        simd,
+        true,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

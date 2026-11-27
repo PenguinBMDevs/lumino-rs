@@ -59,6 +59,57 @@ where
     })
 }
 
+/// 在后台线程执行一次 FTP 操作，并把连接回填到 `slot`。
+///
+/// `panic_message`：工作线程 panic 时的错误文案（7 个操作各自的历史文案，
+/// 由调用点用 `tr!` 传入，保持既有翻译 key 不变）。
+fn run_ftp<T>(
+    slot: &mut Option<FtpStream>,
+    panic_message: &'static str,
+    op: impl FnOnce(&mut FtpStream) -> Result<T> + Send + 'static,
+) -> Result<T>
+where
+    T: Send + 'static,
+{
+    let (result, connection) = with_ftp(slot.take(), op)
+        .join()
+        .map_err(|_| CloudError::Operation(panic_message.to_string()))?;
+    *slot = connection;
+    result
+}
+
+/// `/dir/name` →（相对浏览根的目录, 文件名）。
+fn split_dir_name(path: &str) -> (String, String) {
+    match path.rfind('/') {
+        Some(0) => (String::new(), path[1..].to_string()),
+        Some(idx) => (
+            path[..idx].trim_start_matches('/').to_string(),
+            path[idx + 1..].to_string(),
+        ),
+        None => (String::new(), path.to_string()),
+    }
+}
+
+/// 回到浏览根并进入相对子目录。
+///
+/// 绝对路径 CWD 会跳出 `root_path` / 与服务器 chroot 语义不符，故统一按
+/// 「base + 相对段」导航。
+fn enter_dir(ftp: &mut FtpStream, base: &str, dir_rel: &str) -> Result<()> {
+    ftp.cwd(quote_path(base)).map_err(|e| {
+        CloudError::Protocol(trf!("进入根目录失败 {base}: {e}", base = base, e = e))
+    })?;
+    if !dir_rel.is_empty() {
+        ftp.cwd(quote_path(dir_rel)).map_err(|e| {
+            CloudError::Protocol(trf!(
+                "进入目录失败 {dir_rel}: {e}",
+                dir_rel = dir_rel,
+                e = e
+            ))
+        })?;
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl CloudClient for FtpClient {
     async fn connect(&mut self, conn: &CloudConnection) -> Result<()> {
@@ -125,207 +176,162 @@ impl CloudClient for FtpClient {
     async fn list_dir(&mut self, path: &str) -> Result<Vec<CloudEntry>> {
         let path = path.to_string();
         let base = self.base.clone();
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            // 用户视角路径（/xxx）→ 相对 base 的相对子路径（去前导 /）
-            let rel = normalize_remote(&path).trim_start_matches('/').to_string();
-            // 先 CWD 回浏览根基准，再进入相对子目录：
-            // 绝对路径 CWD 会跳出 root_path / 与服务器 chroot 语义不符
-            ftp.cwd(quote_path(&base)).map_err(|e| {
-                CloudError::Protocol(trf!("进入根目录失败 {base}: {e}", base = base, e = e))
-            })?;
-            if !rel.is_empty() {
-                ftp.cwd(quote_path(&rel)).map_err(|e| {
-                    CloudError::Protocol(trf!("进入目录失败 {path}: {e}", path = path, e = e))
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 列表线程异常退出"),
+            move |ftp| {
+                // 用户视角路径（/xxx）→ 相对 base 的相对子路径（去前导 /）
+                let rel = normalize_remote(&path);
+                let rel = rel.trim_start_matches('/');
+                // 先 CWD 回浏览根基准，再进入相对子目录：
+                // 绝对路径 CWD 会跳出 root_path / 与服务器 chroot 语义不符
+                enter_dir(ftp, &base, rel)?;
+                let lines = ftp.list(None).map_err(|e| {
+                    CloudError::Protocol(trf!("列出目录失败 {path}: {e}", path = path, e = e))
                 })?;
-            }
-            let lines = ftp.list(None).map_err(|e| {
-                CloudError::Protocol(trf!("列出目录失败 {path}: {e}", path = path, e = e))
-            })?;
-            let mut entries = Vec::new();
-            for line in &lines {
-                if let Some(mut entry) = parse_list_line(line) {
-                    // 过滤自身与上级目录标记
-                    if matches!(entry.name.as_str(), "." | "..") {
-                        continue;
+                let mut entries = Vec::new();
+                for line in &lines {
+                    if let Some(mut entry) = parse_list_line(line) {
+                        // 过滤自身与上级目录标记
+                        if matches!(entry.name.as_str(), "." | "..") {
+                            continue;
+                        }
+                        // 条目名可能带 ./ 前缀（部分服务器 LIST 输出），规范化拼接
+                        entry.path = normalize_remote(&join_remote(&path, &entry.name));
+                        entries.push(entry);
                     }
-                    // 条目名可能带 ./ 前缀（部分服务器 LIST 输出），规范化拼接
-                    entry.path = normalize_remote(&join_remote(&path, &entry.name));
-                    entries.push(entry);
                 }
-            }
-            Ok(entries)
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 列表线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+                Ok(entries)
+            },
+        )
     }
 
     async fn upload_file(&mut self, local: &Path, remote_path: &str) -> Result<()> {
         let remote_path = normalize_remote(remote_path);
         let local = local.to_path_buf();
         let base = self.base.clone();
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            // 先回到浏览根，再进入目标目录（相对路径）：
-            // suppaftp 直接 STOR 完整路径，路径含空格会拆断命令
-            // （如 "Parallel Universe Shifter.lmpj"），故分离目录与文件名
-            let dir_rel = match remote_path.rfind('/') {
-                Some(0) => String::new(),
-                Some(idx) => remote_path[..idx].trim_start_matches('/').to_string(),
-                None => String::new(),
-            };
-            let name = basename(&remote_path);
-            ftp.cwd(quote_path(&base)).map_err(|e| {
-                CloudError::Protocol(trf!("进入根目录失败 {base}: {e}", base = base, e = e))
-            })?;
-            if !dir_rel.is_empty() {
-                ftp.cwd(quote_path(&dir_rel)).map_err(|e| {
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 上传线程异常退出"),
+            move |ftp| {
+                // 先回到浏览根，再进入目标目录（相对路径）：
+                // suppaftp 直接 STOR 完整路径，路径含空格会拆断命令
+                // （如 "Parallel Universe Shifter.lmpj"），故分离目录与文件名
+                let (dir_rel, name) = split_dir_name(&remote_path);
+                enter_dir(ftp, &base, &dir_rel)?;
+                let mut file = std::fs::File::open(&local).map_err(CloudError::Io)?;
+                ftp.put_file(quote_path(&name), &mut file).map_err(|e| {
                     CloudError::Protocol(trf!(
-                        "进入目录失败 {dir_rel}: {e}",
-                        dir_rel = dir_rel,
+                        "上传失败 {remote_path}: {e}",
+                        remote_path = remote_path,
                         e = e
                     ))
                 })?;
-            }
-            let mut file = std::fs::File::open(&local).map_err(CloudError::Io)?;
-            ftp.put_file(quote_path(&name), &mut file).map_err(|e| {
-                CloudError::Protocol(trf!(
-                    "上传失败 {remote_path}: {e}",
-                    remote_path = remote_path,
-                    e = e
-                ))
-            })?;
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 上传线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+                Ok(())
+            },
+        )
     }
 
     async fn download_file(&mut self, remote_path: &str, local: &Path) -> Result<()> {
         let remote_path = normalize_remote(remote_path);
         let local = local.to_path_buf();
         let base = self.base.clone();
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            // 同上传：先回到浏览根并进入目标目录，再 RETR 文件名
-            let dir_rel = match remote_path.rfind('/') {
-                Some(0) => String::new(),
-                Some(idx) => remote_path[..idx].trim_start_matches('/').to_string(),
-                None => String::new(),
-            };
-            let name = basename(&remote_path);
-            ftp.cwd(quote_path(&base)).map_err(|e| {
-                CloudError::Protocol(trf!("进入根目录失败 {base}: {e}", base = base, e = e))
-            })?;
-            if !dir_rel.is_empty() {
-                ftp.cwd(quote_path(&dir_rel)).map_err(|e| {
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 下载线程异常退出"),
+            move |ftp| {
+                // 同上传：先回到浏览根并进入目标目录，再 RETR 文件名
+                let (dir_rel, name) = split_dir_name(&remote_path);
+                enter_dir(ftp, &base, &dir_rel)?;
+                let cursor = ftp.retr_as_buffer(&quote_path(&name)).map_err(|e| {
                     CloudError::Protocol(trf!(
-                        "进入目录失败 {dir_rel}: {e}",
-                        dir_rel = dir_rel,
+                        "下载失败 {remote_path}: {e}",
+                        remote_path = remote_path,
                         e = e
                     ))
                 })?;
-            }
-            let cursor = ftp.retr_as_buffer(&quote_path(&name)).map_err(|e| {
-                CloudError::Protocol(trf!(
-                    "下载失败 {remote_path}: {e}",
-                    remote_path = remote_path,
-                    e = e
-                ))
-            })?;
-            std::fs::write(&local, cursor.into_inner()).map_err(CloudError::Io)?;
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 下载线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+                std::fs::write(&local, cursor.into_inner()).map_err(CloudError::Io)?;
+                Ok(())
+            },
+        )
     }
 
     async fn rename(&mut self, from: &str, to: &str) -> Result<()> {
         // RNFR/RNTO 使用服务器真实路径（base + 相对段），无需切换目录
         let from = resolve_remote(&self.base, from);
         let to = resolve_remote(&self.base, to);
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            ftp.rename(quote_path(&from), quote_path(&to))
-                .map_err(|e| {
-                    CloudError::Protocol(trf!(
-                        "重命名失败 {from} → {to}: {e}",
-                        from = from,
-                        to = to,
-                        e = e
-                    ))
-                })?;
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 重命名线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 重命名线程异常退出"),
+            move |ftp| {
+                ftp.rename(quote_path(&from), quote_path(&to))
+                    .map_err(|e| {
+                        CloudError::Protocol(trf!(
+                            "重命名失败 {from} → {to}: {e}",
+                            from = from,
+                            to = to,
+                            e = e
+                        ))
+                    })?;
+                Ok(())
+            },
+        )
     }
 
     async fn delete(&mut self, path: &str, is_dir: bool) -> Result<()> {
         let path = resolve_remote(&self.base, path);
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            if is_dir {
-                ftp.rmdir(quote_path(&path)).map_err(|e| {
-                    CloudError::Protocol(trf!("删除目录失败 {path}: {e}", path = path, e = e))
-                })?;
-            } else {
-                ftp.rm(quote_path(&path)).map_err(|e| {
-                    CloudError::Protocol(trf!("删除文件失败 {path}: {e}", path = path, e = e))
-                })?;
-            }
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 删除线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 删除线程异常退出"),
+            move |ftp| {
+                if is_dir {
+                    ftp.rmdir(quote_path(&path)).map_err(|e| {
+                        CloudError::Protocol(trf!("删除目录失败 {path}: {e}", path = path, e = e))
+                    })?;
+                } else {
+                    ftp.rm(quote_path(&path)).map_err(|e| {
+                        CloudError::Protocol(trf!("删除文件失败 {path}: {e}", path = path, e = e))
+                    })?;
+                }
+                Ok(())
+            },
+        )
     }
 
     async fn move_file(&mut self, from: &str, to_dir: &str) -> Result<()> {
         let from = resolve_remote(&self.base, from);
         let to = resolve_remote(&self.base, join_remote(to_dir, &basename(&from)).as_str());
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            // FTP RNFR/RNTO 跨目录移动：多数服务器支持（vsftpd/proftpd 均支持）
-            ftp.rename(quote_path(&from), quote_path(&to))
-                .map_err(|e| {
-                    CloudError::Protocol(trf!(
-                        "移动失败 {from} → {to}: {e}",
-                        from = from,
-                        to = to,
-                        e = e
-                    ))
-                })?;
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 移动线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 移动线程异常退出"),
+            move |ftp| {
+                // FTP RNFR/RNTO 跨目录移动：多数服务器支持（vsftpd/proftpd 均支持）
+                ftp.rename(quote_path(&from), quote_path(&to))
+                    .map_err(|e| {
+                        CloudError::Protocol(trf!(
+                            "移动失败 {from} → {to}: {e}",
+                            from = from,
+                            to = to,
+                            e = e
+                        ))
+                    })?;
+                Ok(())
+            },
+        )
     }
 
     async fn create_dir(&mut self, path: &str) -> Result<()> {
         let path = resolve_remote(&self.base, path);
-        let handle = with_ftp(self.ftp.take(), move |ftp| {
-            ftp.mkdir(quote_path(&path)).map_err(|e| {
-                CloudError::Protocol(trf!("创建目录失败 {path}: {e}", path = path, e = e))
-            })?;
-            Ok(())
-        });
-        let (result, ftp) = handle
-            .join()
-            .map_err(|_| CloudError::Operation(tr!("FTP 建目录线程异常退出").to_string()))?;
-        self.ftp = ftp;
-        result
+        run_ftp(
+            &mut self.ftp,
+            tr!("FTP 建目录线程异常退出"),
+            move |ftp| {
+                ftp.mkdir(quote_path(&path)).map_err(|e| {
+                    CloudError::Protocol(trf!("创建目录失败 {path}: {e}", path = path, e = e))
+                })?;
+                Ok(())
+            },
+        )
     }
 }
 

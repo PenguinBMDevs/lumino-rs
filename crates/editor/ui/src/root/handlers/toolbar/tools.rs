@@ -2,7 +2,7 @@
 //!
 //! 包括工具选择、精度同步、撤销/重做、量化、变速、翻转、移调、分割/合并等。
 //!
-//! 子模块组织（保持本文件 < 400 行）：
+//! 子模块组织（保持本文件 ≤600 行）：
 //! - `note_ops`: 逐音符独立变换（量化/变速/翻转/移调）
 //! - `note_group_ops`: 成组类操作（连奏/分割合并）
 //! - `view_gate`: 批量操作的**视图仲裁闸门**（钢琴卷帘 / 工程走带的作用域隔离）
@@ -19,17 +19,20 @@ impl ToolbarHandler {
     pub(crate) fn sync_toolbar_tool_state(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if let crate::toolbar::Event::ToolSelected(tool) = event {
             root.editor.set_tool(*tool);
-            root.editor.set_line_arc_mode(false);
+            root.editor.editor_state.line_tool.set_arc_mode(false);
         }
         // 面板内选择工具：把工具栏已更新的 current_tool / fill_enabled 镜像到编辑器。
-        // 注意：`view_arrangement` 每帧会用 `editor.current_tool()` 反向覆盖
+        // 注意：`view_arrangement` 每帧会用 `editor.editor_state.current_tool()` 反向覆盖
         // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
         // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
         match event {
             crate::toolbar::Event::ToolPanelItemSelected(_) => {
                 root.editor.set_tool(root.toolbar.current_tool);
                 root.editor.set_fill_enabled(root.toolbar.fill_enabled);
-                root.editor.set_line_arc_mode(root.toolbar.arc_mode);
+                root.editor
+                    .editor_state
+                    .line_tool
+                    .set_arc_mode(root.toolbar.arc_mode);
             }
             // 再次点击已启用条目：先镜像「选择」结果，再落下该工具的设置副作用。
             crate::toolbar::Event::ToolPanelItemSettingsRequested(item) => match item {
@@ -43,7 +46,10 @@ impl ToolbarHandler {
                     // 画刷 / 形状等：镜像工具与填充状态；设置下拉的开关由工具栏侧处理。
                     root.editor.set_tool(root.toolbar.current_tool);
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
-                    root.editor.set_line_arc_mode(root.toolbar.arc_mode);
+                    root.editor
+                        .editor_state
+                        .line_tool
+                        .set_arc_mode(root.toolbar.arc_mode);
                 }
             },
             _ => {}
@@ -60,7 +66,7 @@ impl ToolbarHandler {
                 crate::toolbar::ShapeType::Circle => lumino_editor_state::ShapeKind::Circle,
                 crate::toolbar::ShapeType::Triangle => lumino_editor_state::ShapeKind::Triangle,
             };
-            root.editor.set_shape(kind);
+            root.editor.editor_state.shape_tool.set_shape_kind(kind);
             tracing::debug!("Root: 形状工具类型切换为 {:?}", kind);
         }
         // DEBT-17：换工具前可能已把过期刀清掉，通知在这里转 toast

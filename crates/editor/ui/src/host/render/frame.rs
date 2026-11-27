@@ -90,8 +90,7 @@ impl Host {
         let has_selection_anim = self
             .root
             .editor
-            .selection_box_anim
-            .get()
+            .selection_box_anim()
             .is_some_and(|s| !s.converged);
         // 剪辑面板独立传输播放中：逐帧驱动重绘，否则秒域时钟只在其它重绘
         // 机会下推进，画面定格不动（看似「播不动」）

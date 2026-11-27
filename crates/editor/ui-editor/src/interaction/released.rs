@@ -19,13 +19,17 @@ impl Editor {
             return;
         }
         // DRAW-025：切割松手 = 按拖出的线切分（失败保留布防）
-        if self.slice_cut.is_some_and(|state| state.dragging) {
+        if self
+            .shape_tools
+            .slice_cut
+            .is_some_and(|state| state.dragging)
+        {
             self.slice_cut_released();
             return;
         }
         // 框选结束：清除量化锚点（框选过程中的临时状态，任何一条松手路径都不再需要）。
         // 放在最前，保证 i2m / 文字 / 曲线等提前返回的分支同样被清理。
-        self.marquee_anchor_tick = None;
+        self.selection_ui.marquee_anchor = None;
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
         // DRAW-049：Bake 放置态 B 阶段拉框收口
@@ -117,7 +121,8 @@ impl Editor {
                     // 协作未连接时跳过：消费端 `is_connected` 会短路丢弃，而指纹构建
                     // （百万级选中 ~100ms）纯浪费。
                     if self.editor_state.data.collab_sync_enabled() {
-                        self.emit_local_selection_changed(true);
+                        let fps = self.selected_fingerprints();
+                        self.transient.emit_local_selection_changed(true, &fps);
                     }
                 }
             }
@@ -194,8 +199,8 @@ impl Editor {
                         cur_dt,
                         cur_dk
                     );
-                    self.pending_drag_state = Some(fresh);
-                } else if let Some(mut pending) = self.pending_drag_state.take() {
+                    self.transient.pending_drag = Some(fresh);
+                } else if let Some(mut pending) = self.transient.pending_drag.take() {
                     pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
                     pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
                     tracing::debug!(
@@ -203,14 +208,14 @@ impl Editor {
                         pending.delta_tick,
                         pending.delta_key
                     );
-                    self.pending_drag_state = Some(pending);
+                    self.transient.pending_drag = Some(pending);
                 } else {
                     tracing::debug!(
                         "Editor: 保存 pending 拖动 - delta=({}, {})",
                         drag_state.delta_tick,
                         drag_state.delta_key
                     );
-                    self.pending_drag_state = Some(drag_state);
+                    self.transient.pending_drag = Some(drag_state);
                 }
                 // 保留 selected_notes 不清空（pending 状态下仍显示框选）
                 // edit_state 切换到 Idle（std::mem::take 已处理）
@@ -232,7 +237,7 @@ impl Editor {
                 if drag_state.is_delta_zero() {
                     tracing::debug!("Editor: 复制拖动 delta 为零，取消复制");
                 } else {
-                    self.pending_copy_drag_state = Some(drag_state);
+                    self.transient.pending_copy = Some(drag_state);
                     self.commit_pending_copy();
                 }
                 // 不调用 mark_notes_changed（commit_pending_copy 内部已标记）
@@ -241,7 +246,7 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                self.selected_bounds.set(None);
+                self.selection_ui.bounds.set(None);
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();
@@ -276,7 +281,7 @@ impl Editor {
                 origin_tick,
                 last_tick,
             } => {
-                self.selected_bounds.set(None);
+                self.selection_ui.bounds.set(None);
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();

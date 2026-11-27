@@ -397,3 +397,5 @@ fn onion_skin_degrade_throttle_gates() {
     assert!(!state.degrade_retry_ready(), "节流窗口内不应重试");
     assert!(!state.degrade_warn_due(), "聚合窗口内不应重复告警");
 }
+mod cpu;
+mod toggle;

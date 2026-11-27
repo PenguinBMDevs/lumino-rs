@@ -48,9 +48,9 @@ impl Root {
             RendererSettingLine {
                 text: trf!(
                     "格式: {container}  编码: {codec}  质量: {quality}",
-                    container = export.container,
-                    codec = export.codec,
-                    quality = lumino_core::i18n::tr_dyn(&export.quality)
+                    container = export.basic.container,
+                    codec = export.basic.codec,
+                    quality = lumino_core::i18n::tr_dyn(&export.basic.quality)
                 ),
                 size: 12.0,
                 muted: true,
@@ -58,10 +58,10 @@ impl Root {
             RendererSettingLine {
                 text: trf!(
                     "分辨率: {width}x{height}  帧率: {fps}  速度: {speed}x",
-                    width = export.width,
-                    height = export.height,
-                    fps = export.fps,
-                    speed = format!("{:.1}", export.waterfall_speed)
+                    width = export.basic.width,
+                    height = export.basic.height,
+                    fps = export.basic.fps,
+                    speed = format!("{:.1}", export.basic.waterfall_speed)
                 ),
                 size: 12.0,
                 muted: true,

@@ -12,6 +12,7 @@ pub use palette::{Extended as ExtendedPalette, Palette};
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::geom::Color;
@@ -67,6 +68,58 @@ pub enum Theme {
     Custom(Arc<Custom>),
 }
 
+/// 内置主题表项：`(枚举值, 持久化名, 色板, 派生色板)`。
+type Builtin = (Theme, &'static str, Palette, LazyLock<palette::Extended>);
+
+/// 表项简写：只写枚举值/名称/色板，派生色板按标准公式惰性生成。
+///
+/// 这不是主题注册宏——`Theme::ALL` 仍是唯一的枚举清单，本表只是把
+/// 「名称 + 色板 + 派生色板」放在同一行，避免 22 个 `EXTENDED_*` 静态。
+macro_rules! builtin {
+    ($theme:ident, $name:literal, $palette:ident) => {
+        (
+            Theme::$theme,
+            $name,
+            Palette::$palette,
+            LazyLock::new(|| palette::Extended::generate(Palette::$palette)),
+        )
+    };
+}
+
+/// 内置主题单一表（顺序必须与 [`Theme::ALL`] 一致，由单测锁定）。
+///
+/// 原先 `palette` / `extended_palette` / `name` 各有一份 22 分支 match，
+/// 派生色板另有 22 个 `EXTENDED_*` 静态；改为本表后新增主题只需在
+/// [`Theme::ALL`] 与本表各加一行。
+static BUILTINS: [Builtin; 22] = [
+    builtin!(Light, "Light", LIGHT),
+    builtin!(Dark, "Dark", DARK),
+    builtin!(Dracula, "Dracula", DRACULA),
+    builtin!(Nord, "Nord", NORD),
+    builtin!(SolarizedLight, "Solarized Light", SOLARIZED_LIGHT),
+    builtin!(SolarizedDark, "Solarized Dark", SOLARIZED_DARK),
+    builtin!(GruvboxLight, "Gruvbox Light", GRUVBOX_LIGHT),
+    builtin!(GruvboxDark, "Gruvbox Dark", GRUVBOX_DARK),
+    builtin!(CatppuccinLatte, "Catppuccin Latte", CATPPUCCIN_LATTE),
+    builtin!(CatppuccinFrappe, "Catppuccin Frappé", CATPPUCCIN_FRAPPE),
+    builtin!(
+        CatppuccinMacchiato,
+        "Catppuccin Macchiato",
+        CATPPUCCIN_MACCHIATO
+    ),
+    builtin!(CatppuccinMocha, "Catppuccin Mocha", CATPPUCCIN_MOCHA),
+    builtin!(TokyoNight, "Tokyo Night", TOKYO_NIGHT),
+    builtin!(TokyoNightStorm, "Tokyo Night Storm", TOKYO_NIGHT_STORM),
+    builtin!(TokyoNightLight, "Tokyo Night Light", TOKYO_NIGHT_LIGHT),
+    builtin!(KanagawaWave, "Kanagawa Wave", KANAGAWA_WAVE),
+    builtin!(KanagawaDragon, "Kanagawa Dragon", KANAGAWA_DRAGON),
+    builtin!(KanagawaLotus, "Kanagawa Lotus", KANAGAWA_LOTUS),
+    builtin!(Moonfly, "Moonfly", MOONFLY),
+    builtin!(Nightfly, "Nightfly", NIGHTFLY),
+    builtin!(Oxocarbon, "Oxocarbon", OXOCARBON),
+    builtin!(Ferra, "Ferra", FERRA),
+];
+
 impl Theme {
     /// 全部内置主题。
     pub const ALL: &'static [Self] = &[
@@ -103,90 +156,51 @@ impl Theme {
         )))
     }
 
+    /// 查找内置主题描述；`Custom` 与未登记变体返回 `None`。
+    fn builtin(&self) -> Option<&'static Builtin> {
+        BUILTINS.iter().find(|(theme, ..)| theme == self)
+    }
+
     /// 返回主题色板。
     pub fn palette(&self) -> Palette {
-        match self {
-            Self::Light => Palette::LIGHT,
-            Self::Dark => Palette::DARK,
-            Self::Dracula => Palette::DRACULA,
-            Self::Nord => Palette::NORD,
-            Self::SolarizedLight => Palette::SOLARIZED_LIGHT,
-            Self::SolarizedDark => Palette::SOLARIZED_DARK,
-            Self::GruvboxLight => Palette::GRUVBOX_LIGHT,
-            Self::GruvboxDark => Palette::GRUVBOX_DARK,
-            Self::CatppuccinLatte => Palette::CATPPUCCIN_LATTE,
-            Self::CatppuccinFrappe => Palette::CATPPUCCIN_FRAPPE,
-            Self::CatppuccinMacchiato => Palette::CATPPUCCIN_MACCHIATO,
-            Self::CatppuccinMocha => Palette::CATPPUCCIN_MOCHA,
-            Self::TokyoNight => Palette::TOKYO_NIGHT,
-            Self::TokyoNightStorm => Palette::TOKYO_NIGHT_STORM,
-            Self::TokyoNightLight => Palette::TOKYO_NIGHT_LIGHT,
-            Self::KanagawaWave => Palette::KANAGAWA_WAVE,
-            Self::KanagawaDragon => Palette::KANAGAWA_DRAGON,
-            Self::KanagawaLotus => Palette::KANAGAWA_LOTUS,
-            Self::Moonfly => Palette::MOONFLY,
-            Self::Nightfly => Palette::NIGHTFLY,
-            Self::Oxocarbon => Palette::OXOCARBON,
-            Self::Ferra => Palette::FERRA,
-            Self::Custom(custom) => custom.palette,
+        if let Self::Custom(custom) = self {
+            return custom.palette;
+        }
+        match self.builtin() {
+            Some((_, _, palette, _)) => *palette,
+            None => {
+                // 所有非 Custom 变体都应在表中；debug 构建直接暴露漏登记
+                debug_assert!(false, "内置主题缺少 BUILTINS 表项: {self:?}");
+                Palette::DARK
+            }
         }
     }
 
     /// 返回派生色板（weak/strong/text 组合）。
     pub fn extended_palette(&self) -> &palette::Extended {
-        match self {
-            Self::Light => &palette::EXTENDED_LIGHT,
-            Self::Dark => &palette::EXTENDED_DARK,
-            Self::Dracula => &palette::EXTENDED_DRACULA,
-            Self::Nord => &palette::EXTENDED_NORD,
-            Self::SolarizedLight => &palette::EXTENDED_SOLARIZED_LIGHT,
-            Self::SolarizedDark => &palette::EXTENDED_SOLARIZED_DARK,
-            Self::GruvboxLight => &palette::EXTENDED_GRUVBOX_LIGHT,
-            Self::GruvboxDark => &palette::EXTENDED_GRUVBOX_DARK,
-            Self::CatppuccinLatte => &palette::EXTENDED_CATPPUCCIN_LATTE,
-            Self::CatppuccinFrappe => &palette::EXTENDED_CATPPUCCIN_FRAPPE,
-            Self::CatppuccinMacchiato => &palette::EXTENDED_CATPPUCCIN_MACCHIATO,
-            Self::CatppuccinMocha => &palette::EXTENDED_CATPPUCCIN_MOCHA,
-            Self::TokyoNight => &palette::EXTENDED_TOKYO_NIGHT,
-            Self::TokyoNightStorm => &palette::EXTENDED_TOKYO_NIGHT_STORM,
-            Self::TokyoNightLight => &palette::EXTENDED_TOKYO_NIGHT_LIGHT,
-            Self::KanagawaWave => &palette::EXTENDED_KANAGAWA_WAVE,
-            Self::KanagawaDragon => &palette::EXTENDED_KANAGAWA_DRAGON,
-            Self::KanagawaLotus => &palette::EXTENDED_KANAGAWA_LOTUS,
-            Self::Moonfly => &palette::EXTENDED_MOONFLY,
-            Self::Nightfly => &palette::EXTENDED_NIGHTFLY,
-            Self::Oxocarbon => &palette::EXTENDED_OXOCARBON,
-            Self::Ferra => &palette::EXTENDED_FERRA,
-            Self::Custom(custom) => &custom.extended,
+        if let Self::Custom(custom) = self {
+            return &custom.extended;
+        }
+        match self.builtin() {
+            Some((_, _, _, extended)) => extended,
+            None => {
+                debug_assert!(false, "内置主题缺少 BUILTINS 表项: {self:?}");
+                &BUILTINS[1].3
+            }
         }
     }
 
     /// 主题名（设置列表与持久化共用）。
     pub fn name(&self) -> &str {
-        match self {
-            Self::Light => "Light",
-            Self::Dark => "Dark",
-            Self::Dracula => "Dracula",
-            Self::Nord => "Nord",
-            Self::SolarizedLight => "Solarized Light",
-            Self::SolarizedDark => "Solarized Dark",
-            Self::GruvboxLight => "Gruvbox Light",
-            Self::GruvboxDark => "Gruvbox Dark",
-            Self::CatppuccinLatte => "Catppuccin Latte",
-            Self::CatppuccinFrappe => "Catppuccin Frappé",
-            Self::CatppuccinMacchiato => "Catppuccin Macchiato",
-            Self::CatppuccinMocha => "Catppuccin Mocha",
-            Self::TokyoNight => "Tokyo Night",
-            Self::TokyoNightStorm => "Tokyo Night Storm",
-            Self::TokyoNightLight => "Tokyo Night Light",
-            Self::KanagawaWave => "Kanagawa Wave",
-            Self::KanagawaDragon => "Kanagawa Dragon",
-            Self::KanagawaLotus => "Kanagawa Lotus",
-            Self::Moonfly => "Moonfly",
-            Self::Nightfly => "Nightfly",
-            Self::Oxocarbon => "Oxocarbon",
-            Self::Ferra => "Ferra",
-            Self::Custom(custom) => &custom.name,
+        if let Self::Custom(custom) = self {
+            return &custom.name;
+        }
+        match self.builtin() {
+            Some((_, name, _, _)) => name,
+            None => {
+                debug_assert!(false, "内置主题缺少 BUILTINS 表项: {self:?}");
+                "Unknown"
+            }
         }
     }
 }
@@ -299,4 +313,44 @@ pub mod hc {
     pub const BORDER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.6);
     /// 白键分隔线
     pub const KEY_LINE: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.35);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 单一表必须与 `Theme::ALL` 一一对应（数量与顺序）
+    #[test]
+    fn builtin_table_covers_all_themes_in_order() {
+        assert_eq!(
+            BUILTINS.len(),
+            Theme::ALL.len(),
+            "表项与 Theme::ALL 数量不一致"
+        );
+        for ((builtin, ..), theme) in BUILTINS.iter().zip(Theme::ALL) {
+            assert_eq!(builtin, theme, "表顺序必须与 Theme::ALL 一致");
+        }
+    }
+
+    /// 三条访问路径都必须命中表项（防止 getter 回退到兜底值）
+    #[test]
+    fn theme_getters_resolve_from_table() {
+        for (theme, name, palette, extended) in BUILTINS.iter() {
+            assert_eq!(theme.name(), *name);
+            assert_eq!(theme.palette(), *palette);
+            assert_eq!(*theme.extended_palette(), **extended);
+        }
+    }
+
+    /// Custom 主题不受表影响
+    #[test]
+    fn custom_theme_uses_own_values() {
+        let theme = Theme::custom("Custom Test", Palette::LIGHT);
+        assert_eq!(theme.name(), "Custom Test");
+        assert_eq!(theme.palette(), Palette::LIGHT);
+        assert_eq!(
+            *theme.extended_palette(),
+            palette::Extended::generate(Palette::LIGHT)
+        );
+    }
 }

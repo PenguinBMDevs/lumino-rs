@@ -1,4 +1,4 @@
-//! 对话框尺寸声明表的回归测试（从 dialog_preferred_size.rs 拆出，保持单文件 < 400 行）。
+//! 对话框尺寸声明表的回归测试（从 dialog_preferred_size.rs 拆出，保持单文件 ≤600 行）。
 
 use super::*;
 

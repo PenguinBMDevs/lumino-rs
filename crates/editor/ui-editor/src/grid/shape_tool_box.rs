@@ -77,8 +77,8 @@ fn shape_screen_aabb(editor: &Editor, spec: ShapeSpec) -> (f32, f32, f32, f32) {
 /// 形状工具始终可操作；选择工具只在存在组合结果时显示按钮，
 /// 让 041C 的 composed 结果在 ShapeSelect 下就能确认，不必切回形状工具。
 pub(crate) fn shape_buttons_active(editor: &Editor) -> bool {
-    editor.current_tool() == lumino_message::Tool::Shape
-        || (editor.current_tool() == lumino_message::Tool::ShapeSelect
+    editor.editor_state.current_tool() == lumino_message::Tool::Shape
+        || (editor.editor_state.current_tool() == lumino_message::Tool::ShapeSelect
             && !editor.editor_state.pending_composed.is_empty())
 }
 

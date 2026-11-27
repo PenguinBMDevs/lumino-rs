@@ -21,6 +21,7 @@ pub mod stream;
 pub mod tick_conv;
 
 pub(crate) mod block_scheduler;
+mod render_driver;
 mod report;
 
 pub use config::AudioRenderConfig;

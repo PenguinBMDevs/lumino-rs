@@ -66,7 +66,7 @@ impl Editor {
         let edge_threshold = NOTE_EDGE_THRESHOLD_PX / view.zoom_x;
         let max_key = view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
+        let pending = &self.transient.pending_drag;
 
         // 1. 先检查 ghost 偏移影响的音符（pending / 当前 drag）。
         //    这些音符视觉上已移动，但 document 和空间索引仍是旧位置，

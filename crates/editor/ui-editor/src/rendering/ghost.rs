@@ -1,6 +1,6 @@
 //! Ghost 拖动偏移计算辅助函数
 //!
-//! 拆分原因：rendering.rs 接近 400 行限制，按职责拆分。
+//! 拆分原因：rendering.rs 接近 600 行限制，按职责拆分。
 //!
 //! 这些函数在 hot loop 中被调用（每帧可达百万次），绝对不要在此处添加
 //! puffin::profile_scope! 等 per-element 开销。puffin scope 应放在外层的

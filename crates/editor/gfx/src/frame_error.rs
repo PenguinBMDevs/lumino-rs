@@ -53,7 +53,7 @@ pub fn classify_frame_error(err: &SurfaceError) -> FrameErrorAction {
     }
 }
 
-/// R0：分类表驱动测试（独立文件，保持本文件 < 400 行）。
+/// R0：分类表驱动测试（独立文件，保持本文件 ≤600 行）。
 #[cfg(test)]
 #[path = "frame_error/tests.rs"]
 mod tests;

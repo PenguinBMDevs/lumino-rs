@@ -1,6 +1,6 @@
 //! 文档快照 / 派生索引 / 总览密度缓存的维护（`state.rs` 子模块）。
 //!
-//! 拆出来只为守住单文件 < 400 行：三个动作都只改 `CpuOnionState` 的字段，
+//! 拆出来只为守住单文件 ≤600 行：三个动作都只改 `CpuOnionState` 的字段，
 //! 不参与帧计划判定（见 `plan.rs`）。
 
 use std::collections::HashSet;

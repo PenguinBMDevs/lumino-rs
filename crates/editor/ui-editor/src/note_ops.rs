@@ -1,6 +1,6 @@
 //! 音符操作子模块入口
 //!
-//! 按职责拆分以满足 ≤400 行约束：
+//! 按职责拆分以满足 ≤600 行约束：
 //! - `selection`: 选中集合增删改（insert/remove/clear/assign）
 //! - `selection_remap`: 结构编辑后主选择索引重映射（按 id 恢复选中）
 //! - `hit_test`: 音符命中检测（hit_test_note + note_hit_type）
@@ -86,6 +86,6 @@ impl Editor {
         for i in 0..note_count {
             set.insert(i);
         }
-        self.selected_bounds.set(bounds.get());
+        self.selection_ui.bounds.set(bounds.get());
     }
 }

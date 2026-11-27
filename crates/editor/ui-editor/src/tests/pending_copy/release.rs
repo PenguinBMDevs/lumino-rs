@@ -59,7 +59,7 @@ fn test_released_copy_drag_commits_immediately() {
         .expect("副本应存在");
     assert_eq!(copy.key, 67);
     // pending 已清空（提交完成）
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     // 副本被选中（最新件框选）
     assert!(editor.has_selection());
     // 编辑状态回到 Idle
@@ -75,7 +75,7 @@ fn test_released_copy_drag_zero_delta_does_not_save() {
     let zero_drag = DragState::from_single(0, 1, 0, 60);
     release_copy_drag(&mut editor, zero_drag);
 
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
 }
 
@@ -98,7 +98,7 @@ fn test_released_copy_drag_selects_copies() {
 
     // 松手即提交：document 4 个音符（原件 + 副本），副本选中
     assert_eq!(editor.editor_state.data.current_track_note_count(), 4);
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert!(editor.has_selection(), "提交后副本应保持选中（最新件框选）");
     // 只选中副本（tick 50 / 290），原件不选中
     let selected: Vec<usize> = editor.get_selected_indices();

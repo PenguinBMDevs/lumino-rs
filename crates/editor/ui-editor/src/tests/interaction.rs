@@ -253,11 +253,11 @@ fn test_tool_setting() {
     let mut editor = Editor::new();
 
     // 默认应该是指针工具
-    assert_eq!(editor.current_tool(), Tool::Pointer);
+    assert_eq!(editor.editor_state.current_tool(), Tool::Pointer);
 
     // 设置为铅笔工具
     editor.set_tool(Tool::Pencil);
-    assert_eq!(editor.current_tool(), Tool::Pencil);
+    assert_eq!(editor.editor_state.current_tool(), Tool::Pencil);
 
     // 添加选中状态
     editor.editor_state.interaction.selected_notes.insert(0);

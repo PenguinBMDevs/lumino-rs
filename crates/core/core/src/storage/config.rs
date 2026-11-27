@@ -351,13 +351,5 @@ impl Default for UiConfig {
     }
 }
 
-/// `UiConfig` 序列化/默认值测试（独立文件：本文件已超过 400 行，不得继续塞行）
-#[cfg(test)]
-mod autosave_tests;
-
 #[cfg(test)]
 mod tests;
-
-/// 洋葱皮后端配置测试（独立文件：本文件已超过 400 行，不得继续塞行）
-#[cfg(test)]
-mod tests_onion_backend;

@@ -51,8 +51,8 @@ fn selected_sorted(editor: &Editor) -> Vec<usize> {
 
 /// 全量框选（清空增量缓存后重建），返回选中索引
 fn box_select_full(editor: &mut Editor, t0: f32, t1: f32, k0: u16, k1: u16) -> Vec<usize> {
-    editor.cached_selection_bounds.set(None);
-    editor.selected_bounds.set(None);
+    editor.selection_ui.cached_bounds.set(None);
+    editor.selection_ui.bounds.set(None);
     editor.editor_state.interaction.selected_notes.clear();
     editor.editor_state.interaction.edit_state = EditState::Selecting {
         start_tick: t0,
@@ -220,7 +220,8 @@ fn test_flight_second_drag_serializes_consistently() {
     );
     assert_eq!(
         editor
-            .pending_drag_state
+            .transient
+            .pending_drag
             .as_ref()
             .expect("应有新基准 pending")
             .delta_tick,
@@ -236,7 +237,7 @@ fn test_flight_second_drag_serializes_consistently() {
         "两次落盘总量应等于视觉总量（100+50）"
     );
     assert!(
-        editor.pending_drag_state.is_none(),
+        editor.transient.pending_drag.is_none(),
         "全部落盘后 pending 应清空"
     );
     // 显示一致性：无 pending 时幽灵增量为空
@@ -280,7 +281,7 @@ fn test_repeated_box_move_cycles_display_matches_memory() {
             "第 {round} 轮内存应步进 +100"
         );
         assert!(
-            editor.pending_drag_state.is_none(),
+            editor.transient.pending_drag.is_none(),
             "第 {round} 轮落盘后 pending 应清空"
         );
         assert!(
@@ -310,7 +311,10 @@ fn test_selection_box_follows_ghost_during_pending() {
 
     start_batch_drag(&mut editor, [0, 1], 200, 0);
     editor.handle_released();
-    assert!(editor.pending_drag_state.is_some(), "松手后应有 pending");
+    assert!(
+        editor.transient.pending_drag.is_some(),
+        "松手后应有 pending"
+    );
     // 文档未动（幽灵方案），但选择框必须跟随到幽灵位置
     assert_eq!(
         track_ticks(&editor, 0),

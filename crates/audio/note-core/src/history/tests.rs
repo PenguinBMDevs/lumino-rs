@@ -5,7 +5,7 @@
 //! - EditorSnapshot 构造
 //! - 元数据：group_id 分配 / op_kind / entry_count
 //!
-//! 拆分说明（避免单文件超 400 行）：
+//! 拆分说明（避免单文件超 600 行）：
 //! - `tests/merge.rs`：合并窗口（push_mergeable）与 set_config 测试
 //! - `tests/logical.rs`：逻辑撤销/重做（undo_logical / redo_logical）测试
 //! - `tests/move_op.rs`：MoveOp inverse / push_move_op / 混合 undo-redo 测试
@@ -282,3 +282,4 @@ fn test_op_kind_is_chain_marker() {
     assert!(OpKind::ChainMarker.is_chain_marker());
     assert!(!OpKind::Other.is_chain_marker());
 }
+mod note_create;

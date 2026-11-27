@@ -126,7 +126,23 @@ pub fn apply_note_ops(notes: &mut Vec<ShapeNote>, ops: &[ShapeOp], ctx: &NoteOpC
             ShapeOp::VelocityEnv(env) => {
                 *notes = super::velocity_tool::apply(notes, env, ctx.ppq);
             }
-            _ => {}
+            // Glue / Sustain 由本函数前后的专门遍历处理（保序，不在此 match 内）。
+            ShapeOp::Glue(_) | ShapeOp::Sustain(_) => {}
+            // 以下算子在 Geometry 阶段生效（或仅作为上层标记），Notes 阶段不改音符。
+            ShapeOp::Noop
+            | ShapeOp::Tumours(_)
+            | ShapeOp::Polygon(_)
+            | ShapeOp::Pattern(_)
+            | ShapeOp::Funnel(_)
+            | ShapeOp::Live(_)
+            | ShapeOp::Joined(_)
+            | ShapeOp::Symmetry(_)
+            | ShapeOp::Straighten(_)
+            | ShapeOp::Text(_)
+            | ShapeOp::Drawing(_)
+            | ShapeOp::Round(_)
+            | ShapeOp::RoundShape(_)
+            | ShapeOp::TextV2(_) => {}
         }
     }
     // Sustain 恒为最后一步（上游明确；只让音符变长），不依赖它在数组中的位置。

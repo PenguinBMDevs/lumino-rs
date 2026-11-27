@@ -4,9 +4,7 @@
 
 use crate::Editor;
 use lumino_core::BrushConfig;
-use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
-use lumino_ui_core::geom::Point;
 
 impl Editor {
     /// 设置当前工具（委托到 editor_state）
@@ -43,11 +41,11 @@ impl Editor {
         // 白付 O(待确认) 与一次选中态扰动。
         //
         // 其余收口照旧执行：重复选中同一工具仍应退出填充 / 圆弧 / 下拉等附属态。
-        let tool_changed = self.current_tool() != tool;
+        let tool_changed = self.editor_state.current_tool() != tool;
         // DRAW-044：离开柔化模式必须收口，否则组合结果没有镜像、曲线看起来「消失」，
         // 且遗留的拖拽快照会污染撤销栈。未改过半径时还原提升前的曲线。
         if tool != Tool::ShapeSelect
-            && let Some(mode) = self.round_corner.clone()
+            && let Some(mode) = self.shape_tools.round_corner.clone()
         {
             self.end_round_corners();
             if !mode.changed && mode.composed + 1 == self.editor_state.pending_composed.len() {
@@ -75,15 +73,15 @@ impl Editor {
             // 切割布防（DRAW-025）：不结束会在曲线 / 画笔里继续切形状。
             self.end_slice_cut();
             // 区域着色（DRAW-032B）：遗留画笔会在别的工具里继续上色。
-            self.area_paint = None;
-            self.shape_list_open = false;
+            self.shape_tools.area_paint = None;
+            self.shape_tools.list_open = false;
             // 020「编辑图形」是鼠标工具的子状态：离开即退出，回来不会突然少掉选框。
-            self.shape_edit_armed = None;
-            self.shape_group_edit = None;
+            self.shape_tools.edit_armed = None;
+            self.shape_tools.group_edit = None;
         }
         if tool_changed {
             // DRAW-049：Bake 放置态只属于形状工具；换工具即收口会话（pending 保留）。
-            self.bake_placement = None;
+            self.shape_tools.bake_placement = None;
             self.rebuild_pending_mirrors();
         }
     }
@@ -101,34 +99,14 @@ impl Editor {
     /// ⚠️ 仅用于**几何预览与命中**（曲线/形状/画刷方块/文本框），不含 √× 按钮——
     /// 按钮仍是拥有者工具专属（确认/取消属于绘制工具的操作，选择工具不越权）。
     pub fn pending_preview_visible(&self, owner: Tool) -> bool {
-        let current = self.current_tool();
+        let current = self.editor_state.current_tool();
         current == owner || current == Tool::ShapeSelect
-    }
-
-    /// 设置当前形状类型（由工具栏 `current_shape` 同步）
-    pub fn set_shape(&mut self, kind: lumino_editor_state::ShapeKind) {
-        self.editor_state.shape_tool.set_shape_kind(kind);
     }
 
     /// 设置颜料桶填充模式开关（曲线工具与形状工具共享同一开关）
     pub fn set_fill_enabled(&mut self, enabled: bool) {
         self.editor_state.line_tool.fill_enabled = enabled;
         self.editor_state.shape_tool.fill_enabled = enabled;
-    }
-
-    /// 颜料桶填充模式是否开启
-    pub fn fill_enabled(&self) -> bool {
-        self.editor_state.line_tool.fill_enabled
-    }
-
-    /// 开关三点圆弧模式（DRAW-014，由悬浮工具条「圆弧」条目同步）
-    pub fn set_line_arc_mode(&mut self, enabled: bool) {
-        self.editor_state.line_tool.set_arc_mode(enabled);
-    }
-
-    /// 三点圆弧模式是否开启
-    pub fn line_arc_mode(&self) -> bool {
-        self.editor_state.line_tool.arc_mode
     }
 
     /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）
@@ -150,18 +128,6 @@ impl Editor {
         self.brush.thickness.max(BrushConfig::MIN_THICKNESS)
     }
 
-    /// **画刷**笔画/命中带的总宽（像素）= 全局粗细层数 × 单 key 高（`zoom_y`）
-    ///
-    /// 用途收窄到画刷：笔画命中判定（`brush_total_width_px`）与画刷预览的层高。
-    /// 曲线 / 形状的**描边预览**曾经也用它当线宽，但那与产物（单侧向外铺 `N-1` 层）
-    /// 不是一份几何——现在预览直接画音符块（见 `draw_thickness` 第 3 点）。
-    ///
-    /// 下限 1px：缩到极小（`zoom_y < 1`）时命中带不能消失（否则"按不住自己画的线"）。
-    pub fn draw_line_width_px(&self) -> f32 {
-        let thickness = self.draw_thickness() as f32;
-        (thickness * self.editor_state.view.zoom_y).max(1.0)
-    }
-
     /// 设置颜料桶填充的**切分档位**（`Some(x)` = x 分音符切分；`None` = 整块填充）
     ///
     /// 由主窗口「分音符填充」对话框确认后调用。变更会同步进路径历史
@@ -169,11 +135,6 @@ impl Editor {
     pub fn set_fill_division(&mut self, division: Option<u32>) {
         self.editor_state.line_tool.set_fill_division(division);
         self.mark_notes_changed();
-    }
-
-    /// 颜料桶填充的切分档位（`None` = 整块填充）
-    pub fn fill_division(&self) -> Option<u32> {
-        self.editor_state.line_tool.fill_division
     }
 
     /// 设置曲线/形状工具生成音符的**最小长度档位**（修改接口）
@@ -187,57 +148,9 @@ impl Editor {
         self.mark_notes_changed();
     }
 
-    /// 生成音符的最小长度档位（`None` = 不设下限）
-    pub fn min_note_division(&self) -> Option<u32> {
-        self.editor_state.line_tool.min_note_division
-    }
-
-    /// 取走「打开分音符填充对话框」请求（一次性标志，Root 每帧取用）
-    pub fn take_fill_division_dialog_request(&mut self) -> bool {
-        let requested = self.fill_division_dialog_requested;
-        self.fill_division_dialog_requested = false;
-        requested
-    }
-
-    /// 获取当前工具
-    pub fn current_tool(&self) -> Tool {
-        self.editor_state.tool
-    }
-
-    /// 更新鼠标位置（由外部调用）
-    pub fn update_cursor_position(&mut self, position: Option<Point>) {
-        let pos = position.map(|p| (p.x, p.y));
-        if self.editor_state.canvas.cursor_position == pos {
-            return;
-        }
-        self.editor_state.canvas.cursor_position = pos;
-    }
-
-    /// 更新 Canvas 偏移量（用于坐标转换）
-    pub fn set_canvas_offset(&mut self, offset: Point) {
-        self.editor_state.canvas.offset_x = offset.x;
-        self.editor_state.canvas.offset_y = offset.y;
-    }
-
-    /// 更新 Canvas 尺寸
-    pub fn set_canvas_size(&mut self, size: Point) {
-        self.editor_state.canvas.size_x = size.x;
-        self.editor_state.canvas.size_y = size.y;
-    }
-
-    /// 设置总 ticks
-    pub fn set_total_ticks(&mut self, total_ticks: u32) {
-        self.editor_state.view.total_ticks = total_ticks;
-        Viewport::new(
-            &mut self.editor_state.view,
-            &mut self.editor_state.max_scroll,
-        )
-        .update_max_scroll(total_ticks);
-    }
-
-    /// 设置 PPQ
-    pub fn set_ppq(&mut self, ppq: u16) {
-        self.editor_state.view.ppq = ppq;
+    /// 当前框选弹簧动画状态（UI 渲染层读取）。
+    pub fn selection_box_anim(&self) -> Option<crate::SelectionBoxAnimState> {
+        self.selection_ui.anim.get()
     }
 
     /// 检查音符数据是否已变化
@@ -255,22 +168,17 @@ impl Editor {
     /// 供 `clear_editor()` 调用，重置本模块私有的字段：
     /// - `notes_changed`：音符变更标志
     /// - `playback_position`：播放指示线位置
-    /// - `playback_scan_state`：播放键色增量扫描状态（避免旧文档残留）
+    /// - `playback_key_state.scan`：播放键色增量扫描状态（避免旧文档残留）
     pub fn reset_internal_state(&mut self) {
         self.notes_changed = false;
         self.playback_position = 0.0;
-        self.playback_scan_state = Default::default();
+        self.playback_key_state.reset_scan();
         self.velocity_panel = crate::velocity::VelocityPanel::new();
     }
 
     /// 设置播放时键盘颜色指示是否启用
     pub fn set_playback_key_colors_enabled(&mut self, enabled: bool) {
-        self.playback_key_colors_enabled = enabled;
-        if !enabled {
-            self.playback_key_colors = [0u8; 1024];
-            // 关闭时重置扫描状态，下次启用从干净状态开始
-            self.playback_scan_state = Default::default();
-        }
+        self.playback_key_state.set_enabled(enabled);
     }
 
     /// Domino（TAKABO SOFT）剪贴板互粘是否启用（默认关闭，仅 Windows 生效）

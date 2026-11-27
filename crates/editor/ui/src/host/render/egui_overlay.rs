@@ -20,6 +20,7 @@ mod actions;
 mod canvas;
 mod clock;
 pub(crate) mod input;
+pub use actions::OverlayActions;
 pub use input::OverlayInput;
 
 /// 叠加层状态（首次启用时创建，跨帧保留纹理与管线）。

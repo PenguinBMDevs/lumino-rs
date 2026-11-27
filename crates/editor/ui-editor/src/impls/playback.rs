@@ -2,8 +2,10 @@
 //!
 //! 包含：`PlaybackScanState` 缓存结构 + `update_playback_key_colors` 方法。
 //!
-//! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
+//! 拆分原因：`editor_impl.rs` 接近 600 行限制，按职责拆分。
 
+use crate::editor_state::EditorData;
+use crate::playback_key_colors::PlaybackKeyColors;
 use crate::spatial_index::{NoteRef, NoteSpatialIndex};
 use crate::{Editor, onion_track_color};
 
@@ -74,6 +76,18 @@ const PLAYBACK_KEY_INDEX_MAX_NOTES: usize = 2_000_000;
 /// 保守取 5 秒等价 tick（480 PPQ @ 120BPM ≈ 960 tick/秒 → 4800 tick）
 const SEEK_THRESHOLD_TICKS: f32 = 5000.0;
 
+/// 播放键色状态 bundle（T-30 slice 4）：颜色缓存 + 增量扫描状态。
+///
+/// 颜色计算与扫描游标同属一份状态：开关、文档世代、播放位置共同决定输出。
+/// 行为与状态放在一起，`Editor` 只保留公开委托。
+#[derive(Default)]
+pub(crate) struct PlaybackKeyState {
+    /// 着色开关 + 256 键 RGBA 缓存。
+    pub(crate) key_colors: PlaybackKeyColors,
+    /// 增量扫描游标与跨轨索引。
+    pub(crate) scan: PlaybackScanState,
+}
+
 impl Editor {
     /// 当前播放键色（`key * 4` 起的 RGBA，alpha = 0 表示该键无高亮）。
     ///
@@ -82,9 +96,11 @@ impl Editor {
     /// 清空数组，因此调用方无需另行判断开关。
     #[inline]
     pub fn playback_key_colors(&self) -> &[u8; 1024] {
-        &self.playback_key_colors
+        &self.playback_key_state.key_colors.colors
     }
+}
 
+impl PlaybackKeyState {
     /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色
     ///
     /// 直接从 `MidiDocument.track_notes()` 读取，数据已在 MIDI 导入时按 track 分组
@@ -105,38 +121,36 @@ impl Editor {
     /// 全量重建优先使用 `key_color_index`（跨所有轨空间索引），经
     /// `update_query(tick, tick, 0, 255, _)` 直接取得在 `tick` 活跃的音符，
     /// 复杂度 O(活跃音符数)，与已播放音符总量无关。仅文档切换时构建一次索引。
-    pub fn update_playback_key_colors(&mut self) {
+    pub(crate) fn update(&mut self, data: &EditorData, playback_position: f32) {
         puffin::profile_function!();
-        if !self.playback_key_colors_enabled {
+        if !self.key_colors.enabled {
             return;
         }
 
-        if (self.playback_position - 0.0).abs() < f32::EPSILON {
-            if self.playback_key_colors != [0u8; 1024] {
-                self.playback_key_colors = [0u8; 1024];
-            }
+        if (playback_position - 0.0).abs() < f32::EPSILON {
+            self.key_colors.clear();
             // 停止时重置扫描状态，下次播放从头开始。
             // 注意：保留 key_color_index（仅依赖文档音符，与播放进度无关），
             // 避免重启后首帧全量重建退回 O(end) 线性扫描。
-            self.playback_scan_state.last_tick = 0.0;
-            self.playback_scan_state.scan_idx.clear();
-            self.playback_scan_state.active_notes.clear();
+            self.scan.last_tick = 0.0;
+            self.scan.scan_idx.clear();
+            self.scan.active_notes.clear();
             return;
         }
 
-        let tick = self.playback_position;
+        let tick = playback_position;
         let tick_u32 = tick as u32;
 
         // 一次性取出文档相关标量后立即释放文档不可变借用，避免在后续 `&mut self`
         // 调用（`rebuild_playback_key_index`）时因同时存在借用而触发借用冲突。
         let (track_count, notes_gen, need_full_rebuild) = {
-            let Some(doc) = self.editor_state.data.document.as_ref() else {
+            let Some(doc) = data.document.as_ref() else {
                 return;
             };
             // 用音符内容世代（而非文档地址）判断数据是否变化：见 `notes_gen` 字段文档
-            let notes_gen = self.editor_state.data.track_notes_gen;
-            let notes_changed = self.playback_scan_state.notes_gen != Some(notes_gen);
-            let last_tick = self.playback_scan_state.last_tick;
+            let notes_gen = data.track_notes_gen;
+            let notes_changed = self.scan.notes_gen != Some(notes_gen);
+            let last_tick = self.scan.last_tick;
             let need_full_rebuild =
                 notes_changed || tick < last_tick || (tick - last_tick) > SEEK_THRESHOLD_TICKS;
             (doc.track_count(), notes_gen, need_full_rebuild)
@@ -144,24 +158,24 @@ impl Editor {
 
         if need_full_rebuild {
             // 仅在音符数据变化时重建索引（按世代缓存，避免每次 seek/循环重复建树）
-            if self.playback_scan_state.notes_gen != Some(notes_gen) {
-                self.rebuild_playback_key_index(track_count, notes_gen);
+            if self.scan.notes_gen != Some(notes_gen) {
+                self.rebuild_index(data, track_count, notes_gen);
             }
 
-            let Some(doc) = self.editor_state.data.document.as_ref() else {
+            let Some(doc) = data.document.as_ref() else {
                 return;
             };
 
             // 全量重建需保证 scan_idx 容量与 track_count 对齐（首次/重置后长度为 0）
-            if self.playback_scan_state.scan_idx.len() != track_count {
-                self.playback_scan_state.scan_idx = vec![0; track_count];
+            if self.scan.scan_idx.len() != track_count {
+                self.scan.scan_idx = vec![0; track_count];
             }
 
-            if let Some(ki) = &self.playback_scan_state.key_color_index {
+            if let Some(ki) = &self.scan.key_color_index {
                 // O(活跃) 路径：直接查询在 [tick, tick] 区间活跃的音符
                 let mut result = Vec::new();
                 ki.index.update_query(tick, tick, 0, 255, &mut result);
-                self.playback_scan_state.active_notes.clear();
+                self.scan.active_notes.clear();
                 for &gi in &result {
                     let end_tick = ki.end_of[gi];
                     // 与原 O(end) 路径一致：仅 end_tick > tick 的音符视为活跃
@@ -171,17 +185,11 @@ impl Editor {
                     let track = ki.track_of[gi] as usize;
                     let key = ki.key_of[gi] as usize;
                     let color = onion_track_color(track);
-                    self.playback_scan_state
-                        .active_notes
-                        .push((end_tick, key * 4, color));
+                    self.scan.active_notes.push((end_tick, key * 4, color));
                 }
                 // 维持 scan_idx 不变量，使后续增量路径保持 O(活跃) 而非退回 O(end)
-                for (track_idx, scan_idx) in self
-                    .playback_scan_state
-                    .scan_idx
-                    .iter_mut()
-                    .enumerate()
-                    .take(track_count)
+                for (track_idx, scan_idx) in
+                    self.scan.scan_idx.iter_mut().enumerate().take(track_count)
                 {
                     let notes = doc.track_notes(track_idx);
                     if notes.is_empty() {
@@ -192,7 +200,7 @@ impl Editor {
                 }
             } else {
                 // 回退：超大工程（超阈值未建索引）走原 O(end) 线性扫描
-                self.playback_scan_state = PlaybackScanState {
+                self.scan = PlaybackScanState {
                     last_tick: tick,
                     scan_idx: vec![0; track_count],
                     active_notes: Vec::new(),
@@ -209,16 +217,12 @@ impl Editor {
                     // ChunkedList::partition_point(tick+1) = 第一个 tick > tick_u32 的索引
                     // （等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`）
                     let end = notes.partition_point(tick_u32.wrapping_add(1));
-                    self.playback_scan_state.scan_idx[track_idx] = end;
+                    self.scan.scan_idx[track_idx] = end;
                     // 仅扫描 [start, end) 区间——新进入活跃的音符
                     for n in notes.iter().take(end) {
                         if n.end_tick() > tick_u32 {
                             let offset = (n.key as usize) * 4;
-                            self.playback_scan_state.active_notes.push((
-                                n.end_tick(),
-                                offset,
-                                color,
-                            ));
+                            self.scan.active_notes.push((n.end_tick(), offset, color));
                         }
                     }
                 }
@@ -226,12 +230,12 @@ impl Editor {
         } else {
             // 增量扫描：从上次位置继续，把新进入活跃的音符 push 进 active_notes
             // 注意：scan_idx 长度可能 < track_count（首次扫描前未初始化），用 max 兜底
-            let Some(doc) = self.editor_state.data.document.as_ref() else {
+            let Some(doc) = data.document.as_ref() else {
                 return;
             };
 
-            if self.playback_scan_state.scan_idx.len() < track_count {
-                self.playback_scan_state.scan_idx.resize(track_count, 0);
+            if self.scan.scan_idx.len() < track_count {
+                self.scan.scan_idx.resize(track_count, 0);
             }
 
             for track_idx in 0..track_count {
@@ -240,36 +244,34 @@ impl Editor {
                     continue;
                 }
                 let color = onion_track_color(track_idx);
-                let start = self.playback_scan_state.scan_idx[track_idx];
+                let start = self.scan.scan_idx[track_idx];
                 // 等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`
                 let end = notes.partition_point(tick_u32.wrapping_add(1));
-                self.playback_scan_state.scan_idx[track_idx] = end;
+                self.scan.scan_idx[track_idx] = end;
                 // 仅扫描 [start, end) 区间——新进入活跃的音符
                 for n in notes.iter().skip(start).take(end.saturating_sub(start)) {
                     if n.end_tick() > tick_u32 {
                         let offset = (n.key as usize) * 4;
-                        self.playback_scan_state
-                            .active_notes
-                            .push((n.end_tick(), offset, color));
+                        self.scan.active_notes.push((n.end_tick(), offset, color));
                     }
                 }
             }
 
             // 清理已结束的音符（活跃音符数通常 < 几百，retain O(几百)）
-            self.playback_scan_state
+            self.scan
                 .active_notes
                 .retain(|(end_tick, _, _)| *end_tick > tick_u32);
         }
 
-        self.playback_scan_state.last_tick = tick;
+        self.scan.last_tick = tick;
 
         // 用活跃音符集合涂色——遍历量 O(活跃音符数)，与已播放音符总数无关
         let mut new_colors = [0u8; 1024];
-        for (_, offset, color) in &self.playback_scan_state.active_notes {
+        for (_, offset, color) in &self.scan.active_notes {
             let offset = *offset;
             new_colors[offset..offset + 4].copy_from_slice(color);
         }
-        self.playback_key_colors = new_colors;
+        self.key_colors.colors = new_colors;
     }
 
     /// 为播放键色构建跨所有轨的空间索引（按 doc 缓存）
@@ -282,9 +284,9 @@ impl Editor {
     ///
     /// # 参数
     /// - `notes_gen`：当前音符内容世代，写入 `notes_gen` 缓存，避免下一帧重复重建
-    fn rebuild_playback_key_index(&mut self, track_count: usize, notes_gen: u64) {
+    fn rebuild_index(&mut self, data: &EditorData, track_count: usize, notes_gen: u64) {
         puffin::profile_scope!("rebuild_playback_key_index");
-        let Some(doc) = self.editor_state.data.document.as_ref() else {
+        let Some(doc) = data.document.as_ref() else {
             return;
         };
         let mut note_refs: Vec<NoteRef> = Vec::new();
@@ -319,15 +321,15 @@ impl Editor {
             }
         }
 
-        self.playback_scan_state.notes_gen = Some(notes_gen);
+        self.scan.notes_gen = Some(notes_gen);
 
         if aborted {
-            self.playback_scan_state.key_color_index = None;
+            self.scan.key_color_index = None;
             return;
         }
 
         let index = NoteSpatialIndex::from_note_refs(&note_refs);
-        self.playback_scan_state.key_color_index = Some(PlaybackKeyIndex {
+        self.scan.key_color_index = Some(PlaybackKeyIndex {
             index,
             track_of,
             key_of,
@@ -344,15 +346,41 @@ impl Editor {
     /// 手动停止由调用方负责复位 `playback_position`。
     ///
     /// 当 `playback_key_colors_enabled == false` 时颜色数组本就是全零，调用安全无损。
-    pub fn clear_playback_key_colors(&mut self) {
+    pub(crate) fn clear(&mut self) {
         puffin::profile_function!();
-        if self.playback_key_colors != [0u8; 1024] {
-            self.playback_key_colors = [0u8; 1024];
-        }
+        self.key_colors.clear();
         // 保留 key_color_index：它仅依赖文档音符，与播放进度无关，
         // 停止/重启不应使其失效（否则重启首帧会退回 O(end) 线性扫描）。
-        self.playback_scan_state.last_tick = 0.0;
-        self.playback_scan_state.scan_idx.clear();
-        self.playback_scan_state.active_notes.clear();
+        self.scan.last_tick = 0.0;
+        self.scan.scan_idx.clear();
+        self.scan.active_notes.clear();
+    }
+}
+
+impl Editor {
+    /// 根据当前播放位置，计算每个 key 上被洋葱皮音符覆盖的颜色（委托 bundle）。
+    pub fn update_playback_key_colors(&mut self) {
+        self.playback_key_state
+            .update(&self.editor_state.data, self.playback_position);
+    }
+
+    /// 清空播放键色并重置增量扫描状态（委托 bundle）。
+    pub fn clear_playback_key_colors(&mut self) {
+        self.playback_key_state.clear();
+    }
+}
+
+impl PlaybackKeyState {
+    /// 设置开关；关闭时同步清空扫描状态，下次启用从干净状态开始。
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        self.key_colors.set_enabled(enabled);
+        if !enabled {
+            self.scan = PlaybackScanState::default();
+        }
+    }
+
+    /// 仅重置扫描游标，保留颜色数组（文档切换/编辑内部状态复位）。
+    pub(crate) fn reset_scan(&mut self) {
+        self.scan = PlaybackScanState::default();
     }
 }

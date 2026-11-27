@@ -72,33 +72,48 @@ pub fn detect_format(path: &Path) -> Option<ArchiveFormat> {
         return Some(ArchiveFormat::Gz); // unarc-rs handles bz2
     }
 
-    // 单扩展名检测
-    match ext.as_str() {
-        "zip" | "zipx" => Some(ArchiveFormat::Zip),
-        "rar" => Some(ArchiveFormat::Rar),
-        "7z" => Some(ArchiveFormat::SevenZ),
-        "tar" => Some(ArchiveFormat::Tar),
-        "tgz" => Some(ArchiveFormat::TarGz),
-        "txz" => Some(ArchiveFormat::TarXz),
-        "gz" => Some(ArchiveFormat::Gz),
-        "xz" => Some(ArchiveFormat::Xz),
-        "lzh" | "lha" => Some(ArchiveFormat::Lzh),
-        "iso" => Some(ArchiveFormat::Iso),
-        _ => None,
-    }
+    // 单扩展名检测：从 `extensions()` 表反查（扩展名清单只此一份）
+    ALL_FORMATS
+        .iter()
+        .copied()
+        .find(|format| format.extensions().iter().any(|known| *known == ext))
 }
+
+/// 全部压缩格式（`detect_format` 扩展名反查的唯一清单）。
+const ALL_FORMATS: &[ArchiveFormat] = &[
+    ArchiveFormat::Zip,
+    ArchiveFormat::Rar,
+    ArchiveFormat::SevenZ,
+    ArchiveFormat::Tar,
+    ArchiveFormat::TarGz,
+    ArchiveFormat::TarXz,
+    ArchiveFormat::Gz,
+    ArchiveFormat::Xz,
+    ArchiveFormat::Lzh,
+    ArchiveFormat::Iso,
+];
 
 /// 判断文件是否为已知的压缩包格式
 pub fn is_archive(path: &Path) -> bool {
     detect_format(path).is_some()
 }
 
+/// 允许作为 MIDI 工程的扩展名（唯一来源）。
+const MIDI_EXTENSIONS: &[&str] = &["mid", "midi", "lmpj"];
+
+/// 判断扩展名（不含点）是否为 MIDI 工程。
+pub(super) fn is_midi_ext(ext: &str) -> bool {
+    MIDI_EXTENSIONS
+        .iter()
+        .any(|known| ext.eq_ignore_ascii_case(known))
+}
+
 /// 判断文件名是否为有效的 MIDI 扩展名
 ///
 /// 允许的扩展名: .mid, .midi, .lmpj
 pub fn is_midi_extension(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.ends_with(".mid") || name.ends_with(".midi") || name.ends_with(".lmpj")
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| is_midi_ext(ext))
 }
 
 #[cfg(test)]

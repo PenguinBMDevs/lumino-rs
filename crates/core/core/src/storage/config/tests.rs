@@ -1,6 +1,6 @@
 //! `UiConfig` 序列化 / 默认值契约测试。
 //!
-//! 独立文件：`config.rs` 已超过 400 行上限（AGENTS.md 文件长度红线），
+//! 独立文件：`config.rs` 已超过 600 行上限（AGENTS.md 文件长度红线），
 //! 测试整体搬到同目录子模块，**不改变任何用例**。
 
 use super::*;
@@ -222,3 +222,6 @@ fn test_recent_files_roundtrip_and_legacy_default() {
     let restored: UiConfig = serde_json::from_value(value).expect("缺字段的旧配置应能反序列化");
     assert!(restored.recent_files.is_empty(), "旧配置应落为空列表");
 }
+
+mod autosave;
+mod onion_backend;

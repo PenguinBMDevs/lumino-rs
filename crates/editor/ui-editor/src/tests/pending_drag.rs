@@ -9,7 +9,7 @@
 //!
 //! 2026-08 单一权威源：测试种子经 `test_helpers::seed_notes` 写入 document。
 //!
-//! 2026-08 拆分（原文件 532 行 > 400 行阈值，按主题拆分子模块）：
+//! 2026-08 拆分（原文件 532 行 > 600 行阈值，按主题拆分子模块）：
 //! - `commit`：commit_pending_drag 行为与 pending 状态判定
 //! - `accumulate`：累积 delta（多次拖动叠加）
 //! - `deferred`：延迟提交流程、commit_current_edit 与点击空白处提交

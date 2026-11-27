@@ -3,7 +3,7 @@
 //! 2026-08 单一权威源改造：音符数据唯一权威是 `EditorData.document`，
 //! 加载/删除/恢复音轨直接整轨替换 document（`replace_track_notes`）。
 //!
-//! 子模块组织（保持本文件 < 400 行）：
+//! 子模块组织（保持本文件 ≤600 行）：
 //! - `deletion`: 音轨删除/找回/恢复（转发 Runner、缓存写入、恢复流程）
 
 use crate::root::Root;
@@ -38,14 +38,14 @@ impl Root {
 
     /// 设置编辑器总 ticks
     pub fn set_total_ticks(&mut self, total_ticks: f32) {
-        self.editor.set_total_ticks(total_ticks as u32);
+        self.editor.editor_state.set_total_ticks(total_ticks as u32);
         // 同步到走带视图（影响横向滚动最大长度）
         self.arrangement_view.viewport.total_ticks = total_ticks as u32;
     }
 
     /// 设置每四分音符的时钟数（PPQ）
     pub fn set_ppq(&mut self, ppq: u16) {
-        self.editor.set_ppq(ppq);
+        self.editor.editor_state.set_ppq(ppq);
         // 同步到单一权威源 document 的 division，保证保存/导出工程时
         // 写入用户设置的 PPQ（此前只更新视图状态，工程文件永远落盘旧值 480）。
         if let Some(doc) = self.editor.editor_state.data.document.as_mut() {

@@ -23,17 +23,7 @@ impl RunnerInner {
     /// 保存为带 `[material]` 元数据标记的单文件 LMPJ 归档；
     /// 素材名以保存对话框中设置的文件名为准（二次导出用新名字）。
     pub(super) fn handle_export_material(&mut self) {
-        // 自动提交当前编辑（ghost 方案：松手即提交）
-        let committed = self
-            .window_state
-            .window
-            .ui_mut()
-            .root_mut()
-            .editor
-            .commit_current_edit();
-        if committed {
-            tracing::debug!("导出素材前自动提交编辑");
-        }
+        self.commit_edit_before_io("导出素材");
 
         // 提取选中音符（卷帘 selected_notes / 走带 arrange_selection 跨轨）
         let selected = {
@@ -185,17 +175,7 @@ impl RunnerInner {
             return false;
         }
 
-        // 自动提交当前编辑（ghost 方案：松手即提交）
-        let committed = self
-            .window_state
-            .window
-            .ui_mut()
-            .root_mut()
-            .editor
-            .commit_current_edit();
-        if committed {
-            tracing::debug!("保存前自动提交编辑");
-        }
+        self.commit_edit_before_io("保存");
 
         // 已有 .lmpj 工程路径 → 覆盖保存原文件（无对话框）
         // DEBT-01 #118：透传真实启动状态——未启动（并发拒绝 / 无内容）时调用方
@@ -224,17 +204,7 @@ impl RunnerInner {
     ///
     /// 返回 `true` 表示已选择路径并进入保存流程；`false` 表示用户取消对话框。
     pub(super) fn handle_save_single_file(&mut self) -> bool {
-        // 自动提交当前编辑（ghost 方案：松手即提交）
-        let committed = self
-            .window_state
-            .window
-            .ui_mut()
-            .root_mut()
-            .editor
-            .commit_current_edit();
-        if committed {
-            tracing::debug!("保存前自动提交编辑");
-        }
+        self.commit_edit_before_io("保存");
 
         let file_stem = self
             .midi_state

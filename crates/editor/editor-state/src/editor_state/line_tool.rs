@@ -12,6 +12,7 @@
 //!   控制柄/平移均为一次撤销操作（Ctrl+Z / Ctrl+Y），与 document 历史
 //!   互不干扰（√ 确认后才写入 document 生成音符）。
 
+use super::path_history::History;
 /// 直线工具交互阶段
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineToolInteraction {
@@ -136,6 +137,8 @@ pub struct LineToolState {
     /// 属**模式设置**（与 `fill_division` 同级）：√ 确认 / × 取消后仍保留
     /// （`reset` 显式保留）。改档位只影响之后生成的音符，不改写已有音符。
     pub min_note_division: Option<u32>,
+    /// 「打开分音符填充对话框」一次性请求（Root 每帧取用）。
+    pub fill_division_dialog_requested: bool,
     /// **三点圆弧模式**（DRAW-014）：开启后每次点击依次落下 a / b / c 三点，
     /// 满 3 点即完成一段弧（下一次点击开始新弧）。
     ///
@@ -152,13 +155,8 @@ pub struct LineToolState {
     /// 数据形状优先，缩放只是视图变换。√ 时原样写入 `ShapeModel.k`，
     /// 保证「画的时候看到的」与「确认后生成的」一致。
     pub arc_k: Option<f32>,
-    /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
-    ///
-    /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
-    /// 连续追加锚点（创建同一路径）时更新栈顶合并为一次撤销。
-    pub path_history: Vec<PathSnapshot>,
-    /// 当前路径历史状态索引（指向 `path_history` 中的当前状态）
-    pub path_history_index: usize,
+    /// 路径 / 笔画编辑历史（快照 = 操作后状态）。
+    pub history: History<PathSnapshot>,
 }
 
 impl Default for LineToolState {
@@ -177,9 +175,9 @@ impl Default for LineToolState {
             fill_enabled: false,
             fill_division: None,
             min_note_division: Some(LineToolState::DEFAULT_MIN_NOTE_DIVISION),
+            fill_division_dialog_requested: false,
             // 历史栈初始含空状态（撤销基准）
-            path_history: vec![PathSnapshot::default()],
-            path_history_index: 0,
+            history: History::new(PathSnapshot::default()),
             arc_mode: false,
             arc_draft: None,
             arc_k: None,
@@ -224,6 +222,13 @@ impl LineToolState {
     /// 开关三点圆弧模式（DRAW-014）
     ///
     /// 关闭时中断圆弧草稿（不删除已落下的点：它们仍可按普通折线确认/继续编辑）。
+    /// 取走「打开分音符填充对话框」请求（一次性标志）。
+    pub fn take_fill_division_dialog_request(&mut self) -> bool {
+        let requested = self.fill_division_dialog_requested;
+        self.fill_division_dialog_requested = false;
+        requested
+    }
+
     pub fn set_arc_mode(&mut self, enabled: bool) {
         if self.arc_mode == enabled {
             return;
@@ -371,9 +376,7 @@ impl LineToolState {
 
     /// 记录当前状态（操作完成后调用）：截断重做分支后入栈
     pub fn push_path_history(&mut self) {
-        self.path_history.truncate(self.path_history_index + 1);
-        self.path_history.push(self.snapshot());
-        self.path_history_index = self.path_history.len() - 1;
+        self.history.push(self.snapshot());
     }
 
     /// 曲线被组合 / 提升消费后重建历史基线。
@@ -382,17 +385,12 @@ impl LineToolState {
     /// 先回放旧路径（`undo_path` 优先级高于文档 undo），表现为此前报的
     /// 「切割后 Bake，再 undo 却回到曲线早期状态、Bake 音符残留」。
     pub fn rebase_path_history(&mut self) {
-        self.path_history.clear();
-        self.path_history.push(self.snapshot());
-        self.path_history_index = 0;
+        self.history.clear_to(self.snapshot());
     }
 
     /// 更新栈顶为当前状态（合并连续操作——创建同一路径的锚点追加）
     pub fn update_top_path_history(&mut self) {
-        let snap = self.snapshot();
-        if let Some(top) = self.path_history.last_mut() {
-            *top = snap;
-        }
+        self.history.update_top(self.snapshot());
     }
 
     /// 合并到栈顶（先截断撤销后残留的重做分支）
@@ -400,19 +398,14 @@ impl LineToolState {
     /// 圆弧模式一次落 3 点：第 2/3 点不新增历史条目，只把栈顶快照更新为最新状态，
     /// 于是 Ctrl+Z 一次即可撤掉整段弧。
     pub fn merge_top_path_history(&mut self) {
-        if self.path_history_index + 1 < self.path_history.len() {
-            self.path_history.truncate(self.path_history_index + 1);
-        }
-        self.update_top_path_history();
+        self.history.merge_top(self.snapshot());
     }
 
     /// 撤销一次路径编辑；无可撤销返回 false
     pub fn undo_path(&mut self) -> bool {
-        if self.path_history_index == 0 {
+        let Some(snap) = self.history.undo() else {
             return false;
-        }
-        self.path_history_index -= 1;
-        let snap = &self.path_history[self.path_history_index];
+        };
         self.paths = snap.paths.clone();
         self.arc_k = snap.arc_k;
         self.fill = snap.fill.clone();
@@ -423,11 +416,9 @@ impl LineToolState {
 
     /// 重做一次路径编辑；无可重做返回 false
     pub fn redo_path(&mut self) -> bool {
-        if self.path_history_index + 1 >= self.path_history.len() {
+        let Some(snap) = self.history.redo() else {
             return false;
-        }
-        self.path_history_index += 1;
-        let snap = &self.path_history[self.path_history_index];
+        };
         self.paths = snap.paths.clone();
         self.arc_k = snap.arc_k;
         self.fill = snap.fill.clone();
@@ -436,12 +427,12 @@ impl LineToolState {
 
     /// 是否有可撤销的路径编辑
     pub fn can_undo_path(&self) -> bool {
-        self.path_history_index > 0
+        self.history.can_undo()
     }
 
     /// 是否有可重做的路径编辑
     pub fn can_redo_path(&self) -> bool {
-        self.path_history_index + 1 < self.path_history.len()
+        self.history.can_redo()
     }
 
     /// 重置整个路径状态（含历史）

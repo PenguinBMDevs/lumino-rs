@@ -40,7 +40,8 @@ fn test_dragging_selection_release_saves_to_pending_not_notes() {
     // pending 已保存
     assert!(editor.has_pending_drag());
     let pending = editor
-        .pending_drag_state
+        .transient
+        .pending_drag
         .as_ref()
         .expect("pending_drag_state 应已保存");
     assert_eq!(pending.delta_tick, 100);
@@ -109,7 +110,7 @@ fn test_commit_current_edit_when_pending_only_returns_true() {
     // 直接设置 pending，不进入 DraggingSelection（模拟松手后的状态）
     let mut drag = DragState::from_single(0, 1, 0, 60);
     drag.set_delta(80, 4);
-    editor.pending_drag_state = Some(drag);
+    editor.transient.pending_drag = Some(drag);
     // edit_state 是 Idle
     assert!(matches!(
         editor.editor_state.interaction.edit_state,

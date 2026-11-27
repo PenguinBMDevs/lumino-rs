@@ -1,6 +1,6 @@
 //! 音符创建操作日志推送（NoteCreate 增量、极简化）
 //!
-//! 拆分原因：`history.rs` 超 400 行限制，将 `push_note_create` 拆出到独立文件。
+//! 拆分原因：`history.rs` 超 600 行限制，将 `push_note_create` 拆出到独立文件。
 //! 本模块是 `history` 的子模块，可直接访问 `History` 的私有字段与方法。
 
 use std::time::Instant;

@@ -1,6 +1,6 @@
 //! 视口可见音符数据收集（渲染热路径）
 //!
-//! 拆分原因：rendering.rs 接近 400 行限制，按职责拆分。
+//! 拆分原因：rendering.rs 接近 600 行限制，按职责拆分。
 //!
 //! 性能优化：
 //! - **NoteStore 启用时走零 clone 路径**：`get_ref` / `iter_refs` 返回 NoteView（Copy）
@@ -60,8 +60,8 @@ impl Editor {
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
-        let pending = &self.pending_drag_state;
-        let pending_copy = &self.pending_copy_drag_state;
+        let pending = &self.transient.pending_drag;
+        let pending_copy = &self.transient.pending_copy;
 
         // 渲染路径：仅在索引干净（键未过期且已构建）时复用，否则线性扫描。
         // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。

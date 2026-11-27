@@ -39,7 +39,7 @@ impl Editor {
     /// 粗细 2 时差 2 倍）。那两条腿现在直接画 √ 会生成的音符块
     /// （`Editor::shape_outline_blocks` / `Editor::path_outline_blocks`）。
     pub(crate) fn brush_total_width_px(&self) -> f32 {
-        self.draw_line_width_px()
+        (self.draw_thickness() as f32 * self.editor_state.view.zoom_y).max(1.0)
     }
 
     /// 某层分配音轨（doc 索引）

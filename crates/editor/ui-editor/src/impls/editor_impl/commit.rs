@@ -31,8 +31,8 @@ impl Editor {
     /// 注意：画刷的「待确认笔画」（已松手）**不算**编辑中——否则 Ctrl+Z 会被
     /// 这里拦截，用户无法用撤销回退笔画编辑（与曲线工具 pending 语义一致）。
     pub fn is_editing(&self) -> bool {
-        self.pending_drag_state.is_some()
-            || self.pending_copy_drag_state.is_some()
+        self.transient.pending_drag.is_some()
+            || self.transient.pending_copy.is_some()
             || self.editor_state.data.has_pending_commit()
             || self.editor_state.brush_tool.is_active()
             || self.editor_state.shape_select.is_dragging()
@@ -57,19 +57,19 @@ impl Editor {
 
     /// 是否有未提交的批量拖动（pending commit 状态，含批量复制）
     pub fn has_pending_drag(&self) -> bool {
-        self.pending_drag_state.is_some()
-            || self.pending_copy_drag_state.is_some()
+        self.transient.pending_drag.is_some()
+            || self.transient.pending_copy.is_some()
             || self.editor_state.data.has_pending_commit()
     }
 
     /// 是否有尚未启动异步提交的待提交批量拖动（不含异步提交中的 pending commit）
     pub fn has_uncommitted_drag(&self) -> bool {
-        self.pending_drag_state.is_some()
+        self.transient.pending_drag.is_some()
     }
 
     /// 是否有尚未提交的批量复制（不含异步提交中的 pending commit）
     pub fn has_uncommitted_copy(&self) -> bool {
-        self.pending_copy_drag_state.is_some()
+        self.transient.pending_copy.is_some()
     }
 
     /// 远端音符操作是否应延迟到本地编辑临界区结束后应用。
@@ -92,8 +92,8 @@ impl Editor {
     /// 是写入前的全局索引，继续保留会导致后续 resize/拖动按旧索引取位、
     /// 误伤周围音符（连带改变长度）。
     pub fn clear_pending_drag(&mut self) {
-        self.pending_drag_state = None;
-        self.pending_copy_drag_state = None;
+        self.transient.pending_drag = None;
+        self.transient.pending_copy = None;
     }
 
     /// 提交 pending 批量拖动到 document（音符唯一权威）
@@ -109,12 +109,12 @@ impl Editor {
     /// 获取结果。pending_drag_state 会保留到异步提交完成，以维持 ghost 视觉位置。
     pub fn commit_pending_drag(&mut self) -> bool {
         crate::puffin_profiler::commit_pending_drag();
-        let Some(drag_state) = self.pending_drag_state.as_ref() else {
+        let Some(drag_state) = self.transient.pending_drag.as_ref() else {
             return false;
         };
         if drag_state.is_delta_zero() {
             tracing::debug!("Editor: pending drag delta 为零，跳过提交");
-            self.pending_drag_state = None;
+            self.transient.pending_drag = None;
             return false;
         }
         // 避免重复提交
@@ -126,7 +126,7 @@ impl Editor {
 
         // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先），
         // 既不应用移动也不广播。
-        if self.local_selection_is_locked() {
+        if self.transient.local_selection_is_locked() {
             tracing::debug!("协作: 批量移动被远端抢先选择锁定，跳过（远端优先）");
             return false;
         }
@@ -150,12 +150,12 @@ impl Editor {
                 true
             }
             Ok(false) => {
-                self.pending_drag_state = None;
+                self.transient.pending_drag = None;
                 false
             }
             Err(e) => {
                 tracing::error!("Editor: 异步提交 MoveOp 失败: {}", e);
-                self.pending_drag_state = None;
+                self.transient.pending_drag = None;
                 false
             }
         }
@@ -218,19 +218,19 @@ impl Editor {
     /// 如果 pending 为 None 或 delta 为零，返回 false。
     pub fn commit_pending_copy(&mut self) -> bool {
         crate::puffin_profiler::commit_pending_copy();
-        let Some(drag_state) = self.pending_copy_drag_state.as_ref() else {
+        let Some(drag_state) = self.transient.pending_copy.as_ref() else {
             return false;
         };
         if drag_state.is_delta_zero() {
             tracing::debug!("Editor: pending 复制 delta 为零，跳过提交");
-            self.pending_copy_drag_state = None;
+            self.transient.pending_copy = None;
             return false;
         }
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
         // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先）。
-        if self.local_selection_is_locked() {
+        if self.transient.local_selection_is_locked() {
             tracing::debug!("协作: 批量复制被远端抢先选择锁定，跳过（远端优先）");
             return false;
         }
@@ -248,7 +248,7 @@ impl Editor {
             })
             .collect();
         if notes.is_empty() {
-            self.pending_copy_drag_state = None;
+            self.transient.pending_copy = None;
             return false;
         }
 
@@ -275,9 +275,9 @@ impl Editor {
                 lumino_message::events::window::Event::local_notes_added_batch(batch),
             ));
         }
-        self.pending_copy_drag_state = None;
+        self.transient.pending_copy = None;
         // 编辑已提交：结束本地选择会话（通知对端）
-        self.emit_local_selection_changed(false);
+        self.transient.emit_local_selection_changed(false, &[]);
         tracing::info!("Editor: 已复制 {} 个音符", inserted);
         true
     }
@@ -311,12 +311,12 @@ impl Editor {
                     self.mark_notes_changed();
                     tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
                 }
-                self.pending_drag_state = None;
+                self.transient.pending_drag = None;
                 Some(modified)
             }
             Some(Err(e)) => {
                 tracing::error!("Editor: 异步提交结果处理失败: {}", e);
-                self.pending_drag_state = None;
+                self.transient.pending_drag = None;
                 None
             }
             None => None,
@@ -358,11 +358,11 @@ impl Editor {
                         self.mark_notes_changed();
                         any_modified = true;
                     }
-                    self.pending_drag_state = None;
+                    self.transient.pending_drag = None;
                 }
                 Some(Err(e)) => {
                     tracing::error!("Editor: drain 异步提交失败: {}", e);
-                    self.pending_drag_state = None;
+                    self.transient.pending_drag = None;
                 }
                 None => {
                     if std::time::Instant::now() >= deadline {
@@ -373,7 +373,7 @@ impl Editor {
                             DRAIN_TIMEOUT
                         );
                         self.editor_state.data.cancel_async_commit();
-                        self.pending_drag_state = None;
+                        self.transient.pending_drag = None;
                         self.mark_notes_changed();
                         break;
                     }
@@ -390,7 +390,7 @@ impl Editor {
     /// pending 索引指向提交前 document 位置（幽灵期间 document 未变，索引有效）；
     /// 若 track 已切换或索引越界，对应项跳过（份数语义：能定位多少算多少）。
     fn pending_drag_olds_of(editor: &Editor) -> (Vec<lumino_midi_loader::NoteEvent>, i64, i16) {
-        match editor.pending_drag_state.as_ref() {
+        match editor.transient.pending_drag.as_ref() {
             Some(ds) => {
                 let track = editor.editor_state.data.current_track;
                 let notes = editor.editor_state.data.track_notes(track);
@@ -437,7 +437,7 @@ impl Editor {
     ) -> Vec<lumino_midi_loader::NoteEvent> {
         let track = editor.editor_state.data.current_track;
         let notes = editor.editor_state.data.track_notes(track);
-        let pending = editor.pending_drag_state.as_ref();
+        let pending = editor.transient.pending_drag.as_ref();
         let mut out = Vec::with_capacity(editor.editor_state.interaction.selected_notes.len());
         for i in editor.editor_state.interaction.selected_notes.iter() {
             let Some(mut ev) = notes.get(i).copied() else {
@@ -553,7 +553,8 @@ impl Editor {
             && !self.editor_state.interaction.selected_notes.is_empty()
             && self.editor_state.data.collab_sync_enabled()
         {
-            self.emit_local_selection_changed(true);
+            let fps = self.selected_fingerprints();
+            self.transient.emit_local_selection_changed(true, &fps);
         }
         // 复制模式：未写入的副本在保存/播放/导出前必须写入内存层。
         // 必须在 drain 之后（异步提交整轨替换音符，先插入副本会被覆盖）

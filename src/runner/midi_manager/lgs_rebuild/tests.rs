@@ -1,6 +1,6 @@
 //! `lgs_rebuild` 单元测试：决策/重试边界 + AUD-008 panic 所有权归还。
 //!
-//! 拆到独立文件以守住 400 行守卫；`MockApi` 来自 `test_support`，不触碰任何真实驱动。
+//! 拆到独立文件以守住 600 行守卫；`MockApi` 来自 `test_support`，不触碰任何真实驱动。
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};

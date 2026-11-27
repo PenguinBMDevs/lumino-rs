@@ -19,7 +19,7 @@
 //! 一条 `InsertAt` 渲染事件，万级音符时在 GPU 内造成超线性实例搬移（见
 //! `ui_fill_confirm_bench`）。
 //!
-//! 从 `shape_tool.rs` 拆出（文件长度纪律 REF-001：单文件 ≤ 400 行，含测试不豁免）。
+//! 从 `shape_tool.rs` 拆出（文件长度纪律 REF-001：单文件 ≤ 600 行，含测试不豁免）。
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -353,23 +353,23 @@ impl Editor {
         self.record_baked_shape_models(models);
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
-        self.bake_placement = None;
+        self.shape_tools.bake_placement = None;
         true
     }
 
     /// 形状工具：取消（×）—— 清空所有待确认图形（保留图形类型）
     pub(crate) fn cancel_shape_tool(&mut self) {
-        self.bake_placement = None;
+        self.shape_tools.bake_placement = None;
         self.editor_state.shape_tool.clear_pending();
         self.editor_state.pending_composed.clear();
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
     }

@@ -9,7 +9,7 @@
 //!
 //! 2026-08 单一权威源：测试种子经 `test_helpers::seed_notes` 写入 document。
 //!
-//! 2026-08 拆分（原文件 1135 行 > 400 行阈值，按主题拆分子模块）：
+//! 2026-08 拆分（原文件 1135 行 > 600 行阈值，按主题拆分子模块）：
 //! - `commit`：commit_pending_copy 行为
 //! - `release`：handle_released 松手行为（松手即提交）
 //! - `pressed`：handle_pointer_pressed Ctrl+拖动 与状态判定/自动提交
@@ -47,7 +47,7 @@ fn release_copy_drag(editor: &mut Editor, drag_state: DragState) {
 #[test]
 fn test_pending_copy_state_initial_is_none() {
     let editor = Editor::new();
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
     assert!(!editor.has_pending_drag());
     assert!(!editor.is_editing());
 }

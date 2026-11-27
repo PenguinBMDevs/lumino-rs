@@ -1,7 +1,7 @@
 //! 历史记录条目类型
 //!
 //! 将 `MoveOp`、`OperationEntry`、`HistoryEntry` 从 `history.rs` 拆分出来，
-//! 避免单文件超过 400 行。
+//! 避免单文件超过 600 行。
 
 use std::time::Instant;
 

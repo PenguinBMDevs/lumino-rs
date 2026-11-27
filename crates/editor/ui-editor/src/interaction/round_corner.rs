@@ -83,13 +83,13 @@ impl Editor {
             // 画刷笔画 / 已 Bake：不提供柔化入口
             _ => return false,
         };
-        let Some(part) = self.pending_part(index) else {
+        let Some(part) = pending_part(self, index) else {
             return false;
         };
         if part.model.geometry.anchors.len() < 3 {
             return false;
         }
-        self.round_corner = Some(RoundCornerMode {
+        self.shape_tools.round_corner = Some(RoundCornerMode {
             composed: index,
             corner: None,
             before: None,
@@ -104,12 +104,12 @@ impl Editor {
 
     /// 是否处于柔化模式
     pub fn round_corners_active(&self) -> bool {
-        self.round_corner.is_some()
+        self.shape_tools.round_corner.is_some()
     }
 
     /// 退出柔化模式
     pub fn end_round_corners(&mut self) {
-        self.round_corner.take();
+        self.shape_tools.round_corner.take();
     }
 
     /// 当前模式下的**可柔化角点**（锚点下标 + 屏幕位置）
@@ -118,10 +118,10 @@ impl Editor {
     /// - 开放路径：跳过首尾端点（只有一个相邻段，无法圆角）；
     /// - 闭合路径：跳过与起点重合的收尾锚点（它和下标 0 是同一个角）。
     pub(crate) fn round_corner_points(&self) -> Vec<(usize, Point)> {
-        let Some(mode) = &self.round_corner else {
+        let Some(mode) = &self.shape_tools.round_corner else {
             return Vec::new();
         };
-        let Some(part) = self.pending_part(mode.composed) else {
+        let Some(part) = pending_part(self, mode.composed) else {
             return Vec::new();
         };
         let anchors = &part.model.geometry.anchors;
@@ -159,10 +159,15 @@ impl Editor {
 
     /// 按下：命中角点即开始拖半径（容差 14px）；按住 Ctrl 则调弧形状
     pub(crate) fn round_corner_pressed(&mut self, pos: Point) -> bool {
-        let Some(composed) = self.round_corner.as_ref().map(|mode| mode.composed) else {
+        let Some(composed) = self
+            .shape_tools
+            .round_corner
+            .as_ref()
+            .map(|mode| mode.composed)
+        else {
             return false;
         };
-        let Some(part) = self.pending_part(composed) else {
+        let Some(part) = pending_part(self, composed) else {
             return false;
         };
         let Some(index) = self
@@ -196,9 +201,9 @@ impl Editor {
                 k,
                 self.editor_state.view.ppq,
             );
-            self.update_pending_part(composed, model);
+            update_pending_part(self, composed, model);
         }
-        let Some(mode) = &mut self.round_corner else {
+        let Some(mode) = &mut self.shape_tools.round_corner else {
             return false;
         };
         mode.corner = Some(index);
@@ -215,7 +220,7 @@ impl Editor {
 
     /// 拖动：普通拖拽 = 半径（光标到角点的距离）；Ctrl+拖拽 = 弧形状（纵向鼓度）
     pub(crate) fn round_corner_moved(&mut self, pos: Point) -> bool {
-        let Some(mode) = &self.round_corner else {
+        let Some(mode) = &self.shape_tools.round_corner else {
             return false;
         };
         let (Some(index), Some(origin)) = (mode.corner, mode.origin) else {
@@ -226,11 +231,11 @@ impl Editor {
         let shape_base = mode.shape_base;
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_raw_key(pos);
-        if let Some(mode) = &mut self.round_corner {
+        if let Some(mode) = &mut self.shape_tools.round_corner {
             mode.cursor = Some((tick, key));
             mode.changed = true;
         }
-        let Some(part) = self.pending_part(composed) else {
+        let Some(part) = pending_part(self, composed) else {
             return false;
         };
         let mut model = part.model.clone();
@@ -254,13 +259,13 @@ impl Editor {
                 set_shape(&mut model, index, shape, k, ppq);
             }
         }
-        self.update_pending_part(composed, model);
+        update_pending_part(self, composed, model);
         true
     }
 
     /// 松手：一次拖拽 = 一次 pending 撤销
     pub(crate) fn round_corner_released(&mut self) -> bool {
-        let Some(mode) = &mut self.round_corner else {
+        let Some(mode) = &mut self.shape_tools.round_corner else {
             return false;
         };
         let Some(before) = mode.before.take() else {
@@ -268,40 +273,41 @@ impl Editor {
         };
         mode.origin = None;
         mode.cursor = None;
-        self.pending_edit_undo.push(before);
-        while self.pending_edit_undo.len() > 64 {
-            self.pending_edit_undo.remove(0);
+        self.shape_tools.pending_edit_undo.push(before);
+        while self.shape_tools.pending_edit_undo.len() > 64 {
+            self.shape_tools.pending_edit_undo.remove(0);
         }
-        self.pending_edit_redo.clear();
-        self.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
         true
     }
+}
 
-    /// 取待确认组合的第一支（柔化只作用于单支模型）
-    fn pending_part(&self, index: usize) -> Option<&lumino_editor_state::ComposedPart> {
-        self.editor_state
-            .pending_composed
-            .get(index)?
-            .results
-            .first()
-    }
+/// 取待确认组合的第一支（自由函数：T-30 slice 6）。
+fn pending_part(editor: &Editor, index: usize) -> Option<&lumino_editor_state::ComposedPart> {
+    editor
+        .editor_state
+        .pending_composed
+        .get(index)?
+        .results
+        .first()
+}
 
-    /// 用新模型替换第一支并重生成预览音符
-    fn update_pending_part(&mut self, index: usize, mut model: ShapeModel) {
-        let track = model.track as usize;
-        let notes = self.part_notes_for_edit(&model, track);
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            model.id = 0;
-            part.model = model;
-            part.notes = notes;
-        }
-        self.refresh_pending_mirror_geometry();
+/// 用新模型替换第一支并重生成预览音符（自由函数：T-30 slice 6）。
+fn update_pending_part(editor: &mut Editor, index: usize, mut model: ShapeModel) {
+    let track = model.track as usize;
+    let notes = editor.part_notes_for_edit(&model, track);
+    if let Some(part) = editor
+        .editor_state
+        .pending_composed
+        .get_mut(index)
+        .and_then(|composed| composed.results.first_mut())
+    {
+        model.id = 0;
+        part.model = model;
+        part.notes = notes;
     }
+    editor.refresh_pending_mirror_geometry();
 }
 
 /// 在模型上设置某角点的圆角半径（无 Round 算子时追加）

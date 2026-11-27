@@ -86,7 +86,7 @@ fn test_ctrl_copy_large_selection_places_copies_at_uniform_delta() {
     let count = editor.editor_state.data.current_track_note_count();
     let mut ds = DragState::from_indices(editor.get_selected_indices(), count, 0, 60);
     ds.set_delta(700, 5);
-    editor.pending_copy_drag_state = Some(ds);
+    editor.transient.pending_copy = Some(ds);
     assert!(editor.commit_pending_copy(), "副本应写入内存层");
 
     assert_eq!(

@@ -39,35 +39,8 @@ impl Editor {
         // 先切到形状选择：`rebuild_pending_mirrors` 只在 ShapeSelect 下建镜像
         // （否则 pending 既画不出选择框，也右键不到「退回抽屉」）。
         self.set_tool(Tool::ShapeSelect);
-        self.push_pending_insert(model, notes, drawer);
+        push_pending_insert(self, model, notes, drawer);
         true
-    }
-
-    /// 把 pending 插入的结果落到 `pending_composed` 并刷新选择镜像
-    fn push_pending_insert(
-        &mut self,
-        model: ShapeModel,
-        notes: Vec<ShapeNote>,
-        drawer: DrawerInsert,
-    ) {
-        let index = self.editor_state.pending_composed.len();
-        self.editor_state
-            .pending_composed
-            .push(PendingComposed::from_drawer(model, notes, drawer));
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
-        self.editor_state.shape_select.remove_pending_all();
-        self.rebuild_pending_mirrors();
-        // 插入后立刻选中，右键菜单才有目标（与既有组合入口一致）。
-        if let Some(id) = self
-            .editor_state
-            .shape_select
-            .pending_mirror(lumino_editor_state::PendingShapeRef::Composed(index))
-        {
-            self.editor_state.shape_select.select_only(id);
-        }
-        self.mark_notes_changed();
     }
 
     /// 退回抽屉：删除该 pending 并把来源原样交回（不写文档历史）
@@ -80,9 +53,9 @@ impl Editor {
         // 先取走再删除：只有确认来源可用才动 pending。
         let drawer = drawer.clone();
         self.editor_state.pending_composed.remove(index);
-        self.pending_composed_redo.clear();
-        self.pending_edit_undo.clear();
-        self.pending_edit_redo.clear();
+        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.pending_edit_undo.clear();
+        self.shape_tools.pending_edit_redo.clear();
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         self.mark_notes_changed();
@@ -101,6 +74,34 @@ impl Editor {
     pub fn pending_insert_rect(&self, index: usize) -> Option<ShapeRect> {
         self.pending_drawer_source(index).map(|d| d.spec.rect)
     }
+}
+
+/// 把 pending 插入的结果落到 `pending_composed` 并刷新选择镜像
+fn push_pending_insert(
+    editor: &mut Editor,
+    model: ShapeModel,
+    notes: Vec<ShapeNote>,
+    drawer: DrawerInsert,
+) {
+    let index = editor.editor_state.pending_composed.len();
+    editor
+        .editor_state
+        .pending_composed
+        .push(PendingComposed::from_drawer(model, notes, drawer));
+    editor.shape_tools.pending_composed_redo.clear();
+    editor.shape_tools.pending_edit_undo.clear();
+    editor.shape_tools.pending_edit_redo.clear();
+    editor.editor_state.shape_select.remove_pending_all();
+    editor.rebuild_pending_mirrors();
+    // 插入后立刻选中，右键菜单才有目标（与既有组合入口一致）。
+    if let Some(id) = editor
+        .editor_state
+        .shape_select
+        .pending_mirror(lumino_editor_state::PendingShapeRef::Composed(index))
+    {
+        editor.editor_state.shape_select.select_only(id);
+    }
+    editor.mark_notes_changed();
 }
 
 #[cfg(test)]

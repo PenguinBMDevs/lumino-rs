@@ -3,7 +3,7 @@
 //! 处理 `Message::Sidebar` 以及 `Message::ModeToggled`，
 //! 负责侧边栏路由、音轨选择、分组切换与 AppMode 同步。
 //!
-//! 子模块组织（按职责拆分，保持本文件 < 400 行）：
+//! 子模块组织（按职责拆分，保持本文件 ≤600 行）：
 //! - `right_sidebar`: 右侧栏动作处理（图片转 MIDI / 素材库）
 //! - `i2m`: 图片转 MIDI 后台转换结果轮询
 //!
@@ -20,8 +20,7 @@ mod i2m;
 mod right_sidebar;
 
 #[cfg(test)]
-#[path = "sidebar/roll_tests.rs"]
-mod roll_tests;
+mod tests;
 
 impl Root {
     /// 处理模式切换（编辑器 ↔ 瀑布流）
@@ -287,10 +286,9 @@ impl Root {
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;
         self.editor
-            .set_canvas_offset(lumino_ui_core::geom::Point::new(
-                sidebar_width,
-                current_offset_y,
-            ));
+            .editor_state
+            .canvas
+            .set_offset(sidebar_width, current_offset_y);
 
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {

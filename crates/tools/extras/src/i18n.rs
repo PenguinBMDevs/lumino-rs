@@ -21,64 +21,19 @@ pub use lumino_core::i18n::{
 };
 pub use lumino_core::{tr, trf};
 
-use lumino_core::{DotType, NotePrecision};
+/// 获取主界面翻译（`main` 模块的入口原样转出）
+pub use main::get as main_translations;
+/// 获取设置面板翻译（`settings` 模块的入口原样转出）
+pub use settings::get as settings_translations;
 
-/// 获取主界面翻译
-pub fn main_translations(lang: Language) -> &'static MainTranslations {
-    main::get(lang)
-}
-
-/// 千分位格式化（`1234567` → `"1,234,567"`；UI-015 音符总量显示）。
-pub fn format_thousands(n: u64) -> String {
-    main::format_thousands(n)
-}
-
-/// 获取音符精度名称（按语言）
-pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static str {
-    main::note_precision_name(precision, lang)
-}
-
-/// 获取附点类型名称（按语言）
-pub fn dot_type_name(dot_type: DotType, lang: Language) -> &'static str {
-    main::dot_type_name(dot_type, lang)
-}
-
-/// 获取框选框模式名称（按语言）
-pub fn selection_box_mode_name(
-    mode: lumino_core::storage::config::SelectionBoxMode,
-    lang: Language,
-) -> &'static str {
-    main::selection_box_mode_name(mode, lang)
-}
-
-/// 获取橡皮擦行为名称（按语言）
-pub fn eraser_behavior_name(
-    behavior: lumino_core::storage::config::EraserBehavior,
-    lang: Language,
-) -> &'static str {
-    main::eraser_behavior_name(behavior, lang)
-}
-
-/// 获取音轨添加行为名称（按语言）
-pub fn track_add_behavior_name(
-    behavior: lumino_core::storage::config::TrackAddBehavior,
-    lang: Language,
-) -> &'static str {
-    main::track_add_behavior_name(behavior, lang)
-}
-
-/// 获取合成器后端名称（按语言）
-pub fn synth_backend_name(
-    backend: lumino_core::storage::config::SynthBackend,
-    lang: Language,
-) -> &'static str {
-    main::synth_backend_name(backend, lang)
-}
-
-/// 获取设置面板翻译
-pub fn settings_translations(lang: Language) -> &'static SettingsTranslations {
-    settings::get(lang)
-}
+/// 主界面的格式化/枚举名称辅助函数：**原样转出**，不再逐层包一层。
+///
+/// 此前 7 个 `pub fn x(..) { main::x(..) }` 只是转发；`pub use` 保持
+/// `lumino_extras::i18n::x` 路径与签名不变，同时删掉样板。
+pub use main::{
+    dot_type_name, eraser_behavior_name, format_thousands, note_precision_name,
+    selection_box_mode_name, synth_backend_name, track_add_behavior_name,
+};
 
 #[cfg(test)]
 mod tests {

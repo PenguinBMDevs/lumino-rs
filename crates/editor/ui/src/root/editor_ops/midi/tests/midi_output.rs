@@ -7,7 +7,7 @@ use crate::toolbar;
 /// set_midi_output 在无 playback_manager 时缓存到 pending_midi_output，
 /// Message::Toolbar(toolbar::Event::Play) 消费它并创建 playback_manager
 ///
-/// 拆分说明（避免单文件超 400 行）：
+/// 拆分说明（避免单文件超 600 行）：
 /// - `midi_output/playback.rs`：完整播放生命周期 / 音符更新 / Host 流
 /// - `midi_output/tempo.rs`：tempo changes 与 BPM 缓存路径
 /// - `midi_output/cc.rs`：CC/PitchBend 事件到达 MIDI 输出链路

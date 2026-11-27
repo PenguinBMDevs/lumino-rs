@@ -8,7 +8,7 @@
 //! `((start_tick as u64) << 8) | key`（8 字节/音符，二分查找 O(log K)）。
 //!
 //! 2026-09 自 `arrange_selection.rs` 拆出：该类型自洽，且与 `ArrangeSelection` 的
-//! 矩形几何逻辑正交，拆分以满足 ≤400 行约束。
+//! 矩形几何逻辑正交，拆分以满足 ≤600 行约束。
 
 use std::collections::HashMap;
 

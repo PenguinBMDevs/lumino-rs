@@ -12,19 +12,6 @@ pub enum ClientMessage {
         /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
         password: String,
     },
-    /// 创建房间请求
-    CreateRoom {
-        /// 房间名称
-        name: String,
-    },
-    /// 加入房间请求
-    JoinRoom {
-        /// 邀请码
-        #[serde(rename = "inviteCode")]
-        invite_code: String,
-    },
-    /// 离开房间请求
-    LeaveRoom,
     /// 鼠标移动通知
     MouseMove {
         /// 鼠标坐标
@@ -40,11 +27,6 @@ pub enum ClientMessage {
         /// MIDI 事件内容
         event: crate::types::MidiEvent,
     },
-    /// MIDI 事件批量操作
-    MidiEventBatch {
-        /// MIDI 事件列表
-        events: Vec<crate::types::MidiEvent>,
-    },
     /// 项目状态更新
     ProjectUpdate {
         /// 项目更新内容
@@ -55,8 +37,6 @@ pub enum ClientMessage {
         /// 选择内容（JSON：{active, timestamp, fingerprints}）
         selection: serde_json::Value,
     },
-    /// 请求全量同步
-    RequestSync,
     /// 心跳 Ping
     Ping {
         /// 发送时间戳
@@ -81,20 +61,6 @@ pub enum ServerMessage {
         user: crate::types::UserData,
         /// 房间内用户列表
         users: Vec<crate::types::UserInfo>,
-    },
-    /// 认证成功响应（仅含用户与房间标识）
-    AuthSuccess {
-        /// 当前用户 ID
-        #[serde(rename = "userId")]
-        user_id: crate::types::UserId,
-        /// 房间邀请码
-        #[serde(rename = "inviteCode")]
-        invite_code: crate::types::InviteCode,
-    },
-    /// 认证失败响应
-    AuthError {
-        /// 错误描述
-        error: String,
     },
     /// 房间创建成功响应
     RoomCreated {
@@ -201,31 +167,6 @@ pub enum ServerMessage {
     },
 }
 
-impl ServerMessage {
-    /// 返回协议中的消息类型标签（与 `#[serde(tag = "type")]` 的 camelCase 一致）
-    pub fn type_name(&self) -> &'static str {
-        match self {
-            ServerMessage::Authenticated { .. } => "authenticated",
-            ServerMessage::AuthSuccess { .. } => "authSuccess",
-            ServerMessage::AuthError { .. } => "authError",
-            ServerMessage::RoomCreated { .. } => "roomCreated",
-            ServerMessage::RoomJoined { .. } => "roomJoined",
-            ServerMessage::RoomError { .. } => "roomError",
-            ServerMessage::UserJoined { .. } => "userJoined",
-            ServerMessage::UserLeft { .. } => "userLeft",
-            ServerMessage::MouseUpdate { .. } => "mouseUpdate",
-            ServerMessage::NoteBatchUpdate { .. } => "noteBatchUpdate",
-            ServerMessage::MidiEventUpdate { .. } => "midiEventUpdate",
-            ServerMessage::MidiEventBatchUpdate { .. } => "midiEventBatchUpdate",
-            ServerMessage::ProjectStateUpdate { .. } => "projectStateUpdate",
-            ServerMessage::Selection { .. } => "selection",
-            ServerMessage::FullSync { .. } => "fullSync",
-            ServerMessage::Pong { .. } => "pong",
-            ServerMessage::Error { .. } => "error",
-        }
-    }
-}
-
 /// 认证响应中的房间信息
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -257,22 +198,6 @@ pub struct AuthRoomInfo {
 #[cfg(test)]
 mod tests {
     use super::ServerMessage;
-
-    /// type_name 必须与 serde 协议标签一致（`#[serde(tag = "type")]` camelCase），
-    /// 否则兜底日志会输出与线上协议不一致的标签
-    #[test]
-    fn test_server_message_type_name_matches_serde_tag() {
-        let cases = [
-            (r#"{"type":"pong","timestamp":1,"serverTime":2}"#, "pong"),
-            (r#"{"type":"userLeft","userId":"u1"}"#, "userLeft"),
-            (r#"{"type":"roomError","error":"boom"}"#, "roomError"),
-            (r#"{"type":"error","error":"boom"}"#, "error"),
-        ];
-        for (json, expected) in cases {
-            let msg: ServerMessage = serde_json::from_str(json).expect("测试 JSON 应可反序列化");
-            assert_eq!(msg.type_name(), expected, "JSON: {json}");
-        }
-    }
 
     /// M1 回归守卫：服务端在「仅登录 / 加房失败」时发 `room: null`，
     /// 客户端必须能解析为 None，而不是把整个认证响应判为格式错误。

@@ -43,7 +43,7 @@ impl Editor {
         // 每次按下先清空框选锚点：只有真正进入框选（Selecting）的分支才会重新设置。
         // 否则上一次框选残留的锚点会被后续「非按下路径建立」的 Selecting 误用，
         // 导致选框按旧锚点量化（跨工具串味）。
-        self.marquee_anchor_tick = None;
+        self.selection_ui.marquee_anchor = None;
 
         // 图片转 MIDI 放置模式：拦截全部按下交互
         if self.editor_state.image_to_midi.is_active() {
@@ -200,19 +200,20 @@ impl Editor {
                     // 为避免 pending 索引在拉伸重排后失配 + 异步整轨写回覆盖拉伸变更，
                     // 此处先提交并等待落盘（drain），保留新值选区再拉伸。
                     // 纯拖动（无后续拉伸）仍只在空白处取消时落盘，满足幽灵语义。
-                    self.pending_copy_drag_state = None;
-                    if self.pending_drag_state.is_some() {
+                    self.transient.pending_copy = None;
+                    if self.transient.pending_drag.is_some() {
                         self.commit_pending_drag();
                         // 等待异步整轨写回完成，避免后台线程覆盖随后的拉伸变更。
                         self.drain_async_commit();
                         // 落盘后选中已跟随新值（poll 按新值重选），远端高亮同步到新位置。
                         if self.editor_state.data.collab_sync_enabled() {
-                            self.emit_local_selection_changed(true);
+                            let fps = self.selected_fingerprints();
+                            self.transient.emit_local_selection_changed(true, &fps);
                         }
                         // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
                         // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
                         // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
-                        self.selected_bounds.set(None);
+                        self.selection_ui.bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
@@ -224,16 +225,17 @@ impl Editor {
                 crate::SelectionHitType::RightEdge => {
                     // 框选右边缘拉伸：同 LeftEdge，串行化 pending 后保留选区
                     // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
-                    self.pending_copy_drag_state = None;
-                    if self.pending_drag_state.is_some() {
+                    self.transient.pending_copy = None;
+                    if self.transient.pending_drag.is_some() {
                         self.commit_pending_drag();
                         // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
                         self.drain_async_commit();
                         if self.editor_state.data.collab_sync_enabled() {
-                            self.emit_local_selection_changed(true);
+                            let fps = self.selected_fingerprints();
+                            self.transient.emit_local_selection_changed(true, &fps);
                         }
                         // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
-                        self.selected_bounds.set(None);
+                        self.selection_ui.bounds.set(None);
                     }
                     self.push_history();
                     self.editor_state.interaction.edit_state =
@@ -311,18 +313,18 @@ impl Editor {
     /// 因此当两者并存时：先启动移动异步提交 → `drain_async_commit` 等待完成
     /// （document 回到一致状态）→ 再基于最新索引写入副本。
     fn flush_pending_drag(&mut self) {
-        if self.pending_drag_state.is_some() {
+        if self.transient.pending_drag.is_some() {
             self.commit_pending_drag();
             // 移动 + 复制并存：必须等移动异步提交完成（整轨替换），
             // 否则 replace_track_notes 会覆盖刚插入的副本
-            if self.pending_copy_drag_state.is_some() {
+            if self.transient.pending_copy.is_some() {
                 self.drain_async_commit();
             }
             self.selection_clear();
             // 取消框选：结束本地选择会话（远端清除高亮）。
-            self.emit_local_selection_changed(false);
+            self.transient.emit_local_selection_changed(false, &[]);
         }
-        if self.pending_copy_drag_state.is_some() {
+        if self.transient.pending_copy.is_some() {
             self.commit_pending_copy();
         }
     }

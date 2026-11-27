@@ -8,6 +8,7 @@ use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor::SCROLL_MAX_DELTA;
 use lumino_ui_core::message::{EditorAction, Point2};
 
+use super::shared::{apply_modifiers, moved, point, released};
 use super::{CanvasButton, CanvasEvent};
 use crate::Editor;
 use crate::grid::program::PianoRollGrid;
@@ -20,11 +21,7 @@ pub fn dispatch(
     event: CanvasEvent,
 ) -> Option<Message> {
     match event {
-        CanvasEvent::Modifiers { shift, ctrl } => {
-            state.shift_pressed = shift;
-            state.control_pressed = ctrl;
-            None
-        }
+        CanvasEvent::Modifiers { shift, ctrl } => apply_modifiers(state, shift, ctrl),
         CanvasEvent::FocusLost => {
             state.shift_pressed = false;
             state.control_pressed = false;
@@ -34,11 +31,8 @@ pub fn dispatch(
             CanvasButton::Left => left_press(editor, state, local),
             CanvasButton::Right => right_press(editor, local),
         },
-        CanvasEvent::Move { local } => move_pointer(editor, local),
-        CanvasEvent::Release => {
-            editor.selection_box_anim.set(None);
-            Some(Message::EditorAction(EditorAction::Released))
-        }
+        CanvasEvent::Move { local } => moved(editor, local),
+        CanvasEvent::Release => released(editor),
         CanvasEvent::Wheel {
             local,
             delta_x,
@@ -46,10 +40,6 @@ pub fn dispatch(
             precise,
         } => wheel(editor, state, local, delta_x, delta_y, precise),
     }
-}
-
-fn point(local: (f32, f32)) -> lumino_ui_core::geom::Point {
-    lumino_ui_core::geom::Point::new(local.0, local.1)
 }
 
 /// 纵向卷帘的光标形态（复用 `vertical_mouse` 的判定）。
@@ -92,7 +82,7 @@ fn left_press(
 /// 右键：关闭图形列表 / 清除区域着色 / 打开上下文菜单。
 fn right_press(editor: &Editor, local: (f32, f32)) -> Option<Message> {
     let local_pos = point(local);
-    if editor.shape_list_open {
+    if editor.shape_tools.list_open {
         return Some(Message::EditorAction(EditorAction::ShapeListClose));
     }
     if let Some(action) = crate::grid::area_paint_box::clear_action(editor, local_pos) {
@@ -108,7 +98,7 @@ fn right_press(editor: &Editor, local: (f32, f32)) -> Option<Message> {
             .map_or(ContextMenuTarget::Notes, |_| {
                 ContextMenuTarget::PendingDrawnShape
             }),
-        Some(false) if editor.current_tool() == lumino_message::Tool::ShapeSelect => {
+        Some(false) if editor.editor_state.current_tool() == lumino_message::Tool::ShapeSelect => {
             ContextMenuTarget::DrawnShape
         }
         _ => ContextMenuTarget::Notes,
@@ -119,19 +109,6 @@ fn right_press(editor: &Editor, local: (f32, f32)) -> Option<Message> {
             target,
         },
     ))
-}
-
-/// 指针移动：框选平滑动画 + `Moved`（画布内）。
-fn move_pointer(editor: &Editor, local: (f32, f32)) -> Option<Message> {
-    let local_pos = point(local);
-    editor.update_selection_box_animation(Some(local_pos));
-    if !editor.is_inside_canvas(local_pos) {
-        return None;
-    }
-    Some(Message::EditorAction(EditorAction::Moved(Point2::new(
-        local_pos.x,
-        local_pos.y,
-    ))))
 }
 
 /// 滚轮：键盘区缩放音高、网格区缩放时间（Ctrl）或滚动（双向映射）。
@@ -211,8 +188,8 @@ mod tests {
         let mut editor = Editor::new();
         seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.is_vertical_roll = true;
-        editor.set_canvas_size(lumino_ui_core::geom::Point::new(2000.0, 3000.0));
-        editor.set_canvas_offset(lumino_ui_core::geom::Point::new(0.0, 0.0));
+        editor.editor_state.canvas.set_size(2000.0, 3000.0);
+        editor.editor_state.canvas.set_offset(0.0, 0.0);
         editor
     }
 

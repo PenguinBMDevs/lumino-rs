@@ -1,6 +1,6 @@
 //! 基准支撑：进程级堆内存统计分配器、单操作统计、MIDI 加载与 200W 工作负载构建
 //!
-//! 由 `id_history_ops_bench.rs` 拆出（保持单文件 < 400 行）。
+//! 由 `id_history_ops_bench.rs` 拆出（保持单文件 ≤600 行）。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::env;

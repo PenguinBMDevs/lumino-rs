@@ -40,7 +40,7 @@ pub enum ShapeListHit {
 
 /// 当前应显示的列表矩形；无模型/未展开时返回 `None`
 pub fn shape_list_rects(editor: &Editor) -> Option<ShapeListRects> {
-    if !editor.shape_list_open {
+    if !editor.shape_tools.list_open {
         return None;
     }
     let track = editor.editor_state.data.current_track;
@@ -113,7 +113,7 @@ pub fn hit(editor: &Editor, point: Point) -> Option<ShapeListHit> {
 /// 左键命中列表：`None` = 列表未展开；`Some(None)` = 面板空白消费；
 /// `Some(Some(action))` = 选择/关闭动作。
 pub fn press_action(editor: &Editor, point: Point) -> Option<Option<EditorAction>> {
-    if !editor.shape_list_open {
+    if !editor.shape_tools.list_open {
         return None;
     }
     Some(match hit(editor, point) {
@@ -191,7 +191,7 @@ mod tests {
                 channel: 0,
             }],
         );
-        editor.shape_list_open = true;
+        editor.shape_tools.list_open = true;
         let rects = shape_list_rects(&editor).expect("应显示列表");
         let row = &rects.rows[0];
         assert_eq!(

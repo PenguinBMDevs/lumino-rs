@@ -18,7 +18,7 @@ fn test_released_copy_drag_accumulates_delta() {
     d1.set_delta(100, 0);
     release_copy_drag(&mut editor, d1);
     assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
 
     // 第二次复制（连续复制）：副本已真实化并选中（selected = 副本索引），
     // 从副本位置（tick 100）继续拖动 50 → 新副本 = 副本 + 50 = 原件 + 150

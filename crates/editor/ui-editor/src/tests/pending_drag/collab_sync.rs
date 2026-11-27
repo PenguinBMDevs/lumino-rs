@@ -80,7 +80,7 @@ fn test_commit_pending_drag_broadcasts_each_selected_note() {
     // 框选索引 0 与 2，统一偏移 (tick=321, key=11) —— 唯一魔数
     let mut drag = DragState::from_indices([0, 2], 3, 0, 71);
     drag.set_delta(SIG_TICK_OFFSET as i64, SIG_KEY_OFFSET);
-    editor.pending_drag_state = Some(drag);
+    editor.transient.pending_drag = Some(drag);
 
     assert!(
         commit_pending_drag_and_drain(&mut editor),
@@ -140,7 +140,7 @@ fn test_commit_pending_drag_no_broadcast_when_empty_selection() {
     // 空选区无操作可提交，`commit_pending_drag` 返回 false（属正常行为）。
     let mut drag = DragState::from_indices([], 1, 0, 71);
     drag.set_delta(SIG_TICK_OFFSET as i64, SIG_KEY_OFFSET);
-    editor.pending_drag_state = Some(drag);
+    editor.transient.pending_drag = Some(drag);
 
     assert!(
         !commit_pending_drag_and_drain(&mut editor),

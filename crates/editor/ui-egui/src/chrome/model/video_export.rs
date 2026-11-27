@@ -3,6 +3,7 @@
 //! 控件用通用行描述（下拉 / 滑杆 / 复选 / 文本 / 标签 / 按钮），生产侧只负责把
 //! 状态翻译成行并用 `id` 记住回传目标，渲染层不认识任何业务枚举。
 
+use super::video_row_id::VideoRowId;
 /// 视频导出面板（含占用矩形）。
 #[derive(Debug, Clone)]
 pub struct VideoExportPanelModel {
@@ -57,7 +58,7 @@ pub enum VideoRow {
         /// 控件宽（生产多为 200）。
         width: f32,
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
     /// 滑杆（含右侧数值文本）。
     Slider {
@@ -78,7 +79,7 @@ pub enum VideoRow {
         /// 右侧数值格式（如 `1.0x` / `7.5` / `24 px`）。
         value_text: String,
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
     /// 复选框。
     Toggle {
@@ -87,7 +88,7 @@ pub enum VideoRow {
         /// 是否勾选。
         checked: bool,
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
     /// 文本框。
     Text {
@@ -102,7 +103,7 @@ pub enum VideoRow {
         /// 控件宽（0 = 填满剩余）。
         width: f32,
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
     /// 多行文本域（模板编辑器）。
     TextArea {
@@ -115,7 +116,7 @@ pub enum VideoRow {
         /// 高度。
         height: f32,
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
     /// 「标签 + 输入 + 行尾按钮」（路径 + 浏览）。
     TextButton {
@@ -130,7 +131,7 @@ pub enum VideoRow {
         /// 输入宽（0 = 填满到按钮左侧）。
         width: f32,
         /// 输入回传 id。
-        text_id: u16,
+        text_id: VideoRowId,
         /// 行尾按钮（自带 id）。
         button: VideoButton,
     },
@@ -170,7 +171,7 @@ pub struct VideoButton {
     /// 文案。
     pub label: String,
     /// 回传 id。
-    pub id: u16,
+    pub id: VideoRowId,
     /// 底色。
     pub fill: VideoButtonFill,
     /// 宽度（0 = 随文本）。
@@ -194,35 +195,35 @@ pub enum VideoExportAction {
     /// 下拉选择（`id` + 选项下标）。
     Pick {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 选项下标。
         index: usize,
     },
     /// 滑杆值。
     Slider {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新值。
         value: f32,
     },
     /// 复选切换。
     Toggle {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新值。
         value: bool,
     },
     /// 文本变化。
     Text {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
         /// 新文本。
         value: String,
     },
     /// 按钮点击。
     Button {
         /// 回传 id。
-        id: u16,
+        id: VideoRowId,
     },
 }
 
@@ -240,5 +241,5 @@ pub struct TextPairCell {
     /// 输入宽。
     pub width: f32,
     /// 回传 id。
-    pub id: u16,
+    pub id: VideoRowId,
 }

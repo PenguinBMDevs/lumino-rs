@@ -28,27 +28,18 @@ impl CcBarRenderer {
         let instance_count = instances.len();
 
         // 扩容实例缓冲区（旧缓冲由 TrackedBuffer Drop 自动注销）
-        if instance_count > self.capacity {
-            let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
-            self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
-            self.capacity = new_capacity;
+        if instance_count > self.instances.capacity() {
+            self.instances
+                .ensure_capacity(device, instance_count, Self::GROWTH_FACTOR);
         }
 
         // 上传实例数据
-        if instance_count > 0 {
-            queue.write_buffer(
-                self.instance_buffer.inner(),
-                0,
-                bytemuck::cast_slice(instances),
-            );
-        }
+        self.instances.write(queue, instances);
 
-        // 更新视口 uniform
-        let viewport_uniform = CcBarViewportUniform::new(viewport_size.0, viewport_size.1);
-        queue.write_buffer(
-            self.viewport_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&[viewport_uniform]),
+        // 更新视口 uniform（值变化时才上传）
+        self.viewport.write(
+            queue,
+            CcBarViewportUniform::new(viewport_size.0, viewport_size.1),
         );
     }
 }

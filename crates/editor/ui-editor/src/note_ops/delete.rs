@@ -69,7 +69,7 @@ impl Editor {
 
         // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先），
         // 既不应用删除也不广播，避免覆盖远端已先提交的编辑。
-        if self.local_selection_is_locked() {
+        if self.transient.local_selection_is_locked() {
             tracing::debug!("协作: 本地删除被远端抢先选择锁定，跳过（远端优先）");
             return;
         }
@@ -111,7 +111,7 @@ impl Editor {
         self.mark_notes_changed();
 
         // 编辑已提交：结束本地选择会话（通知对端）
-        self.emit_local_selection_changed(false);
+        self.transient.emit_local_selection_changed(false, &[]);
 
         // Emit sync events for each deleted note（仅协作会话开启时，按值）
         for (tick, key, length, velocity, channel, track_idx) in deleted_notes {

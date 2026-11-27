@@ -95,7 +95,7 @@ impl CpuOnionRenderer {
             output: CpuFrame::default(),
             width: 0,
             height: 0,
-            simd: SimdLevel::detect(),
+            simd: SimdLevel::detect(false),
             visible_notes: 0,
             overview_scratch: crate::density::OverviewScratch::default(),
             last_overview: None,

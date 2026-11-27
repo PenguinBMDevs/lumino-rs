@@ -1,6 +1,6 @@
 //! rendering 模块单元测试
 //!
-//! 从 rendering.rs 主文件拆出，因为主文件接近 400 行限制。
+//! 从 rendering.rs 主文件拆出，因为主文件接近 600 行限制。
 
 use super::ghost::{
     copy_deltas_for_index, ghost_delta_for_index, has_active_ghost_delta, is_copy_ghosted,

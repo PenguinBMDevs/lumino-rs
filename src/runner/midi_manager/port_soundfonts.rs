@@ -135,10 +135,7 @@ impl MidiManager {
 
     /// 当前/即将生效后端对按端口音色库的能力。
     fn port_soundfonts_capability(&self) -> PortSoundfontsCapability {
-        if self.is_xsynth_initializing()
-            || self.is_lgs_initializing()
-            || self.is_maestro_initializing
-        {
+        if self.software_backend_pending() {
             // 初始化完成前不判断能力：避免把“即将切到 XSynth”误报为不支持。
             return PortSoundfontsCapability::Pending;
         }

@@ -51,23 +51,23 @@ pub(crate) struct ShapeEditState {
     pub mods: Mods,
 }
 
-impl Editor {
-    /// 041C 阶段 3：只有能可靠重生成的单支组合才开放手柄。
-    ///
-    /// Merge 的跨形状位移不在模型里，单独改第一支会丢第二支音符；Slice/Between
-    /// 是多支，暂不提供整体手柄。
-    fn pending_handle_supported(composed: &PendingComposed) -> bool {
-        composed.results.len() == 1
-            && matches!(
-                composed.kind,
-                ComposedKind::Live
-                    | ComposedKind::Join
-                    | ComposedKind::CopyAlong
-                    | ComposedKind::Velocity
-                    | ComposedKind::Single
-            )
-    }
+/// 041C 阶段 3：只有能可靠重生成的单支组合才开放手柄。
+///
+/// Merge 的跨形状位移不在模型里，单独改第一支会丢第二支音符；Slice/Between
+/// 是多支，暂不提供整体手柄。
+pub(super) fn pending_handle_supported(composed: &PendingComposed) -> bool {
+    composed.results.len() == 1
+        && matches!(
+            composed.kind,
+            ComposedKind::Live
+                | ComposedKind::Join
+                | ComposedKind::CopyAlong
+                | ComposedKind::Velocity
+                | ComposedKind::Single
+        )
+}
 
+impl Editor {
     /// 进入/退出「编辑图形」模式；进入后隐藏 ShapeSelect 选框。
     pub fn enable_shape_edit(&mut self) -> bool {
         // 已处于编辑态 → 本次为「退出」：丢弃未提交拖拽并恢复选框。
@@ -100,8 +100,8 @@ impl Editor {
                 let Some(indexes) = self.promote_pending_group_for_edit(&refs) else {
                     return false;
                 };
-                self.shape_edit_armed = Some(ShapeEditTarget::Group);
-                self.shape_group_edit = Some(indexes);
+                self.shape_tools.edit_armed = Some(ShapeEditTarget::Group);
+                self.shape_tools.group_edit = Some(indexes);
                 return true;
             }
             if !all_composed {
@@ -115,7 +115,7 @@ impl Editor {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
                 };
-                if !Self::pending_handle_supported(composed) {
+                if !pending_handle_supported(composed) {
                     return false;
                 }
                 if !indexes.contains(&index) {
@@ -125,14 +125,14 @@ impl Editor {
             if indexes.len() < 2 {
                 return false;
             }
-            self.shape_edit_armed = Some(ShapeEditTarget::Group);
-            self.shape_group_edit = Some(indexes);
+            self.shape_tools.edit_armed = Some(ShapeEditTarget::Group);
+            self.shape_tools.group_edit = Some(indexes);
             return true;
         }
         if selected != 1 {
             return false;
         }
-        self.shape_group_edit = None;
+        self.shape_tools.group_edit = None;
         let pending = {
             let Some(shape) = self.editor_state.shape_select.selected_shapes().next() else {
                 return false;
@@ -144,7 +144,7 @@ impl Editor {
                 let Some(composed) = self.editor_state.pending_composed.get(index) else {
                     return false;
                 };
-                if !Self::pending_handle_supported(composed) {
+                if !pending_handle_supported(composed) {
                     return false;
                 }
                 ShapeEditTarget::PendingComposed { index }
@@ -160,7 +160,7 @@ impl Editor {
             // DEC-001：已 Bake 的图形只读，不再提供 8 点手柄 / 中心点编辑。
             None => return false,
         };
-        self.shape_edit_armed = Some(target);
+        self.shape_tools.edit_armed = Some(target);
         true
     }
 
@@ -169,24 +169,24 @@ impl Editor {
     /// 以**当前选中目标是否仍匹配**为准：换选/取消选中后自动失效，
     /// 不会出现「选框被隐藏、锚点却不在」的空窗。
     pub fn is_shape_edit_armed(&self) -> bool {
-        self.armed_edit_target().is_some()
+        cursor::armed_edit_target(self).is_some()
     }
 
     /// 退出「编辑图形」：丢弃未提交的拖拽，恢复 ShapeSelect 选框。
     ///
     /// 入口：双击空白处、右键「编辑图形」再点一次、切换工具。
     pub fn exit_shape_edit(&mut self) -> bool {
-        let was = self.shape_edit_armed.is_some() || self.shape_edit.is_some();
-        let was_bake = self.bake_placement.is_some();
-        if self.shape_edit.is_some() {
+        let was = self.shape_tools.edit_armed.is_some() || self.shape_tools.edit.is_some();
+        let was_bake = self.shape_tools.bake_placement.is_some();
+        if self.shape_tools.edit.is_some() {
             self.cancel_shape_edit();
         }
         // DRAW-049：退出 8 手柄 = 结束 Bake 放置态；pending 保留，预览音符
         // 恢复显示。否则残留的 `bake_placement_active` 会继续隐藏音符块，
         // 用户只看到蓝色矢量轮廓，且下一次 ✓ 会直接 Bake。
-        self.bake_placement = None;
-        self.shape_edit_armed = None;
-        self.shape_group_edit = None;
+        self.shape_tools.bake_placement = None;
+        self.shape_tools.edit_armed = None;
+        self.shape_tools.group_edit = None;
         // 放置态退出后不保留不可操作的黄色选择框；pending 仍在但不再选中。
         if was_bake {
             self.editor_state.shape_select.clear_selection();
@@ -198,11 +198,11 @@ impl Editor {
     ///
     /// 未进入「编辑图形」时一律不接管：锚点只是示意，不会和 ShapeSelect 选框抢点击。
     pub(crate) fn begin_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        if self.current_tool() != lumino_message::Tool::ShapeSelect {
+        if self.editor_state.current_tool() != lumino_message::Tool::ShapeSelect {
             return false;
         }
         let (target, model, original_composed, group_parts) = {
-            let Some((target, model)) = self.armed_edit_target() else {
+            let Some((target, model)) = cursor::armed_edit_target(self) else {
                 return false;
             };
             let composed = match target {
@@ -221,13 +221,13 @@ impl Editor {
             x: self.editor_state.view.zoom_x,
             y: self.editor_state.view.zoom_y,
         };
-        let include_center = self.edit_allows_center(target);
+        let include_center = cursor::edit_allows_center(target);
         let mods = Mods {
             ctrl: self.ctrl_pressed(),
             shift: self.shift_pressed(),
         };
         // 旋转热区优先于锚点：角外那一圈必须能转，不能被角锚点的 10px 容差吃掉。
-        let handle = if self.in_shape_rotate_zone(&model, (tick, key)) {
+        let handle = if cursor::in_shape_rotate_zone(self, &model, (tick, key)) {
             HandleKind::Turn
         } else {
             match hit_test_box(&model, (tick, key), zoom, 10.0, include_center) {
@@ -241,7 +241,7 @@ impl Editor {
         } else {
             handle
         };
-        self.shape_edit = Some(ShapeEditState {
+        self.shape_tools.edit = Some(ShapeEditState {
             target,
             handle,
             start: (tick, key),
@@ -256,14 +256,14 @@ impl Editor {
 
     /// 拖动手柄；返回是否更新
     pub(crate) fn update_shape_edit(&mut self, tick: f32, key: f32) -> bool {
-        let Some(mut state) = self.shape_edit.take() else {
+        let Some(mut state) = self.shape_tools.edit.take() else {
             return false;
         };
         let k = match state.handle {
             // 旋转比例必须是**屏幕像素**意义上的「1 key / 1 tick」，横纵卷帘都成立。
             // 之前用 `model.k * ppq`（数据单位）会把它当成像素比例，屏幕上看就是
             // 旋转被拉成极端椭圆，甚至触发几何守卫整帧丢弃 —— 表现为「旋转没实现」。
-            HandleKind::Turn => self.turn_aspect(),
+            HandleKind::Turn => cursor::turn_aspect(self),
             _ => state.original.k,
         };
         // 关键：每帧都从拖动前的 original 重算一次。
@@ -283,19 +283,19 @@ impl Editor {
                 state.mods,
                 k,
             ) {
-                self.shape_edit = Some(state);
+                self.shape_tools.edit = Some(state);
                 return false;
             }
             if models
                 .iter()
                 .any(|model| !finite_geometry(model) || !sane_geometry(model))
             {
-                self.shape_edit = Some(state);
+                self.shape_tools.edit = Some(state);
                 return false;
             }
-            self.write_group_parts(&state.group_parts, &models);
+            group::write_group_parts(self, &state.group_parts, &models);
             state.current = union_model(&models).unwrap_or_else(|| state.current.clone());
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return true;
         }
         let mut next = state.original.clone();
@@ -307,11 +307,11 @@ impl Editor {
             state.mods,
             k,
         ) {
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return false;
         }
         if !finite_geometry(&next) || !sane_geometry(&next) {
-            self.shape_edit = Some(state);
+            self.shape_tools.edit = Some(state);
             return false;
         }
         state.current = next;
@@ -332,13 +332,13 @@ impl Editor {
             // 组分支已在上方提前返回
             ShapeEditTarget::Group => {}
         }
-        self.shape_edit = Some(state);
+        self.shape_tools.edit = Some(state);
         true
     }
 
     /// 是否正在拖拽形状手柄
     pub(crate) fn is_shape_editing(&self) -> bool {
-        self.shape_edit.is_some()
+        self.shape_tools.edit.is_some()
     }
 }
 
@@ -387,7 +387,5 @@ fn sane_geometry(model: &ShapeModel) -> bool {
 
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_ops;
 
 mod cursor;

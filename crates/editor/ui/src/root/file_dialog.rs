@@ -112,21 +112,23 @@ impl Root {
                     .set_path(port, path.to_string_lossy().to_string());
             }
             PathDialogTask::VideoCounterFont => {
-                self.state.video_export_dialog.counter_font_path =
+                self.state.video_export_dialog.counter.font_path =
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoCounterCsv => {
-                self.state.video_export_dialog.counter_csv_output =
+                self.state.video_export_dialog.counter.csv_output =
                     path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoDataCurveFont => {
-                self.state.video_export_dialog.dc_font_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.data_curve.font_path =
+                    path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoExportOutput => {
-                self.state.video_export_dialog.output_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.basic.output_path =
+                    path.to_string_lossy().to_string();
             }
             PathDialogTask::VideoExportMidi => {
-                self.state.video_export_dialog.midi_path = path.to_string_lossy().to_string();
+                self.state.video_export_dialog.basic.midi_path = path.to_string_lossy().to_string();
             }
         }
     }

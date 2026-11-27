@@ -44,8 +44,7 @@ impl RunnerInner {
             .window
             .ui_mut()
             .root_mut()
-            .toast
-            .push(ToastLevel::Warning, tr!("CPU 洋葱皮后端不支持视频导出"));
+            .push_toast(ToastLevel::Warning, tr!("CPU 洋葱皮后端不支持视频导出"));
         true
     }
 }

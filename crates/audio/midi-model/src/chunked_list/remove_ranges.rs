@@ -1,4 +1,4 @@
-//! `ChunkedList` 批量降序区间删除（自 `mutate.rs` 拆出，保持各文件 < 400 行）
+//! `ChunkedList` 批量降序区间删除（自 `mutate.rs` 拆出，保持各文件 ≤600 行）
 //!
 //! 2026-09 删除性能修复：逐音符 [`ChunkedList::remove`] 每次调用
 //! `rebuild_index()`（O(块数) + 2 次分配），且非尾部区间的 `Vec::remove`

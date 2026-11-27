@@ -84,7 +84,7 @@ impl RunnerInner {
         // 回放），与 CPU 守卫同源——在开窗、置运行标志、起线程之前拒绝。
         if output_path.trim().is_empty() {
             tracing::warn!("视频导出失败：输出路径为空（用户未选择导出位置）");
-            self.window_state.window.ui_mut().root_mut().toast.push(
+            self.window_state.window.ui_mut().root_mut().push_toast(
                 lumino_ui::toast::ToastLevel::Warning,
                 tr!("请先选择视频输出路径"),
             );

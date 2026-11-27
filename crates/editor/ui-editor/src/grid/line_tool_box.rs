@@ -55,7 +55,7 @@ const BEND_BUTTON_OFFSET: f32 = 14.0;
 
 /// 当前选中锚点可切换弯折时，返回两个切换按钮的矩形
 pub fn line_bend_button_rects(editor: &Editor) -> Option<LineBendRects> {
-    if editor.current_tool() != Tool::Curve {
+    if editor.editor_state.current_tool() != Tool::Curve {
         return None;
     }
     // 圆弧模式只落三点，不做锚点弯折编辑（与命中分发一致）
@@ -138,7 +138,7 @@ pub fn line_button_rects(editor: &Editor) -> Option<LineButtonRects> {
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != Tool::Curve {
+    if editor.editor_state.current_tool() != Tool::Curve {
         return None;
     }
     // 至少存在一条完整路径才显示按钮

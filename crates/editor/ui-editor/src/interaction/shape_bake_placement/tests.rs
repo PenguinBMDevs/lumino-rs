@@ -1,6 +1,6 @@
 //! DRAW-049：Bake 放置确认态（A+B）测试。
 //!
-//! 拆分口径（单文件 < 400 行）：
+//! 拆分口径（单文件 ≤600 行）：
 //! - `placement`：放置主流程（✓ / × / 撤销 / 空白拖框 / 复位）
 //! - `track`：归属轨（阶段 2 阻塞项：切轨收口 + 按归属轨提交）
 //! - `handles`：9 锚点（4 角 + 4 边 + 中心）拖动
@@ -29,7 +29,10 @@ fn test_editor() -> Editor {
 
 /// 画一个 4 tick × 4 key 的矩形，停在「待确认形状」阶段。
 fn draw_rect(editor: &mut Editor) {
-    editor.set_shape(ShapeKind::Rectangle);
+    editor
+        .editor_state
+        .shape_tool
+        .set_shape_kind(ShapeKind::Rectangle);
     editor.handle_shape_tool_pressed(0.0, 60.0, false);
     editor.handle_shape_tool_moved(4.0, 64.0);
     editor.handle_shape_tool_released();

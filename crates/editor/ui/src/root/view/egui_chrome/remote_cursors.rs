@@ -15,6 +15,7 @@ impl Root {
         let canvas = &self.editor.editor_state.canvas;
         let cursors = self
             .editor
+            .transient
             .remote_cursors
             .values()
             .map(|(pos, color, username)| RemoteCursorMark {

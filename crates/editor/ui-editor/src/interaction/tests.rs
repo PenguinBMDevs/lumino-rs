@@ -26,9 +26,12 @@ fn test_memory_breakdown_empty() {
 #[test]
 fn test_update_cursor_position() {
     let mut editor = Editor::new();
-    editor.update_cursor_position(Some(lumino_ui_core::geom::Point::new(100.0, 200.0)));
+    editor
+        .editor_state
+        .canvas
+        .update_cursor_position(Some((100.0, 200.0)));
     // 不应 panic
-    editor.update_cursor_position(None);
+    editor.editor_state.canvas.update_cursor_position(None);
 }
 
 #[test]

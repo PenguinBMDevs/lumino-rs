@@ -15,7 +15,7 @@ impl Root {
     pub(crate) fn video_export_overlay_model(&self) -> Option<VideoExportOverlayModel> {
         let state = &self.state.video_export_dialog;
         let progress = progress_block(state);
-        let view = match &state.overlay {
+        let view = match &state.basic.overlay {
             VideoExportOverlayState::None => return None,
             VideoExportOverlayState::Exporting => VideoOverlayView::Exporting(progress),
             VideoExportOverlayState::Finalizing => {
@@ -32,8 +32,8 @@ impl Root {
                 elapsed_secs,
                 avg_fps,
             } => {
-                let duration = if state.fps > 0 {
-                    *total_frames as f64 / state.fps as f64
+                let duration = if state.basic.fps > 0 {
+                    *total_frames as f64 / state.basic.fps as f64
                 } else {
                     0.0
                 };
@@ -84,8 +84,8 @@ impl Root {
 
 /// 从状态提取合法预览帧；尺寸/字节数不匹配时丢弃（避免上传纹理时越界）。
 fn preview_frame(state: &VideoExportDialogState) -> Option<VideoPreviewFrame> {
-    let rgba = state.preview_frame.as_ref()?;
-    let (width, height) = (state.preview_width, state.preview_height);
+    let rgba = state.basic.preview_frame.as_ref()?;
+    let (width, height) = (state.basic.preview_width, state.basic.preview_height);
     if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
         return None;
     }
@@ -98,11 +98,11 @@ fn preview_frame(state: &VideoExportDialogState) -> Option<VideoPreviewFrame> {
 
 /// 导出中 / 收尾共用的进度块。
 fn progress_block(state: &VideoExportDialogState) -> VideoOverlayProgress {
-    let fps = state.fps.max(1) as f64;
-    let current_sec = state.current_frame as f64 / fps;
-    let total_sec = state.total_frames as f64 / fps;
-    let speedup = if current_sec > 0.0 && state.elapsed_secs > 0.0 {
-        current_sec / state.elapsed_secs
+    let fps = state.basic.fps.max(1) as f64;
+    let current_sec = state.basic.current_frame as f64 / fps;
+    let total_sec = state.basic.total_frames as f64 / fps;
+    let speedup = if current_sec > 0.0 && state.basic.elapsed_secs > 0.0 {
+        current_sec / state.basic.elapsed_secs
     } else {
         0.0
     };
@@ -110,8 +110,8 @@ fn progress_block(state: &VideoExportDialogState) -> VideoOverlayProgress {
         heading: tr!("视频导出中").to_string(),
         frames_line: trf!(
             "帧: {current} / {total}",
-            current = state.current_frame,
-            total = state.total_frames
+            current = state.basic.current_frame,
+            total = state.basic.total_frames
         ),
         time_line: trf!(
             "时间: {elapsed} / {total}",
@@ -119,11 +119,11 @@ fn progress_block(state: &VideoExportDialogState) -> VideoOverlayProgress {
             total = format_duration(total_sec)
         ),
         // 生产用 `progress_bar(0.0..=1.0, progress)`，进度值即 0..1。
-        progress: state.progress as f32,
-        percent_line: format!("{:.1}%", state.progress * 100.0),
+        progress: state.basic.progress as f32,
+        percent_line: format!("{:.1}%", state.basic.progress * 100.0),
         render_fps_line: trf!(
             "渲染速度: {fps} fps",
-            fps = format!("{:.1}", state.render_fps)
+            fps = format!("{:.1}", state.basic.render_fps)
         ),
         speed_line: trf!("速度: {speed}x 原速", speed = format!("{:.1}", speedup)),
         remaining_line: remaining_text(state),
@@ -132,9 +132,13 @@ fn progress_block(state: &VideoExportDialogState) -> VideoOverlayProgress {
 
 /// 剩余时间提示（与 上一代 `elapsed_remaining_text` 同口径）。
 fn remaining_text(state: &VideoExportDialogState) -> String {
-    let fps = state.render_fps.max(0.01);
-    let remaining = state.total_frames.saturating_sub(state.current_frame) as f64 / fps;
-    if state.current_frame == 0 || !remaining.is_finite() {
+    let fps = state.basic.render_fps.max(0.01);
+    let remaining = state
+        .basic
+        .total_frames
+        .saturating_sub(state.basic.current_frame) as f64
+        / fps;
+    if state.basic.current_frame == 0 || !remaining.is_finite() {
         return tr!("预计剩余: 计算中...").to_string();
     }
     trf!("预计剩余: {t}", t = format_duration(remaining))

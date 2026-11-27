@@ -19,7 +19,7 @@ use crate::velocity::VelocityPanel;
 use crate::{EditState, Editor, EditorMemory, SpatialIndexState, grid};
 use lumino_core::BrushConfig;
 use lumino_ui_core::message::AudioAction;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 impl Editor {
     /// 创建新的编辑器实例
@@ -29,50 +29,25 @@ impl Editor {
             Self {
                 editor_state: crate::editor_state::EditorState::new(),
                 spatial: SpatialIndexState::default(),
-                remote_cursors: std::collections::HashMap::new(),
                 playback_position: 0.0,
-                playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
-                playback_key_colors_enabled: false,
+                playback_key_state: Default::default(),
                 domino_clipboard_enabled: false,
                 loop_range: Some(grid::LoopRange::new()),
                 notes_changed: false,
-                pending_drag_state: None,
-                pending_copy_drag_state: None,
+                transient: crate::EditorTransient::default(),
                 velocity_panel: VelocityPanel::new(),
-                selection_box_anim: Cell::new(None),
-                cached_selection_bounds: Cell::new(None),
+                selection_ui: Default::default(),
                 text_preview_cache: RefCell::new(None),
-                marquee_anchor_tick: None,
-                pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
-                shape_edit: None,
-                shape_edit_armed: None,
-                shape_group_edit: None,
-                bake_placement: None,
-                pending_composed_redo: Vec::new(),
-                pending_edit_undo: Vec::new(),
-                pending_edit_redo: Vec::new(),
-                area_paint: None,
-                slice_cut: None,
-                mould_knife: None,
-                mould_notice: None,
-                round_corner: None,
-                shape_list_open: false,
-                baked_pending: std::collections::HashMap::new(),
-                selected_bounds: Cell::new(None),
+                shape_tools: Default::default(),
                 arrange_selection_cache:
-                    crate::arrangement_ops::selection_cache::new_arrange_selection_cache(),
-                playback_scan_state: crate::impls::PlaybackScanState::default(),
+                    crate::arrangement_ops::selection_cache::ArrangeSelectionCache::default(),
                 collab_batch_depth: 0,
                 #[cfg(test)]
                 collab_broadcast_batches: 0,
                 ctrl_pressed: false,
                 shift_pressed: false,
-                remote_selections: std::collections::HashMap::new(),
-                local_selection_timestamp: None,
-                local_selection_fingerprints: Vec::new(),
                 brush: BrushConfig::new(),
-                fill_division_dialog_requested: false,
             }
         })
     }

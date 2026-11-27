@@ -8,41 +8,75 @@ pub mod arrangement_action;
 pub mod arrangement_event;
 pub mod audio_export;
 /// 自动保存恢复对话框动作（DEBT-12）
-pub mod autosave_recover;
-pub mod batch_edit;
-pub mod brush_settings;
+pub mod autosave_recover {
+    pub use super::dialogs::AutosaveRecoverAction;
+}
+pub mod batch_edit {
+    pub use super::dialogs::BatchEditAction;
+    pub use super::dialogs::BatchEditField;
+}
+pub mod brush_settings {
+    pub use super::dialogs::BrushSettingsAction;
+}
 pub mod cloud_action;
 pub mod collaboration;
 pub mod context_menu;
-pub mod custom_precision;
+pub mod dialogs;
+pub mod custom_precision {
+    pub use super::dialogs::CustomPrecisionAction;
+}
 /// 「音符画设置」对话框动作
-pub mod draw_settings;
+pub mod draw_settings {
+    pub use super::dialogs::DrawSettingsAction;
+}
 /// 事件系统模块
 pub mod events;
 pub mod fill_division;
 /// GPU 兼容性检测 UI 状态（从 `lumino-ui-core` 迁入，保持无 上一代 依赖）
 pub mod gpu_compat_state;
-pub mod help;
-pub mod history;
-pub mod load_confirm;
+pub mod help {
+    pub use super::dialogs::HelpAction;
+}
+pub mod history {
+    pub use super::dialogs::HistoryAction;
+}
+pub mod load_confirm {
+    pub use super::dialogs::LoadConfirmAction;
+}
 pub mod loop_range;
 /// 遮罩参数面板动作（DRAW-010）
-pub mod mask_panel;
+pub mod mask_panel {
+    pub use super::dialogs::MaskPanelAction;
+}
 /// 素材删除确认对话框动作（DRAW-045，独立窗口）
-pub mod material_delete;
+pub mod material_delete {
+    pub use super::dialogs::MaterialDeleteDialogAction;
+}
 pub mod port_soundfonts;
-pub mod project_settings;
-pub mod recover_track;
+pub mod project_settings {
+    pub use super::dialogs::ProjectSettingsAction;
+}
+pub mod recover_track {
+    pub use super::dialogs::RecoverTrackAction;
+}
 pub mod right_sidebar;
-pub mod save_confirm;
-pub mod settings_dialog;
+pub mod save_confirm {
+    pub use super::dialogs::SaveConfirmAction;
+}
+pub mod settings_dialog {
+    pub use super::dialogs::SettingsDialogAction;
+}
 /// 设置面板事件（仅枚举，从 `lumino-ui-core` 迁入，保持无 上一代 依赖）
 pub mod settings_event;
 /// 形状抽屉库/变换/插入动作
 pub mod shape_drawer;
-pub mod speed_change;
+pub mod speed_change {
+    pub use super::dialogs::SpeedChangeAction;
+}
 /// 自定义 Tempo BPM 上限对话框动作（DRAW-045，独立窗口）
-pub mod tempo_max_bpm;
+pub mod tempo_max_bpm {
+    pub use super::dialogs::TempoMaxBpmDialogAction;
+}
 pub mod types;
 pub mod velocity;
 pub mod video_clip;

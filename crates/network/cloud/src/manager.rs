@@ -48,6 +48,19 @@ pub struct CloudManager {
     status: HashMap<String, ConnState>,
 }
 
+/// 在运行时上执行一次云客户端调用。
+///
+/// 泛型 `with_client` 需要 async 闭包（尚未稳定），因此用宏表达：
+/// `self.rt` 与 `self.clients` 分属不同字段，借用互不冲突。
+macro_rules! cloud_call {
+    ($self:ident, $id:expr, $client:ident => $call:expr) => {
+        $self.rt.block_on(async {
+            let $client = Self::client_mut(&mut $self.clients, $id)?;
+            $call.await
+        })
+    };
+}
+
 impl CloudManager {
     /// 创建管理器（加载配置 + 获取异步运行时句柄）
     pub fn new(config_path: PathBuf) -> Result<Self> {
@@ -170,66 +183,43 @@ impl CloudManager {
     ///
     /// DEBT-06 #123：只读操作加有限退避重试（网络抖动可自愈）。
     pub fn list_dir(&mut self, id: &str, path: &str) -> Result<Vec<CloudEntry>> {
-        let result = retry_read(|| {
-            self.rt.block_on(async {
-                let client = Self::client_mut(&mut self.clients, id)?;
-                client.list_dir(path).await
-            })
-        });
+        let result = retry_read(|| cloud_call!(self, id, client => client.list_dir(path)));
         self.handle_io_result(id, result)
     }
 
     /// 上传本地文件到远程路径
     pub fn upload(&mut self, id: &str, local: &Path, remote_path: &str) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.upload_file(local, remote_path).await
-        });
+        let result = cloud_call!(self, id, client => client.upload_file(local, remote_path));
         self.handle_io_result(id, result)
     }
 
     /// 下载远程文件到本地路径
     pub fn download(&mut self, id: &str, remote_path: &str, local: &Path) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.download_file(remote_path, local).await
-        });
+        let result = cloud_call!(self, id, client => client.download_file(remote_path, local));
         self.handle_io_result(id, result)
     }
 
     /// 重命名（同目录内）
     pub fn rename(&mut self, id: &str, from: &str, to: &str) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.rename(from, to).await
-        });
+        let result = cloud_call!(self, id, client => client.rename(from, to));
         self.handle_io_result(id, result)
     }
 
     /// 删除文件或目录
     pub fn delete(&mut self, id: &str, path: &str, is_dir: bool) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.delete(path, is_dir).await
-        });
+        let result = cloud_call!(self, id, client => client.delete(path, is_dir));
         self.handle_io_result(id, result)
     }
 
     /// 移动文件/目录到目标目录（云内部）
     pub fn move_file(&mut self, id: &str, from: &str, to_dir: &str) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.move_file(from, to_dir).await
-        });
+        let result = cloud_call!(self, id, client => client.move_file(from, to_dir));
         self.handle_io_result(id, result)
     }
 
     /// 创建目录
     pub fn create_dir(&mut self, id: &str, path: &str) -> Result<()> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.create_dir(path).await
-        });
+        let result = cloud_call!(self, id, client => client.create_dir(path));
         self.handle_io_result(id, result)
     }
 

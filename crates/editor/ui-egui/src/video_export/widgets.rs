@@ -49,7 +49,13 @@ pub(super) fn label_cell(ui: &mut egui::Ui, row: egui::Rect, width: f32, text: &
 }
 
 /// 固定盒子输入框。
-pub(super) fn text_input(ui: &mut egui::Ui, rect: egui::Rect, id: u16, value: &str, hint: &str) {
+pub(super) fn text_input(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: crate::chrome::VideoRowId,
+    value: &str,
+    hint: &str,
+) {
     let mut buffer = value.to_owned();
     ui.painter().rect(
         rect,
@@ -138,7 +144,13 @@ pub(super) fn text_pair_cell(
 }
 
 /// 多行文本域。
-pub(super) fn text_area(ui: &mut egui::Ui, height: f32, id: u16, value: &str, hint: &str) {
+pub(super) fn text_area(
+    ui: &mut egui::Ui,
+    height: f32,
+    id: crate::chrome::VideoRowId,
+    value: &str,
+    hint: &str,
+) {
     let rect = row_rect(ui, height);
     let mut buffer = value.to_owned();
     ui.painter().rect(

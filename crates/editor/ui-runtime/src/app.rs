@@ -405,16 +405,14 @@ impl NativeApp {
         let height =
             (size.height as f32 / ppp - lumino_ui_egui::layout::TITLEBAR_H - root.toolbar.height)
                 .max(1.0);
-        root.editor
-            .set_canvas_size(lumino_ui_core::geom::Point::new(width, height));
+        root.editor.editor_state.canvas.set_size(width, height);
         // 画布在窗口中的真实原点（左栏右缘 / 标题栏 + 工具栏下缘）：
         // 渲染线程的 `canvas_offset` 与 egui 的输入换算必须同源，否则音符
         // 会画在错误位置（或落到 scissor 之外）。
-        root.editor
-            .set_canvas_offset(lumino_ui_core::geom::Point::new(
-                lumino_ui_egui::layout::SIDEBAR_W,
-                lumino_ui_egui::layout::TITLEBAR_H + root.toolbar.height,
-            ));
+        root.editor.editor_state.canvas.set_offset(
+            lumino_ui_egui::layout::SIDEBAR_W,
+            lumino_ui_egui::layout::TITLEBAR_H + root.toolbar.height,
+        );
     }
 
     /// 窗口逻辑坐标 → 编辑器画布局部坐标（画布左上 = 左栏右缘 + 标题栏/工具栏下缘）。
@@ -646,8 +644,13 @@ impl NativeApp {
             // 直接跑生产 egui 外壳（标题栏 / 工具栏 / 左右栏 / 状态栏）。
             chrome::show_bands(ui, &model, &mut icons);
             // 菜单 / 工具栏 / 左栏 / 状态栏 / 标题栏动作 → 生产 `Message`。
+            // 通道表与生产 Host 同源（`OverlayActions::take`），不再维护第二份清单。
             if let Some(root) = root.as_mut() {
-                let _ = root.apply_egui_chrome_actions(ui.ctx());
+                let actions = lumino_ui::host::OverlayActions::take(ui.ctx());
+                let applied = root.apply_egui_actions(actions, logical);
+                if applied > 0 {
+                    tracing::debug!("原生运行时: 已应用 {} 条 egui 动作", applied);
+                }
             }
 
             // 探针控件：验证输入仍能到达 egui。

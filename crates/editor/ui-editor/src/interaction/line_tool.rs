@@ -32,16 +32,118 @@ pub(crate) mod paths;
 // `pub(crate)`：同上——形状描边也要吃全局粗细，加粗几何必须与曲线共用。
 pub(crate) mod stroke_band;
 
+/// 圆弧模式落点：a / c 吸附（tick 网格 + 周围锚点），b 自由（经过点）
+fn push_arc_draft_point(editor: &mut Editor, raw: (f32, f32), snapped: (f32, f32)) {
+    let is_middle = editor
+        .editor_state
+        .line_tool
+        .arc_draft
+        .and_then(|idx| editor.editor_state.line_tool.paths.get(idx))
+        .is_some_and(|path| path.len() == 1);
+    let pos = if is_middle {
+        raw
+    } else {
+        editor.snap_new_anchor(raw, &[]).unwrap_or(snapped)
+    };
+    // 首次落点冻结当前视图的 k；之后缩放视图不再改形状
+    editor
+        .editor_state
+        .line_tool
+        .push_arc_anchor(pos, editor.live_arc_k() as f32);
+}
+
+/// 贝塞尔路径按下处理（原逻辑；圆弧模式不走这里）
+fn handle_line_tool_pressed_bezier(
+    editor: &mut Editor,
+    pos: Point,
+    raw: (f32, f32),
+    snapped_tick: f32,
+    snapped_key: f32,
+) {
+    // 端点设置：创建/续完路径（连续追加合并为一次撤销）
+    if !editor.editor_state.line_tool.is_complete()
+        || editor.editor_state.line_tool.creating_path().is_some()
+    {
+        let anchor_pos = editor
+            .snap_new_anchor(raw, &[])
+            .unwrap_or((snapped_tick, snapped_key));
+        let line = &mut editor.editor_state.line_tool;
+        match line.creating_path() {
+            None => {
+                // 新建路径：记录新状态（undo 一次删除整条）
+                line.paths.push(Vec::new());
+                line.push_anchor(line.paths.len() - 1, anchor_pos);
+                line.push_path_history();
+                line.last_push_path = Some(line.paths.len() - 1);
+            }
+            Some(pi) => {
+                // 续完创建中的路径：连续追加合并到同一历史
+                line.push_anchor(pi, anchor_pos);
+                if line.last_push_path == Some(pi) {
+                    line.update_top_path_history();
+                } else {
+                    line.push_path_history();
+                }
+                line.last_push_path = Some(pi);
+            }
+        }
+        return;
+    }
+    // 完整路径：命中分发（先 &self 命中测试，再取可变引用）
+    let hit = editor.line_tool_hit_test(pos);
+    // 空白处按下需要吸附位置（预先计算，避免借用冲突）
+    let blank_anchor = editor.snap_new_anchor(raw, &[]);
+    let line = &mut editor.editor_state.line_tool;
+    // 任何命中拖动/空白新建都是新操作（打断创建合并）
+    line.last_push_path = None;
+    match hit {
+        Some(LineToolHit::Handle {
+            path,
+            anchor_idx,
+            side,
+        }) => {
+            let anchor = &line.paths[path][anchor_idx];
+            line.drag_handle_orig = match side {
+                HandleSide::In => anchor.in_handle,
+                HandleSide::Out => anchor.out_handle,
+            };
+            line.drag_start_raw = raw;
+            line.drag_confirmed = true;
+            line.interaction = LineToolInteraction::DraggingHandle {
+                path,
+                anchor_idx,
+                side,
+            };
+        }
+        Some(LineToolHit::Anchor { path, idx }) => {
+            line.drag_start_snap = (snapped_tick, snapped_key);
+            line.drag_start_raw = raw;
+            line.drag_anchor_orig = line.paths[path][idx];
+            line.drag_confirmed = true;
+            line.interaction = LineToolInteraction::DraggingAnchor { path, idx };
+        }
+        Some(LineToolHit::Segment { path, segment }) => {
+            // 按下待定：移动超阈值 = 平移；原地松开 = 插入锚点
+            line.drag_start_snap = (snapped_tick, snapped_key);
+            line.drag_start_raw = raw;
+            line.drag_line_orig = line.paths[path].clone();
+            line.drag_confirmed = false;
+            line.interaction = LineToolInteraction::DraggingLine { path, segment };
+        }
+        None => {
+            // 空白处：开始新路径（保留已有路径——批量绘制）；同时清掉锚点选中态。
+            line.interaction = LineToolInteraction::None;
+            line.paths.push(vec![BezierAnchor::new(
+                blank_anchor.unwrap_or((snapped_tick, snapped_key)),
+            )]);
+            line.push_path_history();
+            line.last_push_path = Some(line.paths.len() - 1);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_arc;
-#[cfg(test)]
-mod tests_confirm;
-#[cfg(test)]
-mod tests_fill;
-#[cfg(test)]
-mod tests_vertical;
 
 use crate::Editor;
 use lumino_editor_state::{AnchorBend, BezierAnchor, HandleSide, LineToolInteraction};
@@ -87,119 +189,10 @@ impl Editor {
                 line.interaction = LineToolInteraction::DraggingAnchor { path, idx };
                 return;
             }
-            self.push_arc_draft_point(raw, (snapped_tick, snapped_key));
+            push_arc_draft_point(self, raw, (snapped_tick, snapped_key));
             return;
         }
-        self.handle_line_tool_pressed_bezier(pos, raw, snapped_tick, snapped_key);
-    }
-
-    /// 圆弧模式落点：a / c 吸附（tick 网格 + 周围锚点），b 自由（经过点）
-    fn push_arc_draft_point(&mut self, raw: (f32, f32), snapped: (f32, f32)) {
-        let is_middle = self
-            .editor_state
-            .line_tool
-            .arc_draft
-            .and_then(|idx| self.editor_state.line_tool.paths.get(idx))
-            .is_some_and(|path| path.len() == 1);
-        let pos = if is_middle {
-            raw
-        } else {
-            self.snap_new_anchor(raw, &[]).unwrap_or(snapped)
-        };
-        // 首次落点冻结当前视图的 k；之后缩放视图不再改形状
-        self.editor_state
-            .line_tool
-            .push_arc_anchor(pos, self.live_arc_k() as f32);
-    }
-
-    /// 贝塞尔路径按下处理（原逻辑；圆弧模式不走这里）
-    fn handle_line_tool_pressed_bezier(
-        &mut self,
-        pos: Point,
-        raw: (f32, f32),
-        snapped_tick: f32,
-        snapped_key: f32,
-    ) {
-        // 端点设置：创建/续完路径（连续追加合并为一次撤销）
-        if !self.editor_state.line_tool.is_complete()
-            || self.editor_state.line_tool.creating_path().is_some()
-        {
-            let anchor_pos = self
-                .snap_new_anchor(raw, &[])
-                .unwrap_or((snapped_tick, snapped_key));
-            let line = &mut self.editor_state.line_tool;
-            match line.creating_path() {
-                None => {
-                    // 新建路径：记录新状态（undo 一次删除整条）
-                    line.paths.push(Vec::new());
-                    line.push_anchor(line.paths.len() - 1, anchor_pos);
-                    line.push_path_history();
-                    line.last_push_path = Some(line.paths.len() - 1);
-                }
-                Some(pi) => {
-                    // 续完创建中的路径：连续追加合并到同一历史
-                    line.push_anchor(pi, anchor_pos);
-                    if line.last_push_path == Some(pi) {
-                        line.update_top_path_history();
-                    } else {
-                        line.push_path_history();
-                    }
-                    line.last_push_path = Some(pi);
-                }
-            }
-            return;
-        }
-        // 完整路径：命中分发（先 &self 命中测试，再取可变引用）
-        let hit = self.line_tool_hit_test(pos);
-        // 空白处按下需要吸附位置（预先计算，避免借用冲突）
-        let blank_anchor = self.snap_new_anchor(raw, &[]);
-        let line = &mut self.editor_state.line_tool;
-        // 任何命中拖动/空白新建都是新操作（打断创建合并）
-        line.last_push_path = None;
-        match hit {
-            Some(LineToolHit::Handle {
-                path,
-                anchor_idx,
-                side,
-            }) => {
-                let anchor = &line.paths[path][anchor_idx];
-                line.drag_handle_orig = match side {
-                    HandleSide::In => anchor.in_handle,
-                    HandleSide::Out => anchor.out_handle,
-                };
-                line.drag_start_raw = raw;
-                line.drag_confirmed = true;
-                line.interaction = LineToolInteraction::DraggingHandle {
-                    path,
-                    anchor_idx,
-                    side,
-                };
-            }
-            Some(LineToolHit::Anchor { path, idx }) => {
-                line.drag_start_snap = (snapped_tick, snapped_key);
-                line.drag_start_raw = raw;
-                line.drag_anchor_orig = line.paths[path][idx];
-                line.drag_confirmed = true;
-                line.interaction = LineToolInteraction::DraggingAnchor { path, idx };
-            }
-            Some(LineToolHit::Segment { path, segment }) => {
-                // 按下待定：移动超阈值 = 平移；原地松开 = 插入锚点
-                line.drag_start_snap = (snapped_tick, snapped_key);
-                line.drag_start_raw = raw;
-                line.drag_line_orig = line.paths[path].clone();
-                line.drag_confirmed = false;
-                line.interaction = LineToolInteraction::DraggingLine { path, segment };
-            }
-            None => {
-                // 空白处：开始新路径（保留已有路径——批量绘制）；同时清掉锚点选中态。
-                line.interaction = LineToolInteraction::None;
-                line.paths.push(vec![BezierAnchor::new(
-                    blank_anchor.unwrap_or((snapped_tick, snapped_key)),
-                )]);
-                line.push_path_history();
-                line.last_push_path = Some(line.paths.len() - 1);
-            }
-        }
+        handle_line_tool_pressed_bezier(self, pos, raw, snapped_tick, snapped_key);
     }
 
     /// 路径移动处理（增量式拖动）
@@ -346,7 +339,7 @@ impl Editor {
             .unwrap_or(LineToolInteraction::None);
         line.drag_confirmed = false;
         // 状态产生变化（插入锚点/拖动平移）→ 记录历史；未变化（空点击）不记录
-        if line.snapshot() != line.path_history[line.path_history_index] {
+        if line.snapshot() != *line.history.current() {
             line.push_path_history();
         }
         line.last_push_path = None;

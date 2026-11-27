@@ -78,15 +78,52 @@ impl ArrangeSelectionHits {
     }
 }
 
-/// `Editor` 上的走带选区命中缓存槽
+/// `Editor` 上的走带选区命中缓存（状态 + 行为，T-30 slice 3）
 ///
-/// 槽内始终持有值：未命中时为空哨兵（键全 `u64::MAX`），
+/// 缓存槽内始终持有值：未命中时为空哨兵（键全 `u64::MAX`），
 /// 读取路径无需 `Option` 解包，也就不存在 `expect` 崩溃点。
-pub(crate) type ArrangeSelectionCache = RefCell<ArrangeSelectionHits>;
+#[derive(Debug)]
+pub(crate) struct ArrangeSelectionCache {
+    hits: RefCell<ArrangeSelectionHits>,
+}
 
-/// 构造空缓存槽（哨兵键与任何真实键不相等，首次访问必然走慢路径）
-pub(crate) fn new_arrange_selection_cache() -> ArrangeSelectionCache {
-    RefCell::new(ArrangeSelectionHits::sentinel())
+impl Default for ArrangeSelectionCache {
+    fn default() -> Self {
+        Self {
+            hits: RefCell::new(ArrangeSelectionHits::sentinel()),
+        }
+    }
+}
+
+impl ArrangeSelectionCache {
+    /// 走带选区命中音符（缓存版，键命中时零扫描）。
+    ///
+    /// 返回 `RefCell` 守卫而非裸引用：缓存项会被 `borrow_mut` 改写，
+    /// 逃逸引用会让后续可变借用指向同一内存。守卫保证同一次调用期间
+    /// 缓存项不可被改写，调用方拿到的数据自洽。
+    pub(crate) fn hits(
+        &self,
+        editor_data: &crate::editor_state::EditorData,
+    ) -> Ref<'_, ArrangeSelectionHits> {
+        let key = (
+            editor_data.track_notes_gen,
+            editor_data.arrange_selection.revision(),
+            visual_order_fingerprint(&editor_data.track_visual_order),
+        );
+
+        // 快路径：键命中直接返回（守卫在此随 return 转移，不提前 drop）
+        {
+            let cache = self.hits.borrow();
+            if cache.key == key {
+                return cache;
+            }
+        }
+        // 慢路径：上作用域的 `Ref` 已释放，这里才能可变借用
+
+        let hits = scan_arrangement_selection(editor_data, key);
+        *self.hits.borrow_mut() = hits;
+        self.hits.borrow()
+    }
 }
 
 /// 计算 `track_visual_order` 的变更指纹（O(音轨数)，远小于音符量级）。
@@ -104,106 +141,82 @@ fn visual_order_fingerprint(order: &[usize]) -> u64 {
 }
 
 impl Editor {
-    /// 走带选区命中音符（缓存版，键命中时零扫描）。
-    ///
-    /// 返回 `RefCell` 守卫而非裸引用：缓存项会被 `borrow_mut` 改写，
-    /// 逃逸引用会让后续可变借用指向同一内存。守卫保证同一次调用期间
-    /// 缓存项不可被改写，调用方拿到的数据自洽。
-    pub(crate) fn arrangement_selection_hits(&self) -> Ref<'_, ArrangeSelectionHits> {
-        let editor_data = &self.editor_state.data;
-        let key = (
-            editor_data.track_notes_gen,
-            editor_data.arrange_selection.revision(),
-            visual_order_fingerprint(&editor_data.track_visual_order),
-        );
-
-        // 快路径：键命中直接返回（守卫在此随 return 转移，不提前 drop）
-        {
-            let cache = self.arrange_selection_cache.borrow();
-            if cache.key == key {
-                return cache;
-            }
-        }
-        // 慢路径：上作用域的 `Ref` 已释放，这里才能可变借用
-
-        let hits = Self::scan_arrangement_selection(editor_data, key);
-        *self.arrange_selection_cache.borrow_mut() = hits;
-        self.arrange_selection_cache.borrow()
-    }
-
-    /// 全量扫描文档，按走带选区收集命中音符（唯一的 O(全文档音符) 入口）。
-    fn scan_arrangement_selection(
-        editor_data: &crate::editor_state::EditorData,
-        key: (u64, u64, u64),
-    ) -> ArrangeSelectionHits {
-        let selection = &editor_data.arrange_selection;
-        let Some(doc) = &editor_data.document else {
-            return ArrangeSelectionHits {
-                key,
-                by_track: Vec::new(),
-                flat: Rc::from(Vec::new()),
-            };
-        };
-        // 空选区 O(1) 早退：不扫文档
-        if selection.is_empty() {
-            return ArrangeSelectionHits {
-                key,
-                by_track: Vec::new(),
-                flat: Rc::from(Vec::new()),
-            };
-        }
-
-        let track_count = doc.track_count();
-        // 视觉位置映射**一次性建表**（O(音轨数)）：
-        // 旧实现在轨道循环内调 `visual_position_of`（其内部是 O(音轨数) 线性
-        // 查找），整体退化成 O(音轨数² + 全音符)。
-        let mut doc_to_visual = vec![usize::MAX; track_count];
-        for (visual_pos, &doc_idx) in editor_data.track_visual_order.iter().enumerate() {
-            if doc_idx < track_count {
-                doc_to_visual[doc_idx] = visual_pos;
-            }
-        }
-
-        let mut by_track: Vec<(usize, Vec<NoteEvent>)> = Vec::new();
-        let mut flat: Vec<(f64, f64, usize, u8)> = Vec::new();
-        for (track_idx, &mapped) in doc_to_visual.iter().enumerate() {
-            // 视觉位置映射未覆盖该轨时回退恒等（与 `visual_position_of` 的
-            // `unwrap_or(track_idx)` 语义一致）
-            let visual_pos = if mapped == usize::MAX {
-                track_idx
-            } else {
-                mapped
-            };
-            let mut selected: Vec<NoteEvent> = Vec::new();
-            for note_event in editor_data.track_notes(track_idx) {
-                if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
-                    selected.push(*note_event);
-                    flat.push((
-                        note_event.start_tick as f64,
-                        note_event.end_tick as f64,
-                        visual_pos,
-                        note_event.key,
-                    ));
-                }
-            }
-            if !selected.is_empty() {
-                by_track.push((track_idx, selected));
-            }
-        }
-
-        ArrangeSelectionHits {
-            key,
-            by_track,
-            flat: Rc::from(flat),
-        }
-    }
-
     /// 走带选区是否命中**任何**音符（零分配）。
     ///
     /// 判据与 [`crate::Editor::has_active_selection`] 的走带分支同源
     /// （同一份缓存），保证「菜单可用性」与「操作闸门」口径一致。
     pub fn arrangement_has_selected_notes(&self) -> bool {
-        !self.arrangement_selection_hits().is_empty()
+        !self
+            .arrange_selection_cache
+            .hits(&self.editor_state.data)
+            .is_empty()
+    }
+}
+
+/// 全量扫描文档，按走带选区收集命中音符（唯一的 O(全文档音符) 入口）。
+fn scan_arrangement_selection(
+    editor_data: &crate::editor_state::EditorData,
+    key: (u64, u64, u64),
+) -> ArrangeSelectionHits {
+    let selection = &editor_data.arrange_selection;
+    let Some(doc) = &editor_data.document else {
+        return ArrangeSelectionHits {
+            key,
+            by_track: Vec::new(),
+            flat: Rc::from(Vec::new()),
+        };
+    };
+    // 空选区 O(1) 早退：不扫文档
+    if selection.is_empty() {
+        return ArrangeSelectionHits {
+            key,
+            by_track: Vec::new(),
+            flat: Rc::from(Vec::new()),
+        };
+    }
+
+    let track_count = doc.track_count();
+    // 视觉位置映射**一次性建表**（O(音轨数)）：
+    // 旧实现在轨道循环内调 `visual_position_of`（其内部是 O(音轨数) 线性
+    // 查找），整体退化成 O(音轨数² + 全音符)。
+    let mut doc_to_visual = vec![usize::MAX; track_count];
+    for (visual_pos, &doc_idx) in editor_data.track_visual_order.iter().enumerate() {
+        if doc_idx < track_count {
+            doc_to_visual[doc_idx] = visual_pos;
+        }
+    }
+
+    let mut by_track: Vec<(usize, Vec<NoteEvent>)> = Vec::new();
+    let mut flat: Vec<(f64, f64, usize, u8)> = Vec::new();
+    for (track_idx, &mapped) in doc_to_visual.iter().enumerate() {
+        // 视觉位置映射未覆盖该轨时回退恒等（与 `visual_position_of` 的
+        // `unwrap_or(track_idx)` 语义一致）
+        let visual_pos = if mapped == usize::MAX {
+            track_idx
+        } else {
+            mapped
+        };
+        let mut selected: Vec<NoteEvent> = Vec::new();
+        for note_event in editor_data.track_notes(track_idx) {
+            if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
+                selected.push(*note_event);
+                flat.push((
+                    note_event.start_tick as f64,
+                    note_event.end_tick as f64,
+                    visual_pos,
+                    note_event.key,
+                ));
+            }
+        }
+        if !selected.is_empty() {
+            by_track.push((track_idx, selected));
+        }
+    }
+
+    ArrangeSelectionHits {
+        key,
+        by_track,
+        flat: Rc::from(flat),
     }
 }
 
@@ -246,7 +259,9 @@ mod tests {
     #[test]
     fn test_hits_cover_both_consumption_shapes() {
         let editor = editor_with_selection();
-        let hits = editor.arrangement_selection_hits();
+        let hits = editor
+            .arrange_selection_cache
+            .hits(&editor.editor_state.data);
         assert_eq!(hits.by_track().len(), 2, "应命中 2 条音轨");
         assert_eq!(
             hits.by_track().iter().map(|(_, n)| n.len()).sum::<usize>(),

@@ -29,24 +29,9 @@ mod note_store_ops;
 mod notes;
 mod reset;
 mod tempo;
+
 #[cfg(test)]
-mod tests_automation;
-#[cfg(test)]
-mod tests_automation_sync;
-#[cfg(test)]
-mod tests_basics;
-#[cfg(test)]
-mod tests_build_points;
-#[cfg(test)]
-mod tests_history;
-#[cfg(test)]
-mod tests_note_delete;
-#[cfg(test)]
-mod tests_note_delta;
-#[cfg(test)]
-mod tests_note_ops;
-#[cfg(test)]
-mod tests_track_order;
+mod tests;
 
 /// 协作创建同步条目：`(tick, key, length, velocity, channel, 音轨索引, is_added)`。
 /// 按值引用，无全局 ID；`is_added=true` 表示重做（重新添加），`false` 表示撤销（删除）。

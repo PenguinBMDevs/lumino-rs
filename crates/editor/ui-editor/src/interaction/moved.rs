@@ -113,8 +113,8 @@ impl Editor {
         // collect_ghost_indices 仍会遍历 pending.selected_indices() 全量选中音符
         // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
         //（用户未在交互），直接跳过。
-        let hover = if self.pending_drag_state.is_some()
-            || self.pending_copy_drag_state.is_some()
+        let hover = if self.transient.pending_drag.is_some()
+            || self.transient.pending_copy.is_some()
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::Selecting { .. }
@@ -159,7 +159,7 @@ impl Editor {
         //
         // 锚点为 `None`（非按下路径构造的 Selecting，例如测试直接赋值）→ 保持
         // 原始精确语义，避免影响非用户路径。
-        let marquee_anchor = self.marquee_anchor_tick;
+        let marquee_anchor = self.selection_ui.marquee_anchor;
         let marquee_edges = marquee_anchor.map(|anchor| self.marquee_edges(anchor, tick));
 
         if let EditState::Selecting {

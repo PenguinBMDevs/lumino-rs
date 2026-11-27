@@ -18,6 +18,4 @@ pub use event::Event;
 pub use track_reorder::{TRACK_ROW_HEIGHT, TRACK_ROW_OFFSET_Y, TrackReorderState};
 
 #[cfg(test)]
-mod panel_tests;
-#[cfg(test)]
-mod roll_bar_tests;
+mod tests;

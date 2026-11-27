@@ -30,11 +30,11 @@ impl MidiManager {
     /// 表示初始化失败/线程断开、保持当前后端。两者都必须重连播放输出
     /// （#127：失败分支此前不重连，播放引擎停留在已被释放的旧连接上 → 无声）。
     pub fn check_async_init_complete(&mut self) -> AsyncInitOutcome {
-        if self.is_xsynth_initializing {
+        if matches!(self.pending_init, Some(PendingInit::XSynth(_))) {
             self.finish_xsynth_init()
-        } else if self.is_lgs_initializing {
+        } else if matches!(self.pending_init, Some(PendingInit::Lgs(_))) {
             self.finish_lgs_init()
-        } else if self.is_maestro_initializing {
+        } else if matches!(self.pending_init, Some(PendingInit::Maestro(_))) {
             self.finish_maestro_init()
         } else {
             AsyncInitOutcome::Pending
@@ -67,9 +67,14 @@ impl MidiManager {
 
     /// 处理 XSynth 异步初始化结果（非阻塞）
     fn finish_xsynth_init(&mut self) -> AsyncInitOutcome {
-        let rx = match &self.xsynth_init_rx {
-            Some(rx) => rx,
-            None => return AsyncInitOutcome::Pending,
+        // 取走在途接收器；`Empty` 分支原样放回
+        let rx = match self.pending_init.take() {
+            Some(PendingInit::XSynth(rx)) => rx,
+            other => {
+                // 调用方已按变体分派，理论不可达；原样放回避免丢状态
+                self.pending_init = other;
+                return AsyncInitOutcome::Pending;
+            }
         };
 
         // 非阻塞检查接收器
@@ -85,8 +90,6 @@ impl MidiManager {
                 self.api = Some(api);
                 self.output = Some(output);
                 self.active_backend = SynthBackend::XSynth;
-                self.is_xsynth_initializing = false;
-                self.xsynth_init_rx = None;
                 // REND-005：XSynth 支持按端口音色库；丢弃旧后端遗留的不支持提示。
                 self.pending_port_soundfonts_unsupported = None;
                 self.port_soundfonts_unsupported_ack = false;
@@ -99,8 +102,6 @@ impl MidiManager {
             }
             Ok(XSynthInitResult::Failed(e)) => {
                 tracing::warn!("XSynth: 异步初始化失败: {}", e);
-                self.is_xsynth_initializing = false;
-                self.xsynth_init_rx = None;
                 // AUD-011：CPU 降级目标也可能是 XSynth——失败必须可见，
                 // 否则状态栏会停留在「已切换到 XSynth」的旧提示上。
                 self.pending_backend_notice =
@@ -110,13 +111,12 @@ impl MidiManager {
                 AsyncInitOutcome::Failed
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // 还在初始化中，不做任何事
+                // 还在初始化中：接收器放回在途状态，不做其他事
+                self.pending_init = Some(PendingInit::XSynth(rx));
                 AsyncInitOutcome::Pending
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("XSynth: 初始化线程异常断开");
-                self.is_xsynth_initializing = false;
-                self.xsynth_init_rx = None;
                 self.pending_backend_notice =
                     Some(tr!("XSynth 初始化线程异常断开，已回退 System 后端").to_string());
                 self.ensure_system_fallback_initialized();
@@ -127,9 +127,12 @@ impl MidiManager {
 
     /// 处理 LGS (GPU) 异步初始化结果（非阻塞）
     fn finish_lgs_init(&mut self) -> AsyncInitOutcome {
-        let rx = match &self.lgs_init_rx {
-            Some(rx) => rx,
-            None => return AsyncInitOutcome::Pending,
+        let rx = match self.pending_init.take() {
+            Some(PendingInit::Lgs(rx)) => rx,
+            other => {
+                self.pending_init = other;
+                return AsyncInitOutcome::Pending;
+            }
         };
 
         match rx.try_recv() {
@@ -144,8 +147,6 @@ impl MidiManager {
                 self.api = Some(api);
                 self.output = Some(output);
                 self.active_backend = SynthBackend::Lgs;
-                self.is_lgs_initializing = false;
-                self.lgs_init_rx = None;
                 // REND-005：LGS 不支持按端口音色库；新后端落定后重新请求提示。
                 self.pending_port_soundfonts_unsupported = None;
                 self.port_soundfonts_unsupported_ack = false;
@@ -159,8 +160,6 @@ impl MidiManager {
             }
             Ok(LgsInitResult::Failed(e)) => {
                 tracing::warn!("LGS (GPU): 异步初始化失败: {}", e);
-                self.is_lgs_initializing = false;
-                self.lgs_init_rx = None;
                 // #127 问题1：失败不得静默——生成可见提示（原因随提示展示）。
                 self.pending_backend_notice =
                     Some(trf!("LGS 初始化失败，已回退 System 后端：{e}", e = e));
@@ -168,11 +167,12 @@ impl MidiManager {
                 self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => AsyncInitOutcome::Pending,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.pending_init = Some(PendingInit::Lgs(rx));
+                AsyncInitOutcome::Pending
+            }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("LGS (GPU): 初始化线程异常断开");
-                self.is_lgs_initializing = false;
-                self.lgs_init_rx = None;
                 self.pending_backend_notice =
                     Some(tr!("LGS 初始化线程异常断开，已回退 System 后端").to_string());
                 self.ensure_system_fallback_initialized();
@@ -183,9 +183,12 @@ impl MidiManager {
 
     /// 处理 Maestro 异步初始化结果（非阻塞）。
     fn finish_maestro_init(&mut self) -> AsyncInitOutcome {
-        let rx = match &self.maestro_init_rx {
-            Some(rx) => rx,
-            None => return AsyncInitOutcome::Pending,
+        let rx = match self.pending_init.take() {
+            Some(PendingInit::Maestro(rx)) => rx,
+            other => {
+                self.pending_init = other;
+                return AsyncInitOutcome::Pending;
+            }
         };
 
         match rx.try_recv() {
@@ -200,8 +203,6 @@ impl MidiManager {
                 self.output = Some(output);
                 self.active_backend = SynthBackend::Maestro;
                 self.maestro_stats = Some(stats);
-                self.is_maestro_initializing = false;
-                self.maestro_init_rx = None;
                 // REND-005：Maestro 不支持按端口音色库；新后端落定后重新请求提示。
                 self.pending_port_soundfonts_unsupported = None;
                 self.port_soundfonts_unsupported_ack = false;
@@ -213,18 +214,17 @@ impl MidiManager {
             }
             Ok(MaestroInitResult::Failed(error)) => {
                 tracing::warn!("Maestro: 异步初始化失败: {error}");
-                self.is_maestro_initializing = false;
-                self.maestro_init_rx = None;
                 self.pending_backend_notice =
                     Some(trf!("Maestro 未生效，已回退 System 后端：{error}"));
                 self.ensure_system_fallback_initialized();
                 AsyncInitOutcome::Failed
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => AsyncInitOutcome::Pending,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.pending_init = Some(PendingInit::Maestro(rx));
+                AsyncInitOutcome::Pending
+            }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("Maestro: 初始化线程异常断开");
-                self.is_maestro_initializing = false;
-                self.maestro_init_rx = None;
                 self.pending_backend_notice =
                     Some(tr!("Maestro 初始化线程异常断开，已回退 System 后端").to_string());
                 self.ensure_system_fallback_initialized();
@@ -243,31 +243,13 @@ impl MidiManager {
         self.needs_reinit
     }
 
-    /// 是否正在进行 XSynth 异步初始化
-    ///
-    /// 用于在 `reinit_if_needed` 之后判断新后端是「立即就绪的同步后端」
-    /// （Core / System / Kdmapi）还是「仍在异步初始化的 XSynth-Realtime」，
-    /// 从而决定是否需要立即把播放输出重连到新连接（同步后端必须立即重连，
-    /// 否则 PlaybackManager 继续向已被丢弃的旧连接发送事件 → 切换后无声）。
-    pub fn is_xsynth_initializing(&self) -> bool {
-        self.is_xsynth_initializing
-    }
-
-    /// 是否正在进行 LGS (GPU) 异步初始化
-    ///
-    /// 语义同 [`Self::is_xsynth_initializing`]，用于 `reinit_if_needed` 后判断
-    /// 新后端是同步就绪还是仍在异步初始化。
-    pub fn is_lgs_initializing(&self) -> bool {
-        self.is_lgs_initializing
-    }
-
     /// 返工 #149：软件合成后端（XSynth/LGS/Maestro）是否正在异步初始化。
     ///
     /// 在途期间**禁止任何 System(WinMM) 输出创建**（占位连接与播放输出均
     /// 延迟到就绪/失败后由既有重连路径接线）：omv2 等环境下 WinMM 接口
     /// 可能在原生层崩溃（AV），启动路径必须零触碰。
     pub fn software_backend_pending(&self) -> bool {
-        self.is_xsynth_initializing || self.is_lgs_initializing || self.is_maestro_initializing
+        self.pending_init.is_some()
     }
 
     /// 返工 #149：软件后端失败/断开时，若当前无任何后端则初始化 System 回退。
@@ -355,12 +337,7 @@ impl MidiManager {
             drop(old_output);
         }
         self.fallback_api = None;
-        self.xsynth_init_rx = None;
-        self.is_xsynth_initializing = false;
-        self.lgs_init_rx = None;
-        self.is_lgs_initializing = false;
-        self.maestro_init_rx = None;
-        self.is_maestro_initializing = false;
+        self.pending_init = None;
         self.maestro_stats = None;
 
         // 重新初始化

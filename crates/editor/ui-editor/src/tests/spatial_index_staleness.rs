@@ -64,8 +64,8 @@ fn select_rect(
     start_key: u16,
     current_key: u16,
 ) {
-    editor.cached_selection_bounds.set(None);
-    editor.selected_bounds.set(None);
+    editor.selection_ui.cached_bounds.set(None);
+    editor.selection_ui.bounds.set(None);
     editor.editor_state.interaction.selected_notes.clear();
     editor.editor_state.interaction.edit_state = EditState::Selecting {
         start_tick,

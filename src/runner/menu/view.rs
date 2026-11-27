@@ -2,13 +2,6 @@
 
 use crate::runner::RunnerInner;
 
-/// 缩放比例因子
-const ZOOM_FACTOR: f32 = 1.2;
-/// X轴默认缩放
-const DEFAULT_ZOOM_X: f32 = 0.1;
-/// Y轴默认缩放
-const DEFAULT_ZOOM_Y: f32 = 20.0;
-
 impl RunnerInner {
     /// 全局应用主题：主窗口 + 所有已打开对话框，并更新配置持久化缓存。
     ///
@@ -40,26 +33,13 @@ impl RunnerInner {
                 self.apply_global_theme(theme);
             }
             ZoomIn => {
-                let ui = self.window_state.window.ui_mut();
-                let root = ui.root_mut();
-                let new_zoom_x = root.editor.editor_state.view.zoom_x * ZOOM_FACTOR;
-                let new_zoom_y = root.editor.editor_state.view.zoom_y * ZOOM_FACTOR;
-                root.editor.set_zoom_x(new_zoom_x, 0.5);
-                root.editor.set_zoom_y(new_zoom_y, 0.5);
+                self.window_state.window.ui_mut().root_mut().zoom_in();
             }
             ZoomOut => {
-                let ui = self.window_state.window.ui_mut();
-                let root = ui.root_mut();
-                let new_zoom_x = root.editor.editor_state.view.zoom_x / ZOOM_FACTOR;
-                let new_zoom_y = root.editor.editor_state.view.zoom_y / ZOOM_FACTOR;
-                root.editor.set_zoom_x(new_zoom_x, 0.5);
-                root.editor.set_zoom_y(new_zoom_y, 0.5);
+                self.window_state.window.ui_mut().root_mut().zoom_out();
             }
             ZoomReset => {
-                let ui = self.window_state.window.ui_mut();
-                let root = ui.root_mut();
-                root.editor.set_zoom_x(DEFAULT_ZOOM_X, 0.5);
-                root.editor.set_zoom_y(DEFAULT_ZOOM_Y, 0.5);
+                self.window_state.window.ui_mut().root_mut().zoom_reset();
             }
         }
     }

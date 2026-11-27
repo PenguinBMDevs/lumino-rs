@@ -28,6 +28,22 @@ use crate::runner::inner::PendingCloseAction;
 use self::util::format_created_at_from_path;
 
 impl RunnerInner {
+    /// 保存/导出前自动提交当前编辑（ghost 方案：松手即提交）。
+    ///
+    /// `reason` 用于 debug 日志区分入口（导出工程 / 导出 MIDI / 导出素材 / 保存），
+    /// 提示文案与各入口原有文本一致。
+    fn commit_edit_before_io(&mut self, reason: &str) {
+        let committed = self
+            .window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .commit_current_edit();
+        if committed {
+            tracing::debug!("{reason}前自动提交编辑");
+        }
+    }
+
     /// 处理文件菜单事件
     pub(super) fn handle_file_menu_event(
         &mut self,
@@ -110,7 +126,6 @@ impl RunnerInner {
                     .window
                     .ui_mut()
                     .root_mut()
-                    .editor
                     .load_shapes(shapes);
                 tracing::info!("工程形状已载入：{count} 个");
             }

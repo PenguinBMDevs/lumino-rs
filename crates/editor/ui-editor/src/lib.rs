@@ -25,6 +25,11 @@ pub mod editor_state;
 pub mod grid;
 pub mod history;
 pub mod note;
+mod playback_key_colors;
+mod selection_ui_state;
+mod shape_tool_state;
+mod transient;
+pub use transient::EditorTransient;
 pub mod recording;
 pub mod smooth_scroll;
 pub mod spatial_index;
@@ -137,19 +142,11 @@ pub struct Editor {
     /// 空间索引状态（音符索引、查询缓存等）
     pub spatial: SpatialIndexState,
 
-    /// 协作远端用户光标信息（用户ID -> (位置, 颜色, 用户名)）
-    pub remote_cursors: std::collections::HashMap<String, (Point, String, String)>,
+    /// 瞬时编辑状态（协作光标 / 待提交拖拽 / 待提交复制）。
+    pub transient: EditorTransient,
 
     /// 演奏指示线位置（以 tick 为单位）
     pub playback_position: f32,
-
-    /// 播放期间琴键洋葱皮颜色（key → RGBA 颜色）
-    /// 使用固定大小数组替代HashMap，直接索引O(1)，避免hash计算开销
-    /// 索引 = key (0-255)，值 = [R, G, B, A]，全零表示无颜色
-    pub(crate) playback_key_colors: [u8; 1024],
-
-    /// 播放时键盘颜色指示是否启用（默认关闭，节省内存和CPU）
-    pub(crate) playback_key_colors_enabled: bool,
 
     /// Domino（TAKABO SOFT）剪贴板互粘是否启用（UiConfig 驱动，默认关闭，仅 Windows 生效）
     ///
@@ -172,9 +169,6 @@ pub struct Editor {
     /// **累积模式**：再次拖动同一选区时，新 delta 会叠加到此字段的 delta 上。
     /// 渲染时 ghost 位置 = note + pending_drag_state.delta + drag_state.delta。
     ///
-    /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
-    pub(crate) pending_drag_state: Option<lumino_editor_state::DragState>,
-
     /// 批量复制待提交状态（Ctrl+拖动 ghost 方案）
     ///
     /// `DraggingSelectionCopy` **松手即提交**：副本立即 `batch_insert_notes`
@@ -182,25 +176,11 @@ pub struct Editor {
     /// 本字段仅在复制拖动**过程中**（`DraggingSelectionCopy`）与提交失败
     /// 兜底（`commit_pending_copy` 内部）短暂存在；正常松手后即清空。
     ///
-    /// `None` 表示无待提交的复制；`Some(drag_state)` 表示有待写入的副本偏移。
-    pub(crate) pending_copy_drag_state: Option<lumino_editor_state::DragState>,
-
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,
 
     /// 力度编辑面板
     pub velocity_panel: velocity::VelocityPanel,
-
-    /// 框选框的动画显示状态（用于弹簧物理动画）
-    pub selection_box_anim: Cell<Option<SelectionBoxAnimState>>,
-
-    /// 上一帧框选矩形边界（raw），用于计算增量 delta。
-    ///
-    /// 元组: (min_tick, max_tick, min_key, max_key)
-    /// 存储上一帧精确的 raw 边界，配合 `rect_subtract` 计算新增/减少的薄条区域，
-    /// 仅对 delta 区域执行 R-tree 查询，避免每帧 O(N) 全量重建。
-    /// None = 不在 Selecting 状态 / 未初始化。
-    pub(crate) cached_selection_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
     /// 文字工具预览 RGBA 缓存（UI-023）。
     ///
@@ -208,56 +188,12 @@ pub struct Editor {
     /// 直接共享 `Arc`，不再重栅格化。确认 / 取消 / 换框时清空释放内存。
     pub(crate) text_preview_cache: RefCell<Option<crate::grid::text_tool_box::CachedTextPreview>>,
 
-    /// 框选 X 向量化锚点（按下时 `floor` 到音符精度网格的单元低边）。
-    ///
-    /// 拖动期间选框两端都由 `ViewState::snap_marquee_edges(锚点, 鼠标 tick)` 推算。
-    /// 锚点必须固定：否则"向左拖再拖回右侧"时选框无法正确**回缩**，只能单向扩张。
-    /// `None` = 当前 `Selecting` 非按下路径建立（不量化，保持原始精确语义）。
-    pub(crate) marquee_anchor_tick: Option<f32>,
-
-    /// 鼠标工具拖动「待确认产物镜像」时**已写回** owning tool 的累计偏移 `(dtick, dkey)`
-    ///
-    /// 待确认几何没有幽灵层（它本身就是待 √ 的产物），拖动即时落位；
-    /// `ShapeDrag` 存的是相对按下点的**累计**偏移，故每帧的写回增量 =
-    /// 累计偏移 − 本字段。松手 / 下一次按下归零（见 `sync_pending_drag_geometry`）。
-    pub(crate) pending_drag_applied: (f32, f32),
-
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
-    /// 020 Custom edit 的手柄拖拽状态
-    pub(crate) shape_edit: Option<crate::interaction::shape_edit_ui::ShapeEditState>,
-    /// 020 显式编辑目标（None = 普通 ShapeSelect 选框）
-    pub(crate) shape_edit_armed: Option<crate::interaction::shape_edit_ui::ShapeEditTarget>,
-    /// 020 多选组编辑的成员（`pending_composed` 下标；单目标时为空）
-    pub(crate) shape_group_edit: Option<Vec<usize>>,
-    /// DRAW-049：Bake 放置确认态（A+B；复用 pending composed + shape_edit_ui）
-    pub(crate) bake_placement:
-        Option<crate::interaction::shape_bake_placement::BakePlacementSession>,
-    /// DRAW-041C：Bake 前组合会话的 redo 栈（与 `editor_state.pending_composed` 成对）
-    pub(crate) pending_composed_redo: Vec<lumino_editor_state::PendingComposed>,
-    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 undo 快照
-    pub(crate) pending_edit_undo: Vec<Vec<lumino_editor_state::PendingComposed>>,
-    /// DRAW-041C 阶段 3：pending composed 手柄编辑的 redo 快照
-    pub(crate) pending_edit_redo: Vec<Vec<lumino_editor_state::PendingComposed>>,
-    /// DRAW-032B：区域着色会话（仅鼠标工具、唯一选中图形时）
-    pub(crate) area_paint: Option<crate::interaction::area_paint::AreaPaintState>,
-    /// DRAW-025：切割布防（待确认形状 + 拖出的切线）
-    pub(crate) slice_cut: Option<crate::interaction::slice_cut::SliceCutState>,
-    /// DEBT-17：饼干模的刀（音符 / 几何），显式设置、切完清空
-    pub(crate) mould_knife: Option<crate::interaction::shape_compose::MouldKnife>,
-    /// DEBT-17：刀失效等一次性通知（UI 层取走后转 toast）
-    pub(crate) mould_notice: Option<crate::interaction::shape_compose::MouldNotice>,
-    /// DRAW-044：角度柔化模式（逐角点拖半径）
-    pub(crate) round_corner: Option<crate::interaction::round_corner::RoundCornerMode>,
-    /// DRAW-041B/032B：ShapeStore 模型列表是否展开
-    pub(crate) shape_list_open: bool,
-    /// DRAW-041：✓ 前 pending 矢量快照（按历史 group）
-    pub(crate) baked_pending: std::collections::HashMap<u64, crate::interaction::bake::BakePending>,
-
-    /// 选择框边界缓存（raw 坐标），增量维护，避免每帧 O(N) 全量扫描。
-    /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。
-    /// 元组: (min_tick, max_tick_end, max_key, min_key)
-    pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
+    /// 图形工具会话与 pending 编辑栈（T-30 slice 6）。
+    pub(crate) shape_tools: shape_tool_state::ShapeToolState,
+    /// 框选交互状态（边界缓存 / 锚点 / 弹簧动画，T-30 slice 7）。
+    pub(crate) selection_ui: selection_ui_state::SelectionUiState,
 
     /// 工程走带选区命中音符的派生缓存
     ///
@@ -267,8 +203,8 @@ pub struct Editor {
     /// 故按三者版本号缓存，见 `arrangement_ops::selection_cache`。
     pub(crate) arrange_selection_cache: arrangement_ops::selection_cache::ArrangeSelectionCache,
 
-    /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
-    pub(crate) playback_scan_state: impls::PlaybackScanState,
+    /// 播放键色状态（颜色缓存 + 增量扫描，T-30 slice 4）。
+    pub(crate) playback_key_state: impls::PlaybackKeyState,
 
     /// 协作广播批处理嵌套深度（DRAW-035B）：> 0 时只累积待广播队列，
     /// 回到 0 时统一冲刷一次（多步历史跳转的广播批次数 N → 1）。
@@ -290,23 +226,6 @@ pub struct Editor {
     /// 走 host 层可靠通道，避免 canvas 内 `ModifiersChanged` 事件因焦点问题不送达。
     shift_pressed: bool,
 
-    /// 远端用户选择集合（用于协作高亮 + first-writer-wins 冲突判定）
-    ///
-    /// key = 远端用户 ID，value = 该用户的选择指纹与时间戳。
-    pub remote_selections: std::collections::HashMap<String, RemoteSelectionSet>,
-
-    /// 本地当前选择的时间戳（ms）
-    ///
-    /// 框选完成时由 `emit_local_selection_changed(true)` 写入，用于冲突判定：
-    /// 提交本地编辑前比对远端选择时间戳，远端更早则本地让行。
-    pub(crate) local_selection_timestamp: Option<u64>,
-
-    /// 本地当前选择的指纹（track, tick, key, length）
-    ///
-    /// 与 `local_selection_timestamp` 同步写入/清空，供冲突判定复用，
-    /// 避免在提交热路径重新扫描选中集合。
-    pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
-
     /// 画刷工具配置（**全局绘制粗细** + 每层音轨分配）
     ///
     /// ⚠️ `thickness` 是**全局**值，不是画刷私有：曲线 / 形状的描边与画刷笔画共用它
@@ -317,13 +236,6 @@ pub struct Editor {
     /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
     /// 本字段只保留配置：改粗细后预览与生成立即按新配置解释。
     pub brush: lumino_core::BrushConfig,
-
-    /// 待打开「分音符填充」对话框的请求标志（由画布 Ctrl+单击置位）
-    ///
-    /// `Editor`（ui-editor）不持有主窗口的对话框状态，无法自行弹窗；
-    /// 置位后由 `Root::handle_editor_action` 每帧取走并打开主窗口覆盖层，
-    /// 与 `notes_changed` 同构的一次性标志。
-    fill_division_dialog_requested: bool,
 }
 
 /// 远端用户选择集合

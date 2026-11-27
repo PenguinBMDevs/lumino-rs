@@ -213,7 +213,7 @@ mod tests {
             .shape_select
             .set_model_id(drawn_id, Some(1));
         editor.editor_state.shape_select.select_only(drawn_id);
-        editor.area_paint = Some(AreaPaintState {
+        editor.shape_tools.area_paint = Some(AreaPaintState {
             target: AreaPaintTarget::PendingComposed { index: 0 },
             drawn_id: Some(drawn_id),
             colour: 3,
@@ -266,7 +266,7 @@ mod tests {
             .shape_select
             .set_model_id(drawn_id, Some(1));
         editor.editor_state.shape_select.select_only(drawn_id);
-        editor.area_paint = Some(AreaPaintState {
+        editor.shape_tools.area_paint = Some(AreaPaintState {
             target: AreaPaintTarget::PendingComposed { index: 0 },
             drawn_id: Some(drawn_id),
             colour: 3,

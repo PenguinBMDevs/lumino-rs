@@ -1,6 +1,6 @@
 //! 钢琴卷帘网格滚轮交互单元测试
 //!
-//! 从 grid/program.rs 主文件拆出，因为主文件超过 400 行。
+//! 从 grid/program.rs 主文件拆出，因为主文件超过 600 行。
 //! 输入语义已抽到 `grid::canvas_input`；本文件锁定滚轮增量换算与分区路由。
 
 use super::PianoRollGrid;

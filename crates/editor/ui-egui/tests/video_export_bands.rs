@@ -24,12 +24,12 @@ fn model() -> VideoExportModel {
                         value: "C:/a.mid".to_owned(),
                         hint: String::new(),
                         width: 0.0,
-                        id: 14,
+                        id: 14.into(),
                     },
                     VideoRow::Buttons {
                         buttons: vec![VideoButton {
                             label: "浏览...".to_owned(),
-                            id: 15,
+                            id: 15.into(),
                             fill: VideoButtonFill::Primary,
                             width: 0.0,
                         }],
@@ -45,7 +45,7 @@ fn model() -> VideoExportModel {
                         options: vec!["MP4".to_owned(), "MOV".to_owned()],
                         selected: 0,
                         width: 200.0,
-                        id: 1,
+                        id: 1.into(),
                     },
                     VideoRow::Slider {
                         label: "下落速度:".to_owned(),
@@ -56,12 +56,12 @@ fn model() -> VideoExportModel {
                         step: 0.1,
                         slider_width: 200.0,
                         value_text: "1.0x".to_owned(),
-                        id: 6,
+                        id: 6.into(),
                     },
                     VideoRow::Toggle {
                         label: "3D 音符".to_owned(),
                         checked: false,
-                        id: 9,
+                        id: 9.into(),
                     },
                     VideoRow::Text {
                         label: "分辨率:".to_owned(),
@@ -69,7 +69,7 @@ fn model() -> VideoExportModel {
                         value: "1920".to_owned(),
                         hint: "1920".to_owned(),
                         width: 80.0,
-                        id: 10,
+                        id: 10.into(),
                     },
                     VideoRow::Label {
                         text: "提示文字".to_owned(),
@@ -82,13 +82,13 @@ fn model() -> VideoExportModel {
         buttons: vec![
             VideoButton {
                 label: "关闭".to_owned(),
-                id: 17,
+                id: 17.into(),
                 fill: VideoButtonFill::Neutral,
                 width: 100.0,
             },
             VideoButton {
                 label: "开始导出".to_owned(),
-                id: 18,
+                id: 18.into(),
                 fill: VideoButtonFill::Primary,
                 width: 120.0,
             },
@@ -146,7 +146,7 @@ fn buttons_dispatch_ids() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 18 })
+        Some(&VideoExportAction::Button { id: 18.into() })
     );
 
     let (mut harness, actions) = make_harness();
@@ -154,7 +154,7 @@ fn buttons_dispatch_ids() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 15 })
+        Some(&VideoExportAction::Button { id: 15.into() })
     );
 }
 
@@ -165,7 +165,10 @@ fn toggle_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Toggle { id: 9, value: true })
+        Some(&VideoExportAction::Toggle {
+            id: 9.into(),
+            value: true
+        })
     );
 }
 
@@ -185,7 +188,10 @@ fn pick_and_text_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Pick { id: 1, index: 1 })
+        Some(&VideoExportAction::Pick {
+            id: 1.into(),
+            index: 1
+        })
     );
 
     let (mut harness, actions) = make_harness();
@@ -198,7 +204,7 @@ fn pick_and_text_dispatch() {
     assert!(
         actions.borrow().iter().any(|action| matches!(
             action,
-            VideoExportAction::Text { id: 10, value } if value.contains('8')
+            VideoExportAction::Text { id, value } if id.get() == 10 && value.contains('8')
         )),
         "分辨率输入应回传 Text(10)，实际 {:?}",
         actions.borrow()
@@ -213,7 +219,7 @@ fn rich_model() -> VideoExportModel {
         value: value.to_owned(),
         hint: "0".to_owned(),
         width,
-        id,
+        id: id.into(),
     };
     VideoExportModel {
         title: "视频导出".to_owned(),
@@ -226,19 +232,19 @@ fn rich_model() -> VideoExportModel {
                         value: "Notes: {nc}".to_owned(),
                         hint: "Notes".to_owned(),
                         height: 140.0,
-                        id: 100,
+                        id: 100.into(),
                     },
                     VideoRow::Buttons {
                         buttons: vec![
                             VideoButton {
                                 label: "恢复默认".to_owned(),
-                                id: 101,
+                                id: 101.into(),
                                 fill: VideoButtonFill::Primary,
                                 width: 0.0,
                             },
                             VideoButton {
                                 label: "完整模板".to_owned(),
-                                id: 102,
+                                id: 102.into(),
                                 fill: VideoButtonFill::Primary,
                                 width: 0.0,
                             },
@@ -251,7 +257,7 @@ fn rich_model() -> VideoExportModel {
                         options: vec!["左上".to_owned(), "右下".to_owned()],
                         selected: 0,
                         width: 140.0,
-                        id: 107,
+                        id: 107.into(),
                     },
                     VideoRow::Slider {
                         label: "字号:".to_owned(),
@@ -262,12 +268,12 @@ fn rich_model() -> VideoExportModel {
                         step: 1.0,
                         slider_width: 140.0,
                         value_text: "40 px".to_owned(),
-                        id: 108,
+                        id: 108.into(),
                     },
                     VideoRow::Toggle {
                         label: "使用千分位分隔符（1,234,567）".to_owned(),
                         checked: true,
-                        id: 109,
+                        id: 109.into(),
                     },
                     VideoRow::TextPair {
                         left: cell("BPM 整数", "3", 120, 56.0),
@@ -280,10 +286,10 @@ fn rich_model() -> VideoExportModel {
                         value: "C:/a.csv".to_owned(),
                         hint: "选择 CSV 输出路径...".to_owned(),
                         width: 0.0,
-                        text_id: 112,
+                        text_id: 112.into(),
                         button: VideoButton {
                             label: "浏览...".to_owned(),
-                            id: 113,
+                            id: 113.into(),
                             fill: VideoButtonFill::Primary,
                             width: 0.0,
                         },
@@ -299,7 +305,7 @@ fn rich_model() -> VideoExportModel {
                         options: vec!["NPS（每秒音符数）".to_owned(), "复音数".to_owned()],
                         selected: 0,
                         width: 180.0,
-                        id: 200,
+                        id: 200.into(),
                     },
                     VideoRow::TextPair {
                         left: cell("背景色", "#000000", 210, 96.0),
@@ -309,14 +315,14 @@ fn rich_model() -> VideoExportModel {
                     VideoRow::Toggle {
                         label: "显示水平网格线".to_owned(),
                         checked: true,
-                        id: 236,
+                        id: 236.into(),
                     },
                 ],
             },
         ],
         buttons: vec![VideoButton {
             label: "开始导出".to_owned(),
-            id: 18,
+            id: 18.into(),
             fill: VideoButtonFill::Primary,
             width: 120.0,
         }],
@@ -392,7 +398,7 @@ fn counter_buttons_and_pads_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 102 })
+        Some(&VideoExportAction::Button { id: 102.into() })
     );
 
     let (mut harness, actions) = make_rich_harness();
@@ -404,7 +410,7 @@ fn counter_buttons_and_pads_dispatch() {
     harness.run();
     assert_eq!(
         actions.borrow().last(),
-        Some(&VideoExportAction::Button { id: 113 })
+        Some(&VideoExportAction::Button { id: 113.into() })
     );
 
     // 补零宽度的第二列（BPM 小数）输入。
@@ -419,7 +425,7 @@ fn counter_buttons_and_pads_dispatch() {
         actions
             .borrow()
             .iter()
-            .any(|action| matches!(action, VideoExportAction::Text { id: 121, .. })),
+            .any(|action| matches!(action, VideoExportAction::Text { id, .. } if id.get() == 121)),
         "补零输入应回传 Text(121)，实际 {:?}",
         actions.borrow()
     );
@@ -436,7 +442,7 @@ fn template_text_area_dispatches_full_text() {
         actions
             .borrow()
             .iter()
-            .any(|action| matches!(action, VideoExportAction::Text { id: 100, value } if value.contains('X'))),
+            .any(|action| matches!(action, VideoExportAction::Text { id, value } if id.get() == 100 && value.contains('X'))),
         "模板编辑应回传 Text(100)，实际 {:?}",
         actions.borrow()
     );

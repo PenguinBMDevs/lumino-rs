@@ -158,7 +158,7 @@ pub(crate) fn snap_scroll_x(logical: f32, scale: f32) -> f32 {
     (logical * scale).round() / scale
 }
 
-/// 几何/DPI/网格对齐测试（独立文件，保持本文件 < 400 行）
+/// 几何/DPI/网格对齐测试（独立文件，保持本文件 ≤600 行）
 #[cfg(test)]
 #[path = "camera/tests.rs"]
 mod tests;

@@ -1,6 +1,6 @@
 //! 区域着色（DRAW-032）：上下文构建、色号→通道映射与解锁。
 //!
-//! 从 `fill_notes.rs` 拆出，保持单文件 <400 行。
+//! 从 `fill_notes.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_core::shape::{
     AREA_BORDER, AREA_LOCK_BASE, AREA_UNASSIGNED, COLOUR_SLOT_MAX, ShapeModel, ShapeRect,

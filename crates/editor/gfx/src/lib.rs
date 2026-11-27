@@ -24,12 +24,14 @@ mod gpu_note_buffer;
 mod gpu_resource_tracker;
 pub mod grid;
 mod grid_renderer;
+mod instance_buffer;
 mod note_renderer;
 mod pipeline;
 /// Tracy 剖析插桩（`tracy` feature，默认零开销）
 mod profiling;
 pub mod render_thread;
 mod ruler_renderer;
+mod uniform_binding;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;

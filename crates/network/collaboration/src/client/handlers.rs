@@ -107,7 +107,10 @@ pub async fn handle_server_message(
         }
 
         _ => {
-            debug!("收到未处理的服务器消息: type={}", msg.type_name());
+            // 24 行的 `type_name` 映射只是 serde tag 的第二份定义；未处理消息直接
+            // 记录原文片段，既省掉重复又便于排查新协议（截断避免大载荷刷日志）。
+            let preview: String = text.chars().take(200).collect();
+            debug!("收到未处理的服务器消息: {preview}");
         }
     }
 

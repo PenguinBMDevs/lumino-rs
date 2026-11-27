@@ -26,11 +26,11 @@ impl Editor {
 
     /// 撤销一次 pending composed 手柄编辑（不进入文档历史）
     pub(crate) fn undo_pending_edit(&mut self) -> bool {
-        let Some(previous) = self.pending_edit_undo.pop() else {
+        let Some(previous) = self.shape_tools.pending_edit_undo.pop() else {
             return false;
         };
         let current = std::mem::replace(&mut self.editor_state.pending_composed, previous);
-        self.pending_edit_redo.push(current);
+        self.shape_tools.pending_edit_redo.push(current);
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true
@@ -38,11 +38,11 @@ impl Editor {
 
     /// 重做一次 pending composed 手柄编辑
     pub(crate) fn redo_pending_edit(&mut self) -> bool {
-        let Some(next) = self.pending_edit_redo.pop() else {
+        let Some(next) = self.shape_tools.pending_edit_redo.pop() else {
             return false;
         };
         let current = std::mem::replace(&mut self.editor_state.pending_composed, next);
-        self.pending_edit_undo.push(current);
+        self.shape_tools.pending_edit_undo.push(current);
         self.editor_state.shape_select.remove_pending_all();
         self.rebuild_pending_mirrors();
         true

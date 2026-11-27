@@ -32,7 +32,7 @@ impl Root {
         let (dtick, dkey) = editor.drag_preview_delta();
         // 鼠标工具下把当前轨未选中的可见图形以弱色常显：否则切换工具后
         // 图案只剩音符、看不见可选中范围（上一代 `drawn_shape_box` 同语义）。
-        let select_mode = editor.current_tool() == lumino_message::Tool::ShapeSelect;
+        let select_mode = editor.editor_state.current_tool() == lumino_message::Tool::ShapeSelect;
         let idle_outlines = if select_mode {
             editor
                 .editor_state

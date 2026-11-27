@@ -1,5 +1,33 @@
+//! 工具栏事件分发：互斥浮层收起守卫 + 按事件族分派。
+//!
+//! 具体处理拆到 `update_*` 子模块；本文件只保留 `new`、守卫、穷尽式分派表、
+//! 尺寸拖拽与仅日志事件。新增事件必须先在分派表里归类——分派表不写 `_` 兜底，
+//! 编译器会强制穷尽，避免新事件被静默吞掉。
+
 use super::*;
-use lumino_core::shape::expr::is_int_input as is_expression_input;
+
+/// 工具栏内除常驻悬浮条外的互斥浮层。
+///
+/// `ToolPanel`（音符绘制悬浮条）不在其中：它是常驻浮层，只由显式事件开关，
+/// 不参与「收到其它动作即收起」的守卫。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Popover {
+    OverflowMenu,
+    BrushDropdown,
+    ShapeDropdown,
+    OnionSkinMenu,
+    ThicknessPanel,
+    TextParams,
+}
+
+/// 本事件允许保持打开的浮层。
+#[derive(Clone, Copy)]
+enum PopoverKeep {
+    /// 悬停：不收起任何浮层（重绘会让 mouse_area 重发 on_enter）。
+    All,
+    Only(Popover),
+    None,
+}
 
 impl Toolbar {
     /// 创建新的工具栏
@@ -51,99 +79,7 @@ impl Toolbar {
 
     /// 更新工具栏状态
     pub fn update(&mut self, event: Event) {
-        // 菜单打开时，除以下情况外其余操作先关闭菜单：
-        // - 再次点击“更多”按钮（ToggleOverflowMenu）用于切换关闭
-        // - 悬停事件（ButtonHovered）由鼠标进出触发，不应关闭菜单，
-        //   否则菜单打开导致重绘、按钮 mouse_area 重新挂载会发出 on_enter，
-        //   立刻把刚打开的菜单关掉（表现为“更多面板打不开”）
-        // - 显式关闭事件（CloseOverflowMenu）
-        if self.overflow_menu_open
-            && !matches!(
-                event,
-                Event::ToggleOverflowMenu | Event::ButtonHovered(_) | Event::CloseOverflowMenu
-            )
-        {
-            self.overflow_menu_open = false;
-        }
-
-        // 音符绘制悬浮工具条为**常驻浮层**（非下拉）：不随其它操作自动关闭，
-        // 仅由工具栏绘制入口按钮（ToggleToolPanel）或显式 CloseToolPanel 控制开关。
-        // 因此这里不再对其做"收到其它事件即关闭"的处理（旧下拉时代的 guard 已移除）。
-
-        // 画刷工具下拉打开时，除以下情况外其余操作先关闭下拉：
-        // - 再次点击附属按钮（ToggleBrushDropdown）用于切换关闭
-        // - 悬停事件不应关闭下拉
-        // - 显式关闭事件（CloseBrushDropdown）
-        if self.brush_dropdown_open
-            && !matches!(
-                event,
-                Event::ToggleBrushDropdown | Event::ButtonHovered(_) | Event::CloseBrushDropdown
-            )
-        {
-            self.brush_dropdown_open = false;
-        }
-
-        // 形状工具下拉打开时，除以下情况外其余操作先关闭下拉：
-        // - 再次点击形状工具（ToggleShapeDropdown）用于切换关闭
-        // - 悬停事件不应关闭下拉
-        // - 显式关闭事件（CloseShapeDropdown）
-        // - 选中某个图形（ShapeTypeSelected）即视为完成一次选择，下拉随之关闭
-        if self.shape_dropdown_open
-            && !matches!(
-                event,
-                Event::ToggleShapeDropdown | Event::ButtonHovered(_) | Event::CloseShapeDropdown
-            )
-        {
-            self.shape_dropdown_open = false;
-        }
-
-        // 洋葱皮选项下拉打开时，除以下情况外其余操作先关闭下拉：
-        // - 再次点击三角（ToggleOnionSkinMenu）用于切换关闭
-        // - 悬停事件不应关闭下拉（重绘会让 mouse_area 重发 on_enter，会把刚打开的菜单关掉）
-        // - 显式关闭事件（CloseOnionSkinMenu，DropDown 的 on_dismiss）
-        // - 选中某个模式（OnionSkinModeSelected）：事件体内自行收口
-        if self.onion_skin_menu_open
-            && !matches!(
-                event,
-                Event::ToggleOnionSkinMenu
-                    | Event::ButtonHovered(_)
-                    | Event::CloseOnionSkinMenu
-                    | Event::OnionSkinModeSelected(_)
-            )
-        {
-            self.onion_skin_menu_open = false;
-        }
-
-        // 「粗细」悬浮面板打开时，除以下情况外其余操作先关闭面板：
-        // - 再次点击「粗细」按钮（ToggleThicknessPanel）用于切换关闭
-        // - 悬停事件不应关闭面板
-        // - 显式关闭事件（CloseThicknessPanel）
-        // - **拖动滑杆产生的粗细变更**（DrawThicknessChanged）：那是面板**内部**交互，
-        //   必须放行——否则滑杆一拖就把自己关掉（面板永远拖不动）
-        if self.thickness_panel_open
-            && !matches!(
-                event,
-                Event::ToggleThicknessPanel
-                    | Event::ButtonHovered(_)
-                    | Event::CloseThicknessPanel
-                    | Event::DrawThicknessChanged(_)
-            )
-        {
-            self.thickness_panel_open = false;
-            self.text_params_open = false;
-        }
-
-        // 文字参数面板打开时，除悬停 / 显式关闭 / 再次请求设置外，其它动作先关闭。
-        if self.text_params_open
-            && !matches!(
-                event,
-                Event::ButtonHovered(_)
-                    | Event::CloseTextParamsPanel
-                    | Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text)
-            )
-        {
-            self.text_params_open = false;
-        }
+        self.dismiss_popovers(&event);
 
         // 洋葱皮事件（开关 / 下拉开合 / 选择范围）集中到 `update_onion_skin.rs`，
         // 命中即返回；外部动作收起下拉的守卫已在上面统一跑过。
@@ -152,522 +88,202 @@ impl Toolbar {
         }
 
         match event {
-            Event::Play => self.is_playing = true,
-            Event::Pause => self.is_playing = false,
-            Event::Stop => self.is_playing = false,
-            Event::SkipBackward => {}
-            Event::SkipForward => {}
-            Event::SkipBackwardToStart => {}
-            Event::SkipForwardToEnd => {}
-            Event::Undo => {
-                tracing::debug!("工具栏: 撤销操作");
+            // 走带与录制
+            Event::Play
+            | Event::Pause
+            | Event::Stop
+            | Event::SkipBackward
+            | Event::SkipForward
+            | Event::SkipBackwardToStart
+            | Event::SkipForwardToEnd
+            | Event::ToggleLoop
+            | Event::Record
+            | Event::RecordStop => self.update_transport(event),
+
+            // 工具选择与绘制工具条
+            Event::ToolSelected(_)
+            | Event::FillToggled(_)
+            | Event::ToggleToolPanel
+            | Event::CloseToolPanel
+            | Event::ToolPanelItemSelected(_)
+            | Event::ToolPanelItemSettingsRequested(_)
+            | Event::CloseTextParamsPanel => self.update_tools(event),
+
+            // 绘制工具条拖拽
+            Event::ToolPanelDragStarted
+            | Event::ToolPanelDragEnded
+            | Event::ToolPanelDragged(_, _) => {
+                self.update_tool_panel_drag(event);
             }
-            Event::Redo => {
-                tracing::debug!("工具栏: 重做操作");
+
+            // 吸附规格与吸附选择器
+            Event::SnapSpecChanged(_)
+            | Event::PrecisionChanged(_)
+            | Event::ToggleSnapPicker
+            | Event::CloseSnapPicker => self.update_snap(event),
+
+            // 工具栏下拉（溢出 / 画刷 / 形状）
+            Event::ToggleOverflowMenu
+            | Event::CloseOverflowMenu
+            | Event::ToggleBrushDropdown
+            | Event::CloseBrushDropdown
+            | Event::ToggleShapeDropdown
+            | Event::CloseShapeDropdown
+            | Event::ShapeTypeSelected(_) => self.update_dropdowns(event),
+
+            // 粗细面板
+            Event::ToggleThicknessPanel
+            | Event::CloseThicknessPanel
+            | Event::DrawThicknessChanged(_) => self.update_thickness(event),
+
+            // 自定义精度对话框
+            Event::OpenCustomPrecisionDialog
+            | Event::CloseCustomPrecisionDialog
+            | Event::ConfirmCustomPrecision
+            | Event::CustomPrecisionTupletCountChanged(_)
+            | Event::CustomPrecisionTupletTypeChanged(_)
+            | Event::CustomPrecisionDotTypeChanged(_)
+            | Event::CustomPrecisionNoteValueChanged(_)
+            | Event::CustomPrecisionDivisorChanged(_) => self.update_custom_precision(event),
+
+            // 仪表盘编辑（BPM / PPQ）与自动滚动
+            Event::BpmEditToggled(_)
+            | Event::BpmEditChanged(_)
+            | Event::BpmEditConfirmed
+            | Event::PpqEditToggled(_)
+            | Event::PpqEditChanged(_)
+            | Event::PpqEditConfirmed
+            | Event::AutoScrollModeChanged => self.update_dashboard(event),
+
+            // 工具栏高度拖拽
+            Event::ResizeDragStarted(_) | Event::ResizeDragged(_) | Event::ResizeDragEnded => {
+                self.update_resize(event);
             }
-            Event::ToolSelected(tool) => {
-                self.current_tool = tool;
-                // 切换工具即离开任何共存态：填充桶仅曲线/形状可共存，切到其它工具一律关闭
-                self.fill_enabled = false;
-                // 三点圆弧属于曲线工具的落点模式：任何显式工具切换都退出
-                self.arc_mode = false;
-                // 关闭附着于工具栏的下拉（画刷/形状），避免工具切换后残留；
-                // 但**不关闭**音符绘制悬浮工具条——它是独立常驻浮层，与工具切换无关。
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-            }
-            Event::FillToggled(enabled) => {
-                self.fill_enabled = enabled;
-                if enabled {
-                    // 填充与三点圆弧落点互斥：开启填充即退出圆弧模式
-                    self.arc_mode = false;
-                }
-                tracing::debug!("工具栏: 颜料桶填充模式切换为 {}", enabled);
-            }
-            Event::Quantize => {
-                tracing::debug!("工具栏: 量化操作");
-            }
-            Event::SnapSpecChanged(spec) => {
-                self.snap_spec = spec;
-                self.snap_picker_open = false;
-                tracing::debug!("工具栏: 吸附规格变更为 {:?}", spec);
-            }
-            Event::ToggleSnapPicker => {
-                self.snap_picker_open = !self.snap_picker_open;
-            }
-            Event::CloseSnapPicker => {
-                self.snap_picker_open = false;
-            }
-            Event::PrecisionChanged(precision) => {
-                // 旧事件兼容：仅用于尚未迁移的调用点。
-                self.snap_spec = SnapSpec::from_legacy(precision, None);
-                tracing::debug!("工具栏: 旧精度事件 {:?} → {:?}", precision, self.snap_spec);
-            }
-            Event::OpenCustomPrecisionDialog => {
-                self.custom_precision_dialog.is_open = true;
-                tracing::debug!("工具栏: 打开自定义精度对话框");
-            }
-            Event::CloseCustomPrecisionDialog => {
-                self.custom_precision_dialog.is_open = false;
-                tracing::debug!("工具栏: 关闭自定义精度对话框");
-            }
-            Event::ConfirmCustomPrecision => {
-                self.custom_precision_dialog.is_open = false;
-                tracing::debug!("工具栏: 确认自定义精度");
-            }
-            Event::CustomPrecisionTupletCountChanged(value) => {
-                if is_expression_input(&value) {
-                    self.custom_precision_dialog.tuplet_count = value;
-                    self.custom_precision_dialog.error = None;
-                }
-            }
-            Event::CustomPrecisionTupletTypeChanged(value) => {
-                self.custom_precision_dialog.tuplet_type = value;
-                self.custom_precision_dialog.tuplet_count = value.value().to_string();
-            }
-            Event::CustomPrecisionDotTypeChanged(value) => {
-                self.custom_precision_dialog.dot_type = value;
-            }
-            Event::CustomPrecisionNoteValueChanged(value) => {
-                if is_expression_input(&value) {
-                    self.custom_precision_dialog.note_value = value;
-                    self.custom_precision_dialog.error = None;
-                }
-            }
-            Event::CustomPrecisionDivisorChanged(value) => {
-                if is_expression_input(&value) {
-                    self.custom_precision_dialog.divisor = value;
-                    self.custom_precision_dialog.error = None;
-                }
-            }
-            Event::OpenCollaborationDialog => {
-                tracing::debug!("工具栏: 请求打开协作对话框");
-            }
-            Event::OpenProjectSettingsDialog => {
-                tracing::debug!("工具栏: 请求打开工程设置对话框");
-            }
-            Event::OpenMemoryMonitorDialog => {
-                tracing::debug!("工具栏: 请求打开内存监控对话框");
-            }
-            Event::AutoScrollModeChanged => {
-                self.auto_scroll_mode = match self.auto_scroll_mode {
-                    lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
-                        lumino_core::storage::config::AutoScrollMode::ScrollingIndicator
-                    }
-                    lumino_core::storage::config::AutoScrollMode::ScrollingIndicator => {
-                        lumino_core::storage::config::AutoScrollMode::Off
-                    }
-                    lumino_core::storage::config::AutoScrollMode::Off => {
-                        lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
-                    }
-                };
-                tracing::debug!("工具栏: 自动滚动模式切换为 {:?}", self.auto_scroll_mode);
-            }
-            // 洋葱皮事件已在上方 `update_onion_skin_event` 处理并提前返回；
-            // 保留空臂只为让本 match 保持穷尽（删掉会编译失败）。
+
+            // 仅写日志 / 无状态可改的事件
+            Event::Undo
+            | Event::Redo
+            | Event::Quantize
+            | Event::ImageToMidiClicked
+            | Event::OpenCollaborationDialog
+            | Event::OpenProjectSettingsDialog
+            | Event::OpenMemoryMonitorDialog
+            | Event::SpeedChange
+            | Event::FlipVertical
+            | Event::FlipHorizontal(_)
+            | Event::TransposeUp(_)
+            | Event::TransposeDown(_)
+            | Event::Split
+            | Event::Glue
+            | Event::Tie
+            | Event::OpenHistoryDialog
+            | Event::OpenDrawSettingsDialog => self.log_unhandled(event),
+            #[cfg(lumino_shape_drawer_entry)]
+            Event::OpenShapeDrawerDialog => self.log_unhandled(event),
+
+            // 洋葱皮事件已在上面提前返回；保留空臂只为让分派表穷尽。
             Event::ToggleOnionSkin
             | Event::ToggleOnionSkinMenu
             | Event::CloseOnionSkinMenu
             | Event::OnionSkinModeSelected(_) => {}
-            Event::ToggleLoop => {
-                self.is_looping = !self.is_looping;
-                tracing::debug!("工具栏: 循环播放切换为 {}", self.is_looping);
-            }
-            Event::Record => {
-                self.is_recording = true;
-                tracing::debug!("工具栏: 开始录制");
-            }
-            Event::RecordStop => {
-                self.is_recording = false;
-                tracing::debug!("工具栏: 停止录制");
-            }
-            Event::SpeedChange => {
-                tracing::debug!("工具栏: 触发音符变速");
-            }
-            Event::FlipVertical => {
-                tracing::debug!("工具栏: 触发垂直翻转");
-            }
-            Event::FlipHorizontal(_) => {
-                tracing::debug!("工具栏: 触发水平翻转");
-            }
-            Event::TransposeUp(semitones) => {
-                tracing::debug!("工具栏: 触发移调 +{}", semitones);
-            }
-            Event::TransposeDown(semitones) => {
-                tracing::debug!("工具栏: 触发移调 -{}", semitones);
-            }
-            Event::Split => {
-                tracing::debug!("工具栏: 触发音符分割");
-            }
-            Event::Glue => {
-                tracing::debug!("工具栏: 触发音符合并");
-            }
-            Event::Tie => {
-                tracing::debug!("工具栏: 触发音符连奏");
-            }
-            Event::ToggleOverflowMenu => {
-                self.overflow_menu_open = !self.overflow_menu_open;
-                // 与绘制工具面板互斥：打开溢出菜单时关闭工具面板
-                self.tool_panel_open = false;
-                tracing::debug!(
-                    "工具栏: 溢出菜单 {}",
-                    if self.overflow_menu_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseOverflowMenu => {
-                self.overflow_menu_open = false;
-                tracing::debug!("工具栏: 关闭溢出菜单");
-            }
-            Event::ResizeDragStarted(_) => {
-                self.is_resizing = true;
-            }
-            Event::ResizeDragged(_) => {}
-            Event::ResizeDragEnded => {
-                self.is_resizing = false;
-            }
-            Event::PpqEditToggled(current_ppq) => {
-                if self.ppq_editing {
-                    // 已在编辑状态 → 取消编辑
-                    self.ppq_editing = false;
-                    self.ppq_edit_buffer.clear();
-                    self.ppq_edit_error = None;
-                } else {
-                    // 进入编辑状态，用当前 PPQ 值初始化缓冲区
-                    self.ppq_editing = true;
-                    self.ppq_edit_buffer = current_ppq.to_string();
-                    self.ppq_edit_error = None;
-                    // 仪表盘同一时间只编辑一个字段
-                    self.bpm_editing = false;
-                    self.bpm_edit_buffer.clear();
-                    self.bpm_edit_error = None;
-                }
-            }
-            Event::PpqEditChanged(value) => {
-                if self.ppq_editing {
-                    // 允许数字与整数表达式字符；非法字符直接丢弃，保留上一次合法输入。
-                    if value.is_empty() || is_expression_input(&value) {
-                        self.ppq_edit_buffer = value;
-                        self.ppq_edit_error = None;
-                    }
-                }
-            }
-            Event::PpqEditConfirmed => {
-                self.ppq_editing = false;
-                self.ppq_edit_buffer.clear();
-            }
-            Event::BpmEditToggled(current_bpm) => {
-                if self.bpm_editing {
-                    // 已在编辑状态 → 取消编辑
-                    self.bpm_editing = false;
-                    self.bpm_edit_buffer.clear();
-                    self.bpm_edit_error = None;
-                } else {
-                    // 进入编辑状态，用当前 BPM 初始化缓冲区（整数不带 `.0`）
-                    self.bpm_editing = true;
-                    self.bpm_edit_buffer = lumino_core::shape::expr::fmt_number(current_bpm);
-                    self.bpm_edit_error = None;
-                    // 仪表盘同一时间只编辑一个字段
-                    self.ppq_editing = false;
-                    self.ppq_edit_buffer.clear();
-                    self.ppq_edit_error = None;
-                }
-            }
-            Event::BpmEditChanged(value) => {
-                if self.bpm_editing {
-                    // 只接受数字与小数点；负号 / 科学计数法直接丢弃。
-                    if value.is_empty() || is_bpm_input(&value) {
-                        self.bpm_edit_buffer = value;
-                        self.bpm_edit_error = None;
-                    }
-                }
-            }
-            Event::BpmEditConfirmed => {
-                self.bpm_editing = false;
-                self.bpm_edit_buffer.clear();
-            }
-            // 悬停描述事件：工具栏自身不处理，交由 Root 写入底部状态栏
+
+            // 悬停描述由 Root 写入状态栏，工具栏不处理。
             Event::ButtonHovered(_) => {}
+        }
+    }
+
+    /// 收到「其它动作」时收起互斥浮层；每个浮层只放行自己的开合 / 内部交互事件。
+    fn dismiss_popovers(&mut self, event: &Event) {
+        let keep = popover_keep(event);
+        if matches!(keep, PopoverKeep::All) {
+            return;
+        }
+        let keeps = |popover| matches!(keep, PopoverKeep::Only(kept) if kept == popover);
+        if !keeps(Popover::OverflowMenu) {
+            self.overflow_menu_open = false;
+        }
+        if !keeps(Popover::BrushDropdown) {
+            self.brush_dropdown_open = false;
+        }
+        if !keeps(Popover::ShapeDropdown) {
+            self.shape_dropdown_open = false;
+        }
+        if !keeps(Popover::OnionSkinMenu) {
+            self.onion_skin_menu_open = false;
+        }
+        if !keeps(Popover::ThicknessPanel) {
+            // 粗细面板收起时文字参数面板一并收起：两者锚定同一悬浮条，
+            // 留着「开」状态会在下次打开时凭空弹出一块面板。
+            self.thickness_panel_open = false;
+            self.text_params_open = false;
+        }
+        if !keeps(Popover::TextParams) {
+            self.text_params_open = false;
+        }
+    }
+
+    fn update_resize(&mut self, event: Event) {
+        match event {
+            Event::ResizeDragStarted(_) => self.is_resizing = true,
+            Event::ResizeDragEnded => self.is_resizing = false,
+            Event::ResizeDragged(_) => {}
+            _ => {}
+        }
+    }
+
+    /// 只写日志的事件：工具栏没有状态可改，但保留可观测性。
+    fn log_unhandled(&self, event: Event) {
+        match event {
+            Event::Undo => tracing::debug!("工具栏: 撤销操作"),
+            Event::Redo => tracing::debug!("工具栏: 重做操作"),
+            Event::Quantize => tracing::debug!("工具栏: 量化操作"),
             Event::ImageToMidiClicked => {
                 tracing::info!("工具栏: 图片转MIDI功能开发中，按钮已点击");
             }
-            Event::ToggleToolPanel => {
-                self.tool_panel_open = !self.tool_panel_open;
-                // 与溢出菜单、画刷/形状下拉/粗细面板互斥：打开绘制工具条时关闭其余浮层
-                self.overflow_menu_open = false;
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-                // 关闭时一并收起粗细面板：它锚定在悬浮条的按钮上，悬浮条不在就没有锚点；
-                // 留着"开"状态会让下次打开悬浮条时凭空弹出一块面板（用户早已看不见它）
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
-                // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
-                if !self.tool_panel_open {
-                    self.tool_panel_dragging = false;
-                    self.tool_panel_last_cursor = None;
-                }
-                tracing::debug!(
-                    "工具栏: 音符绘制悬浮工具条 {}",
-                    if self.tool_panel_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseToolPanel => {
-                self.tool_panel_open = false;
-                self.tool_panel_dragging = false;
-                self.tool_panel_last_cursor = None;
-                // 悬浮条关闭即无从承载工具设置下拉 / 粗细面板，一并收起
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
-                tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
-            }
-            Event::ToolPanelDragStarted => {
-                self.tool_panel_dragging = true;
-                self.tool_panel_last_cursor = None;
-            }
-            Event::ToolPanelDragEnded => {
-                self.tool_panel_dragging = false;
-                self.tool_panel_last_cursor = None;
-                // 松手即尝试吸附回默认位（接近默认点才吸，见方法注释）
-                self.snap_tool_panel_if_near_default();
-            }
-            Event::ToolPanelDragged(px, py) => {
-                // px/py 为全窗口覆盖层给出的绝对光标位置；以增量方式跟随，
-                // 使面板在光标离开面板/窗口范围时仍持续移动。
-                if self.tool_panel_dragging {
-                    match self.tool_panel_last_cursor {
-                        None => self.tool_panel_last_cursor = Some((px, py)),
-                        Some((lx, ly)) => {
-                            let (dx, dy) = self.tool_panel_offset;
-                            // 向右拖 → dx 增大；向上拖（py 减小）→ 距底内缩 dy 增大
-                            self.tool_panel_offset = (
-                                (dx + (px - lx)).clamp(-4000.0, 4000.0),
-                                (dy - (py - ly)).clamp(0.0, 4000.0),
-                            );
-                            self.tool_panel_last_cursor = Some((px, py));
-                        }
-                    }
-                }
-            }
-            Event::ToggleBrushDropdown => {
-                self.brush_dropdown_open = !self.brush_dropdown_open;
-                // 与其他面板互斥
-                self.overflow_menu_open = false;
-                self.tool_panel_open = false;
-                tracing::debug!(
-                    "工具栏: 画刷工具下拉 {}",
-                    if self.brush_dropdown_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseBrushDropdown => {
-                self.brush_dropdown_open = false;
-                tracing::debug!("工具栏: 关闭画刷工具下拉");
-            }
-            Event::ToggleShapeDropdown => {
-                self.shape_dropdown_open = !self.shape_dropdown_open;
-                // 与其他面板互斥：打开形状工具下拉时关闭其余浮层
-                self.overflow_menu_open = false;
-                self.tool_panel_open = false;
-                self.brush_dropdown_open = false;
-                tracing::debug!(
-                    "工具栏: 形状工具下拉 {}",
-                    if self.shape_dropdown_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseShapeDropdown => {
-                self.shape_dropdown_open = false;
-                tracing::debug!("工具栏: 关闭形状工具下拉");
-            }
-            Event::ShapeTypeSelected(shape) => {
-                // 切换当前图形类型（矩形/圆形/三角形）并持久保存到状态变量；
-                // 下拉由上方 guard 在收到本事件时自动关闭（视为一次选择完成）。
-                self.current_shape = shape;
-                tracing::debug!("工具栏: 形状类型切换为 {:?}", shape);
-            }
-            Event::DrawThicknessChanged(thickness) => {
-                // **全局**绘制粗细（唯一权威在 Toolbar::brush.thickness）：
-                // 曲线/形状描边 + 画刷笔画共用；clamp 由 `set_thickness` 统一执行
-                // （量程与粗细面板滑杆同源，见 `thickness_dropdown.rs`）。
-                // 注意**不收面板**：本事件来自面板内滑杆（guard 已显式放行）。
-                self.brush.set_thickness(thickness);
-                tracing::debug!("工具栏: 全局绘制粗细变更为 {} 层", self.brush.thickness);
-            }
-            Event::ToggleThicknessPanel => {
-                self.thickness_panel_open = !self.thickness_panel_open;
-                if self.thickness_panel_open {
-                    // 与其余**窗口内**面板互斥（同一时刻至多一块；分音符填充面板的
-                    // 状态在 `Root::state`，由 ToolbarHandler 的"外部动作即收起"统一处理）。
-                    // 注意**不动** `tool_panel_open`：本面板锚定在悬浮条自己的按钮上，
-                    // 关掉悬浮条等于把锚点一起拆了。
-                    self.brush_dropdown_open = false;
-                    self.shape_dropdown_open = false;
-                }
-                tracing::debug!(
-                    "工具栏: 粗细面板 {}",
-                    if self.thickness_panel_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseThicknessPanel => {
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
-                tracing::debug!("工具栏: 关闭粗细面板");
-            }
-            Event::ToolPanelItemSelected(item) => {
-                // 普通点击：仅执行选择语义（切工具 / 切换填充共存态），保持面板打开。
-                self.apply_tool_panel_item(item);
-                self.text_params_open = false;
-                // 选中后**保持面板打开**：悬浮工具条是常驻浮层，允许连续切换绘制工具
-                // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
-                tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
-            }
-            Event::ToolPanelItemSettingsRequested(item) => {
-                // 「已启用条目被再次点击」= 弹出该工具的设置面板。视图层只在条目已启用时
-                // 发本事件（见 `root/draw_toolbar.rs::tool_panel_item_press`），
-                // 因此这里仍先套用一次选择语义（幂等，且保证填充态不被 toggle 掉）。
-                self.apply_tool_panel_item(item);
-                self.text_params_open = false;
-                match item {
-                    ToolPanelItem::Brush => {
-                        // 画刷设置下拉（全局粗细只读显示 / 绘制行为入口）
-                        self.brush_dropdown_open = true;
-                        self.shape_dropdown_open = false;
-                    }
-                    ToolPanelItem::Shape => {
-                        // 形状设置下拉（矩形 / 圆形 / 三角形），二者互斥
-                        self.shape_dropdown_open = true;
-                        self.brush_dropdown_open = false;
-                    }
-                    ToolPanelItem::FillBucket => {
-                        // 颜料桶的设置 = 「分音符填充」面板；`apply_tool_panel_item` 对颜料桶
-                        // 是 toggle 语义，可能把刚点亮的填充关掉，这里显式复位为"开启"。
-                        // 关闭填充走面板内的「关闭填充」按钮（`FillToggled(false)`）。
-                        self.fill_enabled = true;
-                    }
-                    // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
-                    ToolPanelItem::Text => {
-                        self.text_params_open = true;
-                        self.brush_dropdown_open = false;
-                        self.shape_dropdown_open = false;
-                        self.thickness_panel_open = false;
-                    }
-                    _ => {}
-                }
-                tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
-            }
-            Event::CloseTextParamsPanel => {
-                self.text_params_open = false;
-                tracing::debug!("???: ????????");
-            }
+            Event::OpenCollaborationDialog => tracing::debug!("工具栏: 请求打开协作对话框"),
+            Event::OpenProjectSettingsDialog => tracing::debug!("工具栏: 请求打开工程设置对话框"),
+            Event::OpenMemoryMonitorDialog => tracing::debug!("工具栏: 请求打开内存监控对话框"),
+            Event::SpeedChange => tracing::debug!("工具栏: 触发音符变速"),
+            Event::FlipVertical => tracing::debug!("工具栏: 触发垂直翻转"),
+            Event::FlipHorizontal(_) => tracing::debug!("工具栏: 触发水平翻转"),
+            Event::TransposeUp(semitones) => tracing::debug!("工具栏: 触发移调 +{}", semitones),
+            Event::TransposeDown(semitones) => tracing::debug!("工具栏: 触发移调 -{}", semitones),
+            Event::Split => tracing::debug!("工具栏: 触发音符分割"),
+            Event::Glue => tracing::debug!("工具栏: 触发音符合并"),
+            Event::Tie => tracing::debug!("工具栏: 触发音符连奏"),
             #[cfg(lumino_shape_drawer_entry)]
-            Event::OpenShapeDrawerDialog => {
-                tracing::debug!("工具栏: 请求打开形状抽屉");
-            }
-            Event::OpenHistoryDialog => {
-                tracing::debug!("工具栏: 请求打开撤销历史");
-            }
+            Event::OpenShapeDrawerDialog => tracing::debug!("工具栏: 请求打开形状抽屉"),
+            Event::OpenHistoryDialog => tracing::debug!("工具栏: 请求打开撤销历史"),
+            // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
+            // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。
+            // 因此**不动** current_tool / fill_enabled，也不收任何窗口内浮层——
+            // 点设置不该顺手把当前绘制工具或已开的分音符填充面板弄没。
             Event::OpenDrawSettingsDialog => {
-                // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
-                // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。
-                // 因此**不动** current_tool / fill_enabled，也不收任何窗口内浮层——
-                // 点设置不该顺手把当前绘制工具或已开的分音符填充面板弄没。
-                tracing::debug!("工具栏: 请求打开音符画设置对话框");
+                tracing::debug!("工具栏: 请求打开音符画设置对话框")
             }
-        }
-    }
-
-    /// 应用「绘制工具条条目」的**普通选择语义**（切换工具 / 切换填充共存态）。
-    ///
-    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与
-    /// `ToolPanelItemSettingsRequested`（已启用条目再次点击：选择 + 打开设置）复用，
-    /// 避免两处选择逻辑漂移。
-    fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
-        // 除「圆弧」外，任何工具条目选择都退出三点圆弧模式
-        self.arc_mode = item == ToolPanelItem::Arc;
-        match item {
-            ToolPanelItem::Mouse => {
-                // 鼠标工具（图形选中）：独立工具，不与填充桶共存；
-                // 仅用于点选已确认的绘制图形，不参与音符编辑。
-                self.current_tool = Tool::ShapeSelect;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::Curve => {
-                // 曲线工具：独立基础工具，选中后关闭填充共存态
-                // （填充由「填充桶」条目单独开启）
-                self.current_tool = Tool::Curve;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::Arc => {
-                // 三点圆弧：复用曲线工具的画布与确认链路，仅落点语义不同
-                self.current_tool = Tool::Curve;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::FillBucket => {
-                // 颜料桶随时可切换：仅对曲线/形状绘制的封闭图形生效，
-                // 即使当前不在曲线工具也可开启，作用范围由编辑器侧控制。
-                self.fill_enabled = !self.fill_enabled;
-            }
-            ToolPanelItem::Brush => {
-                // 画刷仅可独立使用，不可与填充桶共存
-                self.current_tool = Tool::Brush;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::Shape => {
-                // 形状工具：与曲线互斥（单一 base 工具），可与填充桶共存，
-                // 选中形状时先关闭填充，再由「填充桶」条目按需开启
-                self.current_tool = Tool::Shape;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::Text => {
-                // 文字工具：独立工具，不可与任何工具/填充桶共存
-                self.current_tool = Tool::Text;
-                self.fill_enabled = false;
-            }
-        }
-    }
-
-    /// 拖拽结束时的**自动吸附**：释放点接近默认位（水平居中、距底 44px）时吸回默认位。
-    ///
-    /// 判定为"每轴距离均 ≤ `TOOL_PANEL_SNAP_DISTANCE`"，即面板横向大致居中且纵向大致
-    /// 落在默认高度带内才吸附；否则保留释放点（允许用户把工具条停到任意位置）。
-    fn snap_tool_panel_if_near_default(&mut self) {
-        let (dx, dy) = self.tool_panel_offset;
-        let (default_dx, default_dy) = TOOL_PANEL_DEFAULT_OFFSET;
-        if (dx - default_dx).abs() <= TOOL_PANEL_SNAP_DISTANCE
-            && (dy - default_dy).abs() <= TOOL_PANEL_SNAP_DISTANCE
-        {
-            self.tool_panel_offset = TOOL_PANEL_DEFAULT_OFFSET;
-            tracing::debug!(
-                "工具栏: 悬浮工具条吸附回默认位 {:?}",
-                TOOL_PANEL_DEFAULT_OFFSET
-            );
+            _ => {}
         }
     }
 }
 
-/// BPM 输入过滤：只允许 ASCII 数字与小数点。
-///
-/// 负号 / 指数 / 表达式字符直接丢弃，保留上一次合法输入；范围与语法在提交时
-/// 由 `ToolbarHandler` 统一校验（与 PPQ 的「输入宽松、提交严格」同策略）。
-fn is_bpm_input(value: &str) -> bool {
-    value.chars().all(|c| c.is_ascii_digit() || c == '.')
+/// 本事件允许保持打开的浮层。
+fn popover_keep(event: &Event) -> PopoverKeep {
+    use PopoverKeep::{All, None, Only};
+    match event {
+        // 悬停由鼠标进出触发，不应关闭菜单：否则菜单打开导致重绘、按钮 mouse_area
+        // 重新挂载会发出 on_enter，立刻把刚打开的菜单关掉。
+        Event::ButtonHovered(_) => All,
+        Event::ToggleOverflowMenu | Event::CloseOverflowMenu => Only(Popover::OverflowMenu),
+        Event::ToggleBrushDropdown | Event::CloseBrushDropdown => Only(Popover::BrushDropdown),
+        Event::ToggleShapeDropdown | Event::CloseShapeDropdown => Only(Popover::ShapeDropdown),
+        Event::ToggleOnionSkinMenu
+        | Event::CloseOnionSkinMenu
+        | Event::OnionSkinModeSelected(_) => Only(Popover::OnionSkinMenu),
+        Event::ToggleThicknessPanel
+        | Event::CloseThicknessPanel
+        | Event::DrawThicknessChanged(_) => Only(Popover::ThicknessPanel),
+        Event::CloseTextParamsPanel
+        | Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text) => Only(Popover::TextParams),
+        _ => None,
+    }
 }

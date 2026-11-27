@@ -1,6 +1,6 @@
 //! CC / Bend 自动化 lane 快照：生产状态 → egui 模型。
 //!
-//! 拆出本文件以保持 `egui_chrome/velocity_panel.rs` < 400 行。
+//! 拆出本文件以保持 `egui_chrome/velocity_panel.rs` ≤600 行。
 
 use lumino_editor_state::EditorData;
 use lumino_ui_egui::velocity_panel::{AutomationAnchor, AutomationLaneModel};

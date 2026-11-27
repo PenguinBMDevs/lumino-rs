@@ -1,15 +1,15 @@
 //! CPU 洋葱皮叠加层测试：纯逻辑断言 + GPU 读回像素证据。
 //!
-//! 脏矩形局部上传的验收在 `tests_partial.rs`；两者共用 `tests_support` 的
+//! 脏矩形局部上传的验收在 `tests/partial.rs`；两者共用 `tests/support.rs` 的
 //! 离屏目标与读回路径。
 
 use crate::RenderParams;
 use crate::constants::rendering::{DEPTH_FORMAT, is_depth_stencil_compatible};
 
+use self::support::{TARGET_FORMAT, pixel, render_and_readback, transient_device};
 use super::{
     CpuOnionFrame, CpuOnionRenderer,
     pipeline::{self, CpuOnionUniform},
-    tests_support::{TARGET_FORMAT, pixel, render_and_readback, transient_device},
     upload::{UploadPlan, UploadState},
 };
 
@@ -156,3 +156,5 @@ fn cpu_onion_gpu_quad_preserves_source_pixels() {
         );
     }
 }
+mod partial;
+mod support;

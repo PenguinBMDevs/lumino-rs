@@ -1,4 +1,4 @@
-//! 音符拖动流式应用与绘制完成（自 `notes.rs` 拆分，保持各文件 < 400 行）
+//! 音符拖动流式应用与绘制完成（自 `notes.rs` 拆分，保持各文件 ≤600 行）
 
 use super::super::cpu_onion_dirty::MAX_CPU_ONION_CHANGES;
 use super::DragState;

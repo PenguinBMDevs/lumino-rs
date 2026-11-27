@@ -198,6 +198,28 @@ impl RunnerInner {
             .mark_dialog_for_close(dialog);
         tracing::info!("请求关闭{label}对话框");
     }
+
+    /// 对话框「已开则聚焦」：已打开/排队/分帧创建中时聚焦并返回 `true`。
+    ///
+    /// 返回 `false` 表示未打开，调用方继续自己的打开路径。
+    ///
+    /// 判定必须用 `is_open_or_pending`（含排队与分帧初始化中）——对话框是分帧
+    /// 创建的，只看已就绪窗口会在连点两次时漏判、真的开出两个。
+    /// `message` 由调用方给出，保留各对话框原有的诊断文案。
+    pub(super) fn focus_dialog_if_open(&mut self, dialog: DialogType, message: &str) -> bool {
+        if !self.window_state.dialog_manager.is_open_or_pending(dialog) {
+            return false;
+        }
+        tracing::info!("{message}");
+        if let Some(window) = self
+            .window_state
+            .dialog_manager
+            .dialog_window_of_type(dialog)
+        {
+            window.focus_window();
+        }
+        true
+    }
 }
 
 /// 最近邻缩放 + BGRA→RGBA 交换（零拷贝预览路径）。

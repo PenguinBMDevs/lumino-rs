@@ -1,6 +1,6 @@
 //! 020「编辑图形」松手提交 / 取消 / 单支 pending 音符重生成。
 //!
-//! 从 `shape_edit_ui.rs` 拆出，保持单文件 <400 行。
+//! 从 `shape_edit_ui.rs` 拆出，保持单文件 ≤600 行。
 
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::ShapeNote;
@@ -12,7 +12,7 @@ use super::ShapeEditTarget;
 impl Editor {
     /// 松手提交；无实际变化或失败时恢复原几何
     pub(crate) fn finish_shape_edit(&mut self) -> bool {
-        let Some(state) = self.shape_edit.take() else {
+        let Some(state) = self.shape_tools.edit.take() else {
             return false;
         };
         let changed = match state.target {
@@ -22,7 +22,7 @@ impl Editor {
         match state.target {
             ShapeEditTarget::PendingComposed { index } => {
                 if !changed {
-                    self.restore_pending_part(index, &state.original);
+                    restore_pending_part(self, index, &state.original);
                     self.refresh_pending_mirror_geometry();
                     return false;
                 }
@@ -40,27 +40,31 @@ impl Editor {
                         cut.validate_against(&part.model);
                     }
                 }
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
+                self.shape_tools
+                    .pending_edit_undo
+                    .push(state.original_composed);
+                while self.shape_tools.pending_edit_undo.len() > 64 {
+                    self.shape_tools.pending_edit_undo.remove(0);
                 }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
+                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
                 true
             }
             ShapeEditTarget::Group => {
                 if !changed {
-                    self.restore_group_snapshot(state.original_composed);
+                    super::group::restore_group_snapshot(self, state.original_composed);
                     return false;
                 }
                 // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
-                self.pending_edit_undo.push(state.original_composed);
-                while self.pending_edit_undo.len() > 64 {
-                    self.pending_edit_undo.remove(0);
+                self.shape_tools
+                    .pending_edit_undo
+                    .push(state.original_composed);
+                while self.shape_tools.pending_edit_undo.len() > 64 {
+                    self.shape_tools.pending_edit_undo.remove(0);
                 }
-                self.pending_edit_redo.clear();
-                self.pending_composed_redo.clear();
+                self.shape_tools.pending_edit_redo.clear();
+                self.shape_tools.pending_composed_redo.clear();
                 self.refresh_pending_mirror_geometry();
                 true
             }
@@ -69,30 +73,17 @@ impl Editor {
 
     /// 取消拖拽并恢复原几何（Esc / 退出编辑图形）
     pub(crate) fn cancel_shape_edit(&mut self) {
-        let Some(state) = self.shape_edit.take() else {
+        let Some(state) = self.shape_tools.edit.take() else {
             return;
         };
         match state.target {
             ShapeEditTarget::PendingComposed { index } => {
-                self.restore_pending_part(index, &state.original);
+                restore_pending_part(self, index, &state.original);
                 self.refresh_pending_mirror_geometry();
             }
             ShapeEditTarget::Group => {
-                self.restore_group_snapshot(state.original_composed);
+                super::group::restore_group_snapshot(self, state.original_composed);
             }
-        }
-    }
-
-    fn restore_pending_part(&mut self, index: usize, model: &ShapeModel) {
-        let notes = self.part_notes_for_edit(model, model.track as usize);
-        if let Some(part) = self
-            .editor_state
-            .pending_composed
-            .get_mut(index)
-            .and_then(|composed| composed.results.first_mut())
-        {
-            part.model = model.clone();
-            part.notes = notes;
         }
     }
 
@@ -111,5 +102,18 @@ impl Editor {
         } else {
             self.shape_notes_of(model, track)
         }
+    }
+}
+
+fn restore_pending_part(editor: &mut Editor, index: usize, model: &ShapeModel) {
+    let notes = editor.part_notes_for_edit(model, model.track as usize);
+    if let Some(part) = editor
+        .editor_state
+        .pending_composed
+        .get_mut(index)
+        .and_then(|composed| composed.results.first_mut())
+    {
+        part.model = model.clone();
+        part.notes = notes;
     }
 }

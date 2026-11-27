@@ -20,13 +20,13 @@ fn test_commit_pending_copy_zero_delta_returns_false_and_clears() {
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     // delta 为零的 pending 复制（未拖动，直接松手）
     let zero_drag = DragState::from_single(0, 1, 0, 60);
-    editor.pending_copy_drag_state = Some(zero_drag);
+    editor.transient.pending_copy = Some(zero_drag);
 
     assert!(
         !editor.commit_pending_copy(),
         "delta 零应返回 false（未产生副本）"
     );
-    assert!(editor.pending_copy_drag_state.is_none(), "pending 应被清空");
+    assert!(editor.transient.pending_copy.is_none(), "pending 应被清空");
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
         1,
@@ -47,7 +47,7 @@ fn test_commit_pending_copy_inserts_copies_and_selects_them() {
     // 选中索引 0，delta=(200, 7)：复制出一个偏移副本
     let mut drag = DragState::from_indices([0], 2, 0, 60);
     drag.set_delta(200, 7);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     assert!(editor.commit_pending_copy());
     let data = &editor.editor_state.data;
@@ -87,7 +87,7 @@ fn test_commit_pending_copy_inserts_copies_and_selects_them() {
     );
     assert!(!editor.editor_state.interaction.selected_notes.contains(&2));
     // pending 已清空
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn test_commit_pending_copy_multiple_notes() {
     // 全选复制：delta=(100, 3)
     let mut drag = DragState::from_indices([0, 1, 2], 3, 0, 60);
     drag.set_delta(100, 3);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     assert!(editor.commit_pending_copy());
     let data = &editor.editor_state.data;
@@ -163,7 +163,7 @@ fn test_commit_pending_copy_clamps_key_range() {
     // key 下移 100：60 - 100 = -40 → clamp 到 0
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(0, -100);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     assert!(editor.commit_pending_copy());
     let data = &editor.editor_state.data;

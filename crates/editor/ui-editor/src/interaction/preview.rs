@@ -47,19 +47,19 @@ type KnifePreview = (Vec<Rectangle>, Vec<Vec<(f32, f32)>>, Option<KnifeStatus>);
 impl Editor {
     /// 采集本帧全部叠加层预览（无内容时各字段为空）。
     pub fn overlay_preview(&self) -> EditorOverlayPreview {
-        let (knife_rects, knife_rings, knife_status) = self.knife_preview();
+        let (knife_rects, knife_rings, knife_status) = knife_preview(self);
         EditorOverlayPreview {
             slice_line: self.slice_preview_line(),
             knife_rects,
             knife_rings,
             knife_status,
-            mould_cuts: self.mould_cut_lines(),
+            mould_cuts: mould_cut_lines(self),
             ..self.round_corner_preview()
         }
     }
 
     fn slice_preview_line(&self) -> Option<((f32, f32), (f32, f32))> {
-        let state = self.slice_cut.as_ref()?;
+        let state = self.shape_tools.slice_cut.as_ref()?;
         if !state.dragging {
             return None;
         }
@@ -68,61 +68,8 @@ impl Editor {
         Some(((a.x, a.y), (b.x, b.y)))
     }
 
-    /// 刀框 / 刀环 / 状态文字
-    ///
-    /// 刀是显式会话，任何工具下都可见（设刀后立刻能看到，而不是切到鼠标工具才出现）。
-    /// 几何刀的源被删/改时立即隐藏；音符刀由 `set_tool` / 删除路径的
-    /// `sync_mould_knife` 收口——避免每帧全轨扫描。
-    fn knife_preview(&self) -> KnifePreview {
-        let Some(knife) = self.mould_knife.as_ref() else {
-            return (Vec::new(), Vec::new(), None);
-        };
-        if knife.is_geometry_stale(self) {
-            return (Vec::new(), Vec::new(), None);
-        }
-        let rects: Vec<Rectangle> = knife
-            .notes()
-            .iter()
-            .map(|note| knife_note_rect(self, note))
-            .collect();
-        let rings: Vec<Vec<(f32, f32)>> = knife
-            .rings()
-            .iter()
-            .map(|ring| {
-                ring.iter()
-                    .map(|(tick, key)| {
-                        let point = self.line_pos_screen_pos((*tick, *key));
-                        (point.x, point.y)
-                    })
-                    .collect()
-            })
-            .collect();
-        let status = knife_status_anchor(&rects, &rings).map(|anchor| KnifeStatus {
-            anchor,
-            info: knife.info(),
-        });
-        (rects, rings, status)
-    }
-
-    /// 饼干模切口（空隙区间 → 屏幕线段）
-    fn mould_cut_lines(&self) -> Vec<((f32, f32), (f32, f32))> {
-        if self.current_tool() != lumino_message::Tool::ShapeSelect {
-            return Vec::new();
-        }
-        let mut out = Vec::new();
-        for composed in &self.editor_state.pending_composed {
-            if composed.kind != lumino_editor_state::ComposedKind::Mould {
-                continue;
-            }
-            for &(key, start, end) in &composed.mould_cuts {
-                out.push(mould_cut_segment(self, key, start, end));
-            }
-        }
-        out
-    }
-
     fn round_corner_preview(&self) -> EditorOverlayPreview {
-        let Some(mode) = self.round_corner.as_ref() else {
+        let Some(mode) = self.shape_tools.round_corner.as_ref() else {
             return EditorOverlayPreview::default();
         };
         let Some(model) = self
@@ -182,6 +129,59 @@ impl Editor {
             ..EditorOverlayPreview::default()
         }
     }
+}
+
+/// 刀框 / 刀环 / 状态文字
+///
+/// 刀是显式会话，任何工具下都可见（设刀后立刻能看到，而不是切到鼠标工具才出现）。
+/// 几何刀的源被删/改时立即隐藏；音符刀由 `set_tool` / 删除路径的
+/// `sync_mould_knife` 收口——避免每帧全轨扫描。
+fn knife_preview(editor: &Editor) -> KnifePreview {
+    let Some(knife) = editor.shape_tools.mould_knife.as_ref() else {
+        return (Vec::new(), Vec::new(), None);
+    };
+    if knife.is_geometry_stale(editor) {
+        return (Vec::new(), Vec::new(), None);
+    }
+    let rects: Vec<Rectangle> = knife
+        .notes()
+        .iter()
+        .map(|note| knife_note_rect(editor, note))
+        .collect();
+    let rings: Vec<Vec<(f32, f32)>> = knife
+        .rings()
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(tick, key)| {
+                    let point = editor.line_pos_screen_pos((*tick, *key));
+                    (point.x, point.y)
+                })
+                .collect()
+        })
+        .collect();
+    let status = knife_status_anchor(&rects, &rings).map(|anchor| KnifeStatus {
+        anchor,
+        info: knife.info(),
+    });
+    (rects, rings, status)
+}
+
+/// 饼干模切口（空隙区间 → 屏幕线段）
+fn mould_cut_lines(editor: &Editor) -> Vec<((f32, f32), (f32, f32))> {
+    if editor.editor_state.current_tool() != lumino_message::Tool::ShapeSelect {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for composed in &editor.editor_state.pending_composed {
+        if composed.kind != lumino_editor_state::ComposedKind::Mould {
+            continue;
+        }
+        for &(key, start, end) in &composed.mould_cuts {
+            out.push(mould_cut_segment(editor, key, start, end));
+        }
+    }
+    out
 }
 
 /// 单条「刀」音符的屏幕矩形（与音符绘制同口径）。

@@ -338,4 +338,4 @@ pub enum LoopHitTest {
 }
 
 #[cfg(test)]
-mod loop_range_tests;
+mod tests;

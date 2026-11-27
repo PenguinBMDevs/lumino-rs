@@ -54,7 +54,7 @@ fn test_pointer_pressed_without_ctrl_enters_move_state() {
 fn test_is_editing_with_pending_copy_returns_true() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
-    editor.pending_copy_drag_state = Some(DragState::from_single(0, 1, 0, 60));
+    editor.transient.pending_copy = Some(DragState::from_single(0, 1, 0, 60));
     assert!(editor.is_editing(), "pending copy 应视为编辑状态");
     assert!(editor.has_pending_drag());
 }
@@ -67,7 +67,7 @@ fn test_commit_current_edit_commits_pending_copy() {
     // 模拟：复制拖动松手后（pending_copy 存在），用户直接触发 Save/Play/Export
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(100, 0);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     assert!(editor.commit_current_edit());
     // 副本已写入内存层
@@ -81,7 +81,7 @@ fn test_commit_current_edit_commits_pending_copy() {
             .tick,
         100.0
     );
-    assert!(editor.pending_copy_drag_state.is_none());
+    assert!(editor.transient.pending_copy.is_none());
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn test_flush_pending_drag_commits_copy_on_empty_click() {
     // 复制松手后 pending_copy 存在
     let mut drag = DragState::from_indices([0], 1, 0, 60);
     drag.set_delta(100, 0);
-    editor.pending_copy_drag_state = Some(drag);
+    editor.transient.pending_copy = Some(drag);
 
     // 模拟点击空白处（flush_pending_drag 由 handle_pointer_pressed 空白分支调用）
     // 直接调用私有路径不可达，改用公开入口：点击空白会先 flush 再开始新框选
@@ -115,7 +115,7 @@ fn test_flush_pending_drag_commits_copy_on_empty_click() {
         100.0
     );
     assert!(
-        editor.pending_copy_drag_state.is_none(),
+        editor.transient.pending_copy.is_none(),
         "复制提交后 pending 应清空"
     );
 }
