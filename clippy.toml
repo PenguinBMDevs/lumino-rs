@@ -1,5 +1,5 @@
 # clippy::too_many_lines 的函数行数上限（单位是函数，不是文件）。
-# 文件行数由 scripts/check-file-size.py 的棘轮门禁检查（生产 600 / 测试 800），
+# 文件行数不归 clippy：按 AGENTS.md 的尺寸纪律由 review 执行（生产 600 / 测试 800），
 # 写在这里不会约束任何文件；把 400/600 放在这里只会误伤或放过函数。
 # 目标 100；当前 lint 未启用（存量 309 个 >100 行函数），
 # DEBT-10 Phase 0 用基线棘轮逐 crate 开启，避免 CI `-D warnings` 一次爆。
