@@ -8,7 +8,11 @@
 //! 3. 总览档位：`≥30` 小节仍按示例相机的 `total_ticks` 裁剪口径判定
 //!    （crate 的 `CanvasCamera` 不知道文档总长，不能代替这一步）。
 
-use lumino_cpu_onion::{CanvasCamera, color::NoteStyle as CpuNoteStyle, density::OverviewScratch};
+use lumino_cpu_onion::{
+    CanvasCamera,
+    color::NoteStyle as CpuNoteStyle,
+    density::{OverviewScratch, uses_overview_for_range},
+};
 
 use crate::{
     camera::Camera,
@@ -18,7 +22,7 @@ use crate::{
     },
 };
 
-pub use lumino_cpu_onion::density::{DensityPyramid, OVERVIEW_MIN_MEASURES};
+pub use lumino_cpu_onion::density::DensityPyramid;
 
 /// 覆盖/热力图共用的可复用缓冲（避免每帧分配整帧临时像素）。
 #[derive(Debug, Default)]
@@ -56,36 +60,15 @@ pub fn canvas_camera(
     }
 }
 
-/// 屏幕横向覆盖的可见小节数（示例相机含 `total_ticks` 裁剪）。
-///
-/// crate 的 `visible_measure_count` 只接受 canvas 相机，拿不到文档总长；
-/// 这里保留示例相机口径，避免视口越过曲尾时多算小节而提前切 LOD。
-#[must_use]
-pub fn visible_measure_count(index: &TrackIndex, camera: &Camera) -> u32 {
-    let measure_ticks = index.measure_ticks.max(1);
-    let (start, end) = camera.visible_tick_range();
-    if end <= start {
-        return 0;
-    }
-    let first = start / measure_ticks;
-    let last = end.saturating_sub(1) / measure_ticks;
-    last.saturating_sub(first).saturating_add(1)
-}
-
-/// 是否应切到总览密度 LOD：同屏可见小节数 ≥ [`OVERVIEW_MIN_MEASURES`]。
+/// 是否应切到总览密度 LOD：同屏可见小节数 ≥ 30。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
-    if index.total_notes == 0 {
-        return false;
-    }
-    if !camera.zoom_x.is_finite()
-        || !camera.zoom_y.is_finite()
-        || camera.zoom_x <= 0.0
-        || camera.zoom_y <= 0.0
-    {
-        return false;
-    }
-    visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
+    uses_overview_for_range(
+        index,
+        camera.zoom_x,
+        camera.zoom_y,
+        camera.visible_tick_range(),
+    )
 }
 
 /// 彩色覆盖光栅是否可用于当前缩放（只看横向缩放，尺寸仅用于计数恒非零）。
@@ -261,6 +244,7 @@ fn resize_canvas(scratch: &mut Scratch, canvas_width: usize, canvas_height: usiz
 
 #[cfg(test)]
 mod tests {
+    use lumino_cpu_onion::density::visible_measure_count_for_range;
     use lumino_midi_loader::{MidiDocument, NoteEvent};
 
     use super::*;
@@ -361,7 +345,10 @@ mod tests {
         camera.keyboard_width = 0.0;
         camera.zoom_x = 800.0 / (30.0 * 1920.0);
         // 视口宽 30 小节但曲尾只有 2 小节：示例相机必须按 total_ticks 裁剪。
-        assert_eq!(visible_measure_count(&index, &camera), 2);
+        assert_eq!(
+            visible_measure_count_for_range(&index, camera.visible_tick_range()),
+            2
+        );
         assert!(!uses_overview(&index, &camera));
     }
 
@@ -375,15 +362,21 @@ mod tests {
         let mut camera = Camera::new(800, 600, 1.0, 1_000_000, 480, 0.01);
         camera.keyboard_width = 0.0;
         camera.zoom_x = 800.0 / (29.0 * 1920.0);
-        assert_eq!(visible_measure_count(&index, &camera), 29);
+        assert_eq!(
+            visible_measure_count_for_range(&index, camera.visible_tick_range()),
+            29
+        );
         assert!(!uses_overview(&index, &camera));
         camera.zoom_x = 800.0 / (30.0 * 1920.0);
-        assert_eq!(visible_measure_count(&index, &camera), 30);
+        assert_eq!(
+            visible_measure_count_for_range(&index, camera.visible_tick_range()),
+            30
+        );
         assert!(uses_overview(&index, &camera));
     }
 
     /// 空文档与非有限/非正缩放都不得进入总览档：它把宽度除以 zoom，一旦为零
-    /// 或 NaN，`visible_measure_count` 的除法会溢出成巨大值并误判。
+    /// 或 NaN，可见小节数的除法会溢出成巨大值并误判。
     #[test]
     fn overview_rejects_empty_document_and_invalid_zoom() {
         let document = MidiDocument::empty_with_tracks(1, 480);

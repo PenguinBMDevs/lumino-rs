@@ -359,14 +359,16 @@ pub fn overview_note_estimate(index: &TrackIndex, camera: &CanvasCamera) -> u64 
     estimate.saturating_mul(visible_keys) / total_keys
 }
 
-/// 屏幕横向覆盖的可见小节数（首尾部分小节都计入）。
+/// 屏幕横向覆盖的可见小节数：给定 tick 区间，**不做文档裁剪**（裁剪由视图层负责）。
 ///
 /// 用 tick 区间与小节边界相交的整数小节数：`[start, end)` 覆盖
 /// `start / measure_ticks ..= (end - 1) / measure_ticks`。
+///
+/// 生产用 [`CanvasCamera`]，示例用自带 `total_ticks` 的相机；两边共用这份
+/// 除法口径，避免 LOD 阈值各写一份后悄悄漂移。
 #[must_use]
-pub fn visible_measure_count(index: &TrackIndex, camera: &CanvasCamera) -> u32 {
+pub fn visible_measure_count_for_range(index: &TrackIndex, (start, end): (u32, u32)) -> u32 {
     let measure_ticks = index.measure_ticks.max(1);
-    let (start, end) = camera.visible_tick_range();
     if end <= start {
         return 0;
     }
@@ -375,20 +377,41 @@ pub fn visible_measure_count(index: &TrackIndex, camera: &CanvasCamera) -> u32 {
     last.saturating_sub(first).saturating_add(1)
 }
 
-/// 是否应切到总览密度 LOD：**同屏可见小节数 ≥ 30**。
+/// 屏幕横向覆盖的可见小节数（画布相机，区间不含键盘栏）。
 #[must_use]
-pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
+pub fn visible_measure_count(index: &TrackIndex, camera: &CanvasCamera) -> u32 {
+    visible_measure_count_for_range(index, camera.visible_tick_range())
+}
+
+/// 是否应切到总览密度 LOD：**同屏可见小节数 ≥ 30**。
+///
+/// `zoom_x` / `zoom_y` 只用于拒绝非法缩放（0 / 负 / NaN / Inf 会让可见小节数
+/// 的除法溢出成巨大值）；滚动与裁剪已在 `range` 里完成。
+#[must_use]
+pub fn uses_overview_for_range(
+    index: &TrackIndex,
+    zoom_x: f32,
+    zoom_y: f32,
+    range: (u32, u32),
+) -> bool {
     if index.total_notes == 0 {
         return false;
     }
-    if !camera.zoom_x.is_finite()
-        || !camera.zoom_y.is_finite()
-        || camera.zoom_x <= 0.0
-        || camera.zoom_y <= 0.0
-    {
+    if !zoom_x.is_finite() || !zoom_y.is_finite() || zoom_x <= 0.0 || zoom_y <= 0.0 {
         return false;
     }
-    visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
+    visible_measure_count_for_range(index, range) >= OVERVIEW_MIN_MEASURES
+}
+
+/// 是否应切到总览密度 LOD：**同屏可见小节数 ≥ 30**。
+#[must_use]
+pub fn uses_overview(index: &TrackIndex, camera: &CanvasCamera) -> bool {
+    uses_overview_for_range(
+        index,
+        camera.zoom_x,
+        camera.zoom_y,
+        camera.visible_tick_range(),
+    )
 }
 
 #[cfg(test)]
