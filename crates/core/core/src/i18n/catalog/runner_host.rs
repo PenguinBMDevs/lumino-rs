@@ -284,6 +284,14 @@ fn lookup_runner_host_4(zh: &str) -> Option<&'static str> {
         "压缩包文件" => Some("Archive Files"),
 
         "MIDI 与压缩包文件" => Some("MIDI and Archive Files"),
+
+        // ── REND-005：端口音色库状态与提示（`midi_manager/port_soundfonts.rs`、`menu/window/dialog.rs`）──
+        "端口音色库未生效" => Some("Port soundfonts are not active"),
+
+        "端口音色库映射将在停播后生效" => {
+            Some("Port soundfont mapping will take effect after playback stops")
+        }
+        "打开合成器设置" => Some("Open synthesizer settings"),
         _ => None,
     }
 }
