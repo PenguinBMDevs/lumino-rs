@@ -449,26 +449,9 @@ fn rebuild_selected_notes(
             ghost_aware_window_collect(editor, min_tick, max_tick, min_key, max_key, lookback);
         // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
         // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
-        let mut acc = Bounds::default();
-        if !set.is_empty() {
-            for (i, n) in editor
-                .editor_state
-                .data
-                .current_track_notes()
-                .iter()
-                .enumerate()
-            {
-                if !set.contains(&i) {
-                    continue;
-                }
-                let tick = n.start_tick as f32;
-                let length = (n.end_tick - n.start_tick) as f32;
-                acc.add(tick, tick + length, n.key as u16);
-            }
-        }
-
+        let bounds = selected_bounds_from(editor, &set);
         editor.editor_state.interaction.selected_notes = set;
-        editor.selection_ui.bounds.set(acc.get());
+        editor.selection_ui.bounds.set(bounds);
         return;
     }
 
@@ -513,24 +496,32 @@ fn rebuild_selected_notes(
     };
 
     // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
-    let mut acc = Bounds::default();
-    if !set.is_empty() {
-        for (i, n) in editor
-            .editor_state
-            .data
-            .current_track_notes()
-            .iter()
-            .enumerate()
-        {
-            if !set.contains(&i) {
-                continue;
-            }
-            let tick = n.start_tick as f32;
-            let length = (n.end_tick - n.start_tick) as f32;
-            acc.add(tick, tick + length, n.key as u16);
-        }
-    }
-
+    let bounds = selected_bounds_from(editor, &set);
     editor.editor_state.interaction.selected_notes = set;
-    editor.selection_ui.bounds.set(acc.get());
+    editor.selection_ui.bounds.set(bounds);
+}
+
+/// 按选中索引集合计算 RAW（文档位置）包围盒。
+///
+/// 幽灵期间框选与普通框选共用：两处此前各写一遍同一段轨道扫描。
+fn selected_bounds_from(editor: &Editor, set: &SelectionSet) -> Option<(f32, f32, u16, u16)> {
+    if set.is_empty() {
+        return None;
+    }
+    let mut acc = Bounds::default();
+    for (i, n) in editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .enumerate()
+    {
+        if !set.contains(&i) {
+            continue;
+        }
+        let tick = n.start_tick as f32;
+        let length = (n.end_tick - n.start_tick) as f32;
+        acc.add(tick, tick + length, n.key as u16);
+    }
+    acc.get()
 }
