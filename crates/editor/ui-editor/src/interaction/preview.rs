@@ -49,84 +49,12 @@ impl Editor {
     pub fn overlay_preview(&self) -> EditorOverlayPreview {
         let (knife_rects, knife_rings, knife_status) = knife_preview(self);
         EditorOverlayPreview {
-            slice_line: self.slice_preview_line(),
+            slice_line: slice_preview_line(self),
             knife_rects,
             knife_rings,
             knife_status,
             mould_cuts: mould_cut_lines(self),
-            ..self.round_corner_preview()
-        }
-    }
-
-    fn slice_preview_line(&self) -> Option<((f32, f32), (f32, f32))> {
-        let state = self.shape_tools.slice_cut.as_ref()?;
-        if !state.dragging {
-            return None;
-        }
-        let a = self.line_pos_screen_pos(state.from);
-        let b = self.line_pos_screen_pos(state.to);
-        Some(((a.x, a.y), (b.x, b.y)))
-    }
-
-    fn round_corner_preview(&self) -> EditorOverlayPreview {
-        let Some(mode) = self.shape_tools.round_corner.as_ref() else {
-            return EditorOverlayPreview::default();
-        };
-        let Some(model) = self
-            .editor_state
-            .pending_composed
-            .get(mode.composed)
-            .and_then(|composed| composed.results.first())
-            .map(|part| part.model.clone())
-        else {
-            return EditorOverlayPreview::default();
-        };
-
-        let anchors: Vec<(f64, f64)> = model
-            .geometry
-            .anchors
-            .iter()
-            .map(|anchor| (f64::from(anchor.pos.0), f64::from(anchor.pos.1)))
-            .collect();
-        let params = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Round(params) => Some(params),
-            _ => None,
-        });
-        let path_points = match params {
-            Some(params) => lumino_editor_state::shape_ops::rounded_points(
-                &anchors,
-                params,
-                lumino_editor_state::shape_ops::round_shape_params(&model),
-                f64::from(params.effective_ppq(self.editor_state.view.ppq)),
-                f64::from(params.effective_k(model.k)),
-            ),
-            None => anchors.clone(),
-        };
-        let round_path = path_points
-            .iter()
-            .map(|(tick, key)| {
-                let p = self.line_pos_screen_pos((*tick as f32, *key as f32));
-                (p.x, p.y)
-            })
-            .collect();
-
-        let round_cursor_line = mode.corner.and_then(|corner| {
-            let (tick, key) = anchors.get(corner)?;
-            let cursor = mode.cursor?;
-            let a = self.line_pos_screen_pos((*tick as f32, *key as f32));
-            let b = self.line_pos_screen_pos((cursor.0, cursor.1));
-            Some(((a.x, a.y), (b.x, b.y)))
-        });
-        let round_radius = mode
-            .corner
-            .and_then(|corner| params.and_then(|params| params.radius_of(corner)));
-
-        EditorOverlayPreview {
-            round_path,
-            round_handles: self.round_corner_points(),
-            round_cursor_line,
-            round_radius,
-            ..EditorOverlayPreview::default()
+            ..round_corner_preview(self)
         }
     }
 }
@@ -235,5 +163,77 @@ fn mould_cut_segment(editor: &Editor, key: u16, start: f32, end: f32) -> ((f32, 
     } else {
         let y = view.key_to_y(key) + view.zoom_y * 0.5;
         ((view.tick_to_x(start), y), (view.tick_to_x(end), y))
+    }
+}
+
+fn slice_preview_line(editor: &Editor) -> Option<((f32, f32), (f32, f32))> {
+    let state = editor.shape_tools.slice_cut.as_ref()?;
+    if !state.dragging {
+        return None;
+    }
+    let a = editor.line_pos_screen_pos(state.from);
+    let b = editor.line_pos_screen_pos(state.to);
+    Some(((a.x, a.y), (b.x, b.y)))
+}
+
+fn round_corner_preview(editor: &Editor) -> EditorOverlayPreview {
+    let Some(mode) = editor.shape_tools.round_corner.as_ref() else {
+        return EditorOverlayPreview::default();
+    };
+    let Some(model) = editor
+        .editor_state
+        .pending_composed
+        .get(mode.composed)
+        .and_then(|composed| composed.results.first())
+        .map(|part| part.model.clone())
+    else {
+        return EditorOverlayPreview::default();
+    };
+
+    let anchors: Vec<(f64, f64)> = model
+        .geometry
+        .anchors
+        .iter()
+        .map(|anchor| (f64::from(anchor.pos.0), f64::from(anchor.pos.1)))
+        .collect();
+    let params = model.ops.iter().find_map(|op| match op {
+        ShapeOp::Round(params) => Some(params),
+        _ => None,
+    });
+    let path_points = match params {
+        Some(params) => lumino_editor_state::shape_ops::rounded_points(
+            &anchors,
+            params,
+            lumino_editor_state::shape_ops::round_shape_params(&model),
+            f64::from(params.effective_ppq(editor.editor_state.view.ppq)),
+            f64::from(params.effective_k(model.k)),
+        ),
+        None => anchors.clone(),
+    };
+    let round_path = path_points
+        .iter()
+        .map(|(tick, key)| {
+            let p = editor.line_pos_screen_pos((*tick as f32, *key as f32));
+            (p.x, p.y)
+        })
+        .collect();
+
+    let round_cursor_line = mode.corner.and_then(|corner| {
+        let (tick, key) = anchors.get(corner)?;
+        let cursor = mode.cursor?;
+        let a = editor.line_pos_screen_pos((*tick as f32, *key as f32));
+        let b = editor.line_pos_screen_pos((cursor.0, cursor.1));
+        Some(((a.x, a.y), (b.x, b.y)))
+    });
+    let round_radius = mode
+        .corner
+        .and_then(|corner| params.and_then(|params| params.radius_of(corner)));
+
+    EditorOverlayPreview {
+        round_path,
+        round_handles: editor.round_corner_points(),
+        round_cursor_line,
+        round_radius,
+        ..EditorOverlayPreview::default()
     }
 }

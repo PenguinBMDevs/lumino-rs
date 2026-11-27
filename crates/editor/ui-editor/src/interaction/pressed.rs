@@ -248,7 +248,7 @@ impl Editor {
         } else if let Some((index, hit_type)) = hit_result {
             // 优先级 2：未命中选择框但命中音符 → 单音符编辑
             // （点击在框选框外，或无选中音符时点击音符）
-            self.flush_pending_drag();
+            flush_pending_drag(self);
             if !self
                 .editor_state
                 .interaction
@@ -261,7 +261,7 @@ impl Editor {
             self.start_note_edit(index, hit_type, pos);
         } else {
             // 优先级 3：都未命中 → 点击空白处，提交 pending 拖动 + 开始新框选
-            self.flush_pending_drag();
+            flush_pending_drag(self);
             self.playback_position = snapped_tick;
             self.selection_clear();
             // Y 向框选工具：Y 维度自动覆盖全部可见键范围（纵向转置：Y 为 tick，X 为 key）
@@ -301,34 +301,6 @@ impl Editor {
         }
     }
 
-    /// 提交 pending 批量拖动/复制并清空选区（非累积场景调用）
-    ///
-    /// 在用户开始新操作（点击音符/调整大小/点击空白处）时调用。
-    /// 累积拖动场景（框选内部命中）不调用此方法，保留 pending。
-    /// 本方法是批量拖动的唯一常规落盘点（取消框选时）：幽灵期间 document 未变，
-    /// 此处提交 + 清空选区 + 结束远端选择会话。
-    ///
-    /// **提交顺序（正确性关键）**：移动（pending_drag）走异步提交，完成时
-    /// 会整轨替换音符——若复制（pending_copy）先插入副本，会被异步结果覆盖。
-    /// 因此当两者并存时：先启动移动异步提交 → `drain_async_commit` 等待完成
-    /// （document 回到一致状态）→ 再基于最新索引写入副本。
-    fn flush_pending_drag(&mut self) {
-        if self.transient.pending_drag.is_some() {
-            self.commit_pending_drag();
-            // 移动 + 复制并存：必须等移动异步提交完成（整轨替换），
-            // 否则 replace_track_notes 会覆盖刚插入的副本
-            if self.transient.pending_copy.is_some() {
-                self.drain_async_commit();
-            }
-            self.selection_clear();
-            // 取消框选：结束本地选择会话（远端清除高亮）。
-            self.transient.emit_local_selection_changed(false, &[]);
-        }
-        if self.transient.pending_copy.is_some() {
-            self.commit_pending_copy();
-        }
-    }
-
     /// 橡皮擦工具：删除音符
     pub(crate) fn handle_eraser_pressed(
         &mut self,
@@ -342,7 +314,7 @@ impl Editor {
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
-                    self.begin_eraser_marquee(tick, key);
+                    begin_eraser_marquee(self, tick, key);
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
                 }
@@ -351,33 +323,10 @@ impl Editor {
                 if shift && hit_result.is_some() {
                     self.delete_note_at(pos);
                 } else {
-                    self.begin_eraser_marquee(tick, key);
+                    begin_eraser_marquee(self, tick, key);
                 }
             }
         }
-    }
-
-    /// 橡皮擦的框选启动：清空选中并进入 `Selecting` 状态。
-    ///
-    /// 两种橡皮擦行为共用同一段前导（此前 Default / DirectSelect 各复制一份）。
-    fn begin_eraser_marquee(&mut self, tick: f32, key: u16) {
-        self.selection_clear();
-        let (selection_start_tick, selection_current_tick) = self.begin_marquee_ticks(tick);
-        let (start_y, current_y) = if self.editor_state.is_vertical_roll {
-            let y = self.tick_to_y_vertical(tick);
-            (y, y)
-        } else {
-            let y0 = self.editor_state.view.key_to_y(key);
-            (y0, y0 + self.editor_state.view.zoom_y)
-        };
-        self.editor_state.interaction.edit_state = crate::EditState::Selecting {
-            start_tick: selection_start_tick,
-            start_key: key,
-            current_tick: selection_current_tick,
-            current_key: key,
-            start_y,
-            current_y,
-        };
     }
 
     /// 默认工具（含铅笔）：放置新音符或编辑现有音符
@@ -391,7 +340,7 @@ impl Editor {
         if let Some((index, hit_type)) = hit_result {
             self.start_note_edit(index, hit_type, pos);
         } else {
-            self.start_drawing(snapped_tick, key);
+            start_drawing(self, snapped_tick, key);
         }
     }
 
@@ -409,11 +358,6 @@ impl Editor {
             hit_type,
             (pos.x, pos.y),
         );
-    }
-
-    /// 开始绘制新音符
-    fn start_drawing(&mut self, snapped_tick: f32, key: u16) {
-        interaction_ops::start_drawing(&mut self.editor_state.interaction, snapped_tick, key);
     }
 
     /// 播放音符音频
@@ -436,4 +380,60 @@ impl Editor {
             ),
         ));
     }
+}
+
+/// 提交 pending 批量拖动/复制并清空选区（非累积场景调用）
+///
+/// 在用户开始新操作（点击音符/调整大小/点击空白处）时调用。
+/// 累积拖动场景（框选内部命中）不调用此方法，保留 pending。
+/// 本方法是批量拖动的唯一常规落盘点（取消框选时）：幽灵期间 document 未变，
+/// 此处提交 + 清空选区 + 结束远端选择会话。
+///
+/// **提交顺序（正确性关键）**：移动（pending_drag）走异步提交，完成时
+/// 会整轨替换音符——若复制（pending_copy）先插入副本，会被异步结果覆盖。
+/// 因此当两者并存时：先启动移动异步提交 → `drain_async_commit` 等待完成
+/// （document 回到一致状态）→ 再基于最新索引写入副本。
+fn flush_pending_drag(editor: &mut Editor) {
+    if editor.transient.pending_drag.is_some() {
+        editor.commit_pending_drag();
+        // 移动 + 复制并存：必须等移动异步提交完成（整轨替换），
+        // 否则 replace_track_notes 会覆盖刚插入的副本
+        if editor.transient.pending_copy.is_some() {
+            editor.drain_async_commit();
+        }
+        editor.selection_clear();
+        // 取消框选：结束本地选择会话（远端清除高亮）。
+        editor.transient.emit_local_selection_changed(false, &[]);
+    }
+    if editor.transient.pending_copy.is_some() {
+        editor.commit_pending_copy();
+    }
+}
+
+/// 橡皮擦的框选启动：清空选中并进入 `Selecting` 状态。
+///
+/// 两种橡皮擦行为共用同一段前导（此前 Default / DirectSelect 各复制一份）。
+fn begin_eraser_marquee(editor: &mut Editor, tick: f32, key: u16) {
+    editor.selection_clear();
+    let (selection_start_tick, selection_current_tick) = editor.begin_marquee_ticks(tick);
+    let (start_y, current_y) = if editor.editor_state.is_vertical_roll {
+        let y = editor.tick_to_y_vertical(tick);
+        (y, y)
+    } else {
+        let y0 = editor.editor_state.view.key_to_y(key);
+        (y0, y0 + editor.editor_state.view.zoom_y)
+    };
+    editor.editor_state.interaction.edit_state = crate::EditState::Selecting {
+        start_tick: selection_start_tick,
+        start_key: key,
+        current_tick: selection_current_tick,
+        current_key: key,
+        start_y,
+        current_y,
+    };
+}
+
+/// 开始绘制新音符
+fn start_drawing(editor: &mut Editor, snapped_tick: f32, key: u16) {
+    interaction_ops::start_drawing(&mut editor.editor_state.interaction, snapped_tick, key);
 }

@@ -49,7 +49,7 @@ impl Editor {
         if self.shape_tools.slice_cut.is_none() {
             return false;
         }
-        let point = self.slice_logical(pos, shift);
+        let point = slice_logical(self, pos, shift);
         let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
@@ -72,7 +72,7 @@ impl Editor {
         let Some(state) = self.shape_tools.slice_cut else {
             return false;
         };
-        let point = constrain_end(self, state.from, self.slice_logical(pos, shift), shift);
+        let point = constrain_end(self, state.from, slice_logical(self, pos, shift), shift);
         let Some(state) = &mut self.shape_tools.slice_cut else {
             return false;
         };
@@ -99,14 +99,6 @@ impl Editor {
         } else {
             false
         }
-    }
-
-    /// 屏幕坐标 → 逻辑坐标（不做网格吸附：切割线要的是角度，不是 beat 对齐）
-    fn slice_logical(&self, pos: Point, _shift: bool) -> (f32, f32) {
-        (
-            self.pos_to_tick(pos).max(0.0),
-            self.pos_to_raw_key(pos).clamp(0.0, 255.0),
-        )
     }
 }
 
@@ -138,3 +130,11 @@ fn constrain_end(editor: &Editor, start: (f32, f32), end: (f32, f32), shift: boo
 
 #[cfg(test)]
 mod tests;
+
+/// 屏幕坐标 → 逻辑坐标（不做网格吸附：切割线要的是角度，不是 beat 对齐）
+fn slice_logical(editor: &Editor, pos: Point, _shift: bool) -> (f32, f32) {
+    (
+        editor.pos_to_tick(pos).max(0.0),
+        editor.pos_to_raw_key(pos).clamp(0.0, 255.0),
+    )
+}
