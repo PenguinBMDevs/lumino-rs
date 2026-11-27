@@ -22,7 +22,7 @@ use crate::toolbar;
 use crate::toolbar::overflow::{ToolbarGroup, ToolbarOverflow};
 
 /// 按钮说明 → 悬停浮窗文案（名称 + 解释）。
-fn tip(id: ButtonId, language: lumino_extras::i18n::Language) -> HoverTip {
+fn tip(id: ButtonId, language: lumino_core::i18n::Language) -> HoverTip {
     let (name, description) = button_desc(id, language);
     HoverTip::new(name, description)
 }
@@ -30,7 +30,7 @@ fn tip(id: ButtonId, language: lumino_extras::i18n::Language) -> HoverTip {
 /// 工具栏各按钮的悬停说明（含按当前状态切换的播放 / 录制 / 循环）。
 pub(super) fn tips(
     toolbar: &toolbar::Toolbar,
-    language: lumino_extras::i18n::Language,
+    language: lumino_core::i18n::Language,
 ) -> ToolbarTips {
     let play_pause = if toolbar.is_playing {
         tip(ButtonId::Pause, language)
@@ -275,7 +275,7 @@ pub(super) fn overflow_menu(
     toolbar: &toolbar::Toolbar,
     overflow: &ToolbarOverflow,
     has_selection: bool,
-    language: lumino_extras::i18n::Language,
+    language: lumino_core::i18n::Language,
     arrangement_mode: bool,
 ) -> Option<OverflowMenuModel> {
     if !toolbar.overflow_menu_open || !overflow.has_overflow() {
@@ -339,7 +339,7 @@ fn overflow_icon(icon: crate::resources::icon::Icon) -> Icon {
 #[cfg(test)]
 mod tooltip_tests {
     use super::*;
-    use lumino_extras::i18n::Language;
+    use lumino_core::i18n::Language;
 
     /// 所有工具栏按钮都必须有名称 + 解释说明，且工具区条目与 `TOOLS` 同长。
     #[test]

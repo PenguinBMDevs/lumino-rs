@@ -1,6 +1,6 @@
 //! 侧边栏路由（从 sidebar/core.rs 迁入）与卷帘面板底部按钮
 
-use lumino_extras::i18n::{Language, main_translations};
+use lumino_core::i18n::{Language, main_translations};
 
 /// 侧边栏路由（页面标识）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

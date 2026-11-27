@@ -261,8 +261,8 @@ impl Toolbar {
     ///
     /// 与绘制**同一函数**（`lumino_ui_egui::chrome::toolbar::precision::selector_width`）：
     /// 按钮随文本变宽时，折叠预算同步变大，不会出现「画得比算的宽」。
-    pub fn precision_selector_width(&self, language: lumino_extras::i18n::Language) -> f32 {
-        let label = lumino_extras::i18n::main_translations(language).precision_label;
+    pub fn precision_selector_width(&self, language: lumino_core::i18n::Language) -> f32 {
+        let label = lumino_core::i18n::main_translations(language).precision_label;
         lumino_ui_egui::chrome::toolbar::precision::selector_width(label, &self.snap_spec.text())
     }
 
@@ -275,7 +275,7 @@ impl Toolbar {
         &self,
         available_width: f32,
         arrangement_mode: bool,
-        language: lumino_extras::i18n::Language,
+        language: lumino_core::i18n::Language,
     ) -> ToolbarOverflow {
         self.compute_overflow_with_precision(
             available_width,

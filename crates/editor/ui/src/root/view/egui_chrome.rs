@@ -47,7 +47,7 @@ mod video_preview;
 
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_core::tr;
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
     ChromeModel, DeviceWarningModel, DialogModel, PopupTitlebarModel, ProgressModel, RollBar,
@@ -95,7 +95,7 @@ impl Sidebar {
     ///（叠加层不绘制左栏，避免盖住其他通道的绘制）。
     fn egui_model(
         &self,
-        language: lumino_extras::i18n::Language,
+        language: lumino_core::i18n::Language,
         mixer_open: bool,
         waterfall: bool,
     ) -> Option<SidebarModel> {
@@ -592,7 +592,7 @@ impl Root {
                 position: toolbar.position,
                 time: toolbar.time,
                 snap: toolbar.snap,
-                precision_label: lumino_extras::i18n::main_translations(language)
+                precision_label: lumino_core::i18n::main_translations(language)
                     .precision_label
                     .to_owned(),
                 tool: toolbar.tool,

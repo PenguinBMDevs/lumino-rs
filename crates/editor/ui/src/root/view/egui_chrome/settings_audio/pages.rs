@@ -2,7 +2,7 @@
 
 use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_core::tr;
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 use lumino_ui_egui::chrome::{AudioControlModel, AudioField, AudioRowModel};
 
 use super::{combo, load_display_name, row, slider};
@@ -10,7 +10,7 @@ use crate::root::Root;
 
 pub(super) fn lgs_rows(
     root: &Root,
-    t: &lumino_extras::i18n::SettingsTranslations,
+    t: &lumino_core::i18n::SettingsTranslations,
     rows: &mut Vec<AudioRowModel>,
 ) {
     let settings = &root.settings;
@@ -160,7 +160,7 @@ pub(super) fn lgs_rows(
 
 pub(super) fn system_rows(
     root: &Root,
-    t: &lumino_extras::i18n::SettingsTranslations,
+    t: &lumino_core::i18n::SettingsTranslations,
     rows: &mut Vec<AudioRowModel>,
 ) {
     let midi = &root.settings.midi;
@@ -209,7 +209,7 @@ pub(super) fn system_rows(
 /// Maestro 行：音色库、合成参数与音频设备都在 Maestro 的应用 profile 中配置。
 pub(super) fn maestro_rows(
     root: &Root,
-    _t: &lumino_extras::i18n::SettingsTranslations,
+    _t: &lumino_core::i18n::SettingsTranslations,
     rows: &mut Vec<AudioRowModel>,
 ) {
     let (label, text) = match root.settings.display.language {

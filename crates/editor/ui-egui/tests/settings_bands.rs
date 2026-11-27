@@ -8,7 +8,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use egui_kittest::Harness;
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
-use lumino_extras::i18n::{
+use lumino_core::i18n::{
     Language, eraser_behavior_name, settings_translations, track_add_behavior_name,
 };
 use lumino_ui_egui::chrome::{

@@ -11,7 +11,5 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-serde_json = { workspace = true }
 tracing = { workspace = true }
-lumino-core = { workspace = true }
 png = { workspace = true }

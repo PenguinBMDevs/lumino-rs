@@ -2,7 +2,6 @@
 //!
 //! 提供多语言支持和调色板管理等扩展功能。
 
-pub mod i18n;
 /// 图片转 MIDI 的颜色后处理（DRAW-030）
 pub mod image_adjust;
 pub mod material;
@@ -12,11 +11,6 @@ pub use image_adjust::{Adjust, adjust_bgra};
 
 pub use material::{EmbeddedMaterial, embedded_materials};
 
-pub use i18n::{
-    Language, MainTranslations, SettingsTranslations, dot_type_name, eraser_behavior_name,
-    main_translations, note_precision_name, selection_box_mode_name, settings_translations,
-    synth_backend_name, track_add_behavior_name,
-};
 pub use palette::{
     EmbeddedPalette, PALETTE_MANAGER, Palette, PaletteColor, PaletteManager, current_palette_idx,
     current_palette_name, current_track_color, current_track_color_f32, is_palette_locked,

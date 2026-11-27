@@ -13,7 +13,7 @@ impl Root {
     /// 素材删除确认对话框模型。
     pub(crate) fn material_delete_model(&self) -> MaterialDeleteModel {
         let state = &self.state.material_delete_dialog;
-        let t = lumino_extras::i18n::main_translations(self.settings.display.language);
+        let t = lumino_core::i18n::main_translations(self.settings.display.language);
         MaterialDeleteModel {
             titlebar: !self.settings.synth.use_native_titlebar,
             title: t.material_delete_title.to_string(),

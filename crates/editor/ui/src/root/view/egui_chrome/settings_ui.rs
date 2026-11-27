@@ -4,7 +4,7 @@ use egui::Color32;
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SelectionBoxMode};
 use lumino_core::tr;
-use lumino_extras::i18n::{Language, settings_translations};
+use lumino_core::i18n::{Language, settings_translations};
 use lumino_ui_core::Theme;
 use lumino_ui_core::theme::{HIGH_CONTRAST_DISPLAY, hc_theme};
 use lumino_ui_egui::chrome::{ThemeCardModel, UiField, UiPageModel, UiRow};
@@ -181,7 +181,7 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         hint: t.selection_box_hint.to_owned(),
         options: selection_modes
             .iter()
-            .map(|mode| lumino_extras::i18n::selection_box_mode_name(*mode, language).to_owned())
+            .map(|mode| lumino_core::i18n::selection_box_mode_name(*mode, language).to_owned())
             .collect(),
         selected: selection_selected,
         width: 200.0,

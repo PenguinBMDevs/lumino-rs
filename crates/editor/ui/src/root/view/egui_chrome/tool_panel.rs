@@ -5,7 +5,7 @@
 //! **同一批** `toolbar::Event` 构造器。
 
 use lumino_core::{BrushConfig, TextLayoutMode, tr};
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::{
     BrushPanelModel, FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel,
     ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,
@@ -100,7 +100,7 @@ pub(super) fn model(root: &Root, left_inset: f32, top_inset: f32) -> Option<Tool
 /// 当前打开的面板（五者互斥，与生产 `draw_tool_settings_menu` 同序）。
 fn panel_model(
     root: &Root,
-    language: lumino_extras::i18n::Language,
+    language: lumino_core::i18n::Language,
 ) -> Option<ToolPanelSettingsPanel> {
     let t = main_translations(language);
     if root.toolbar.brush_dropdown_open {

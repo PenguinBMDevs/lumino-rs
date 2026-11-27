@@ -1,6 +1,6 @@
 //! 音符画设置对话框：生产文案 → egui 模型，以及关闭动作 → `Message`。
 
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::DrawSettingsModel;
 
 use crate::Message;

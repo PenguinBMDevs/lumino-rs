@@ -19,7 +19,7 @@ fn draw_settings_model_carries_production_texts() {
     let Some(DialogModel::DrawSettings(panel)) = model.dialog else {
         panic!("音符画设置应由 egui 整窗接管");
     };
-    let t = lumino_extras::i18n::main_translations(lumino_extras::i18n::Language::ZhCn);
+    let t = lumino_core::i18n::main_translations(lumino_core::i18n::Language::ZhCn);
     assert!(panel.titlebar, "默认配置使用自制标题栏");
     assert_eq!(panel.title, t.tool_panel_settings);
     assert_eq!(panel.placeholder, t.draw_settings_placeholder);

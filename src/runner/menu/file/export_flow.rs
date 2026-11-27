@@ -26,7 +26,7 @@ impl RunnerInner {
         };
         if !has_content {
             let language = self.window_state.window.ui().settings().display.language;
-            let msg = lumino_extras::i18n::main_translations(language)
+            let msg = lumino_core::i18n::main_translations(language)
                 .status_no_midi_content
                 .to_string();
             self.window_state
@@ -61,7 +61,7 @@ impl RunnerInner {
         let build_t0 = std::time::Instant::now();
         let Some(export_data) = editor_midi::build_midi_export_data_from_editor(self, true) else {
             let language = self.window_state.window.ui().settings().display.language;
-            let msg = lumino_extras::i18n::main_translations(language)
+            let msg = lumino_core::i18n::main_translations(language)
                 .status_no_midi_content
                 .to_string();
             self.window_state
@@ -81,7 +81,7 @@ impl RunnerInner {
             Ok(()) => {
                 tracing::info!("MIDI 已导出: {:?}", save_path);
                 let language = self.window_state.window.ui().settings().display.language;
-                let msg = lumino_extras::i18n::main_translations(language)
+                let msg = lumino_core::i18n::main_translations(language)
                     .status_midi_exported
                     .to_string();
                 self.window_state
@@ -94,7 +94,7 @@ impl RunnerInner {
                 let language = self.window_state.window.ui().settings().display.language;
                 let msg = format!(
                     "{}：{e}",
-                    lumino_extras::i18n::main_translations(language).status_save_failed
+                    lumino_core::i18n::main_translations(language).status_save_failed
                 );
                 self.window_state
                     .window

@@ -6,7 +6,7 @@
 
 use lumino_core::storage::config::{GpuLoadDisplay, SynthBackend};
 use lumino_core::tr;
-use lumino_extras::i18n::{Language, settings_translations};
+use lumino_core::i18n::{Language, settings_translations};
 use lumino_ui_core::settings_event::OutputType;
 use lumino_ui_egui::chrome::{AudioControlModel, AudioField, AudioPageModel, AudioRowModel};
 
@@ -172,7 +172,7 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
 
 fn xsynth_rows(
     root: &Root,
-    t: &lumino_extras::i18n::SettingsTranslations,
+    t: &lumino_core::i18n::SettingsTranslations,
     rows: &mut Vec<AudioRowModel>,
 ) {
     let settings = &root.settings;

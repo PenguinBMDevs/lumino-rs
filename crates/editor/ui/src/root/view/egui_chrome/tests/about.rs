@@ -44,7 +44,7 @@ fn help_menu_about_item_emits_about_event() {
     let help_menu = bar.menus.last().expect("应有帮助菜单");
     assert_eq!(
         help_menu.label,
-        lumino_extras::i18n::main_translations(lumino_extras::i18n::Language::ZhCn).menu_help
+        lumino_core::i18n::main_translations(lumino_core::i18n::Language::ZhCn).menu_help
     );
 
     let MenuEntry::Action { label, action, .. } = &help_menu.entries[0] else {
@@ -52,7 +52,7 @@ fn help_menu_about_item_emits_about_event() {
     };
     assert_eq!(
         *label,
-        lumino_extras::i18n::main_translations(lumino_extras::i18n::Language::ZhCn).help_about
+        lumino_core::i18n::main_translations(lumino_core::i18n::Language::ZhCn).help_about
     );
     assert!(
         matches!(

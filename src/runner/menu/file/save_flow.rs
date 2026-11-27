@@ -13,7 +13,7 @@ impl RunnerInner {
 
         // 底边栏显示"文件已经保存"，3 秒后自动恢复"就绪"
         let language = self.window_state.window.ui().settings().display.language;
-        let saved_msg = lumino_extras::i18n::main_translations(language)
+        let saved_msg = lumino_core::i18n::main_translations(language)
             .status_file_saved
             .to_string();
         self.window_state
@@ -53,7 +53,7 @@ impl RunnerInner {
         let language = self.window_state.window.ui().settings().display.language;
         let fail_msg = format!(
             "{}：{msg}",
-            lumino_extras::i18n::main_translations(language).status_save_failed
+            lumino_core::i18n::main_translations(language).status_save_failed
         );
         self.window_state
             .window

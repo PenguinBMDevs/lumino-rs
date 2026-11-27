@@ -10,7 +10,7 @@ impl Root {
     /// 自定义 BPM 上限对话框模型。
     pub(crate) fn tempo_max_bpm_model(&self) -> TempoMaxBpmModel {
         let state = &self.state.tempo_max_bpm_dialog;
-        let t = lumino_extras::i18n::settings_translations(self.settings.display.language);
+        let t = lumino_core::i18n::settings_translations(self.settings.display.language);
         TempoMaxBpmModel {
             titlebar: !self.settings.synth.use_native_titlebar,
             title: lumino_core::tr!("自定义 BPM 上限").to_string(),

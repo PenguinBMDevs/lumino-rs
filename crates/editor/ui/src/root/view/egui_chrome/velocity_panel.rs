@@ -2,7 +2,7 @@
 
 mod automation;
 
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_editor::velocity::EditMode;
 use lumino_ui_editor::velocity::VelocityPanel;
 use lumino_ui_editor::velocity::layout::{

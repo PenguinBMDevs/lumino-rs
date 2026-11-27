@@ -1,7 +1,7 @@
 pub mod performance;
 
 use lumino_core::storage::config::GpuLoadDisplay;
-use lumino_extras::i18n::{Language, main_translations};
+use lumino_core::i18n::{Language, main_translations};
 use lumino_midi_io::GpuBufferStats;
 use lumino_ui_core::button_descs::ButtonId;
 
@@ -230,7 +230,7 @@ impl StatusBar {
             format!(
                 "{}: {}",
                 translations.note_count_label,
-                lumino_extras::i18n::format_thousands(count as u64)
+                lumino_core::i18n::format_thousands(count as u64)
             )
         } else {
             translations.status_ready.to_string()

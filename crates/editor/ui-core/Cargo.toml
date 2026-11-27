@@ -16,7 +16,6 @@ workspace = true
 [dependencies]
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
-lumino-extras = { workspace = true }
 lumino-message = { workspace = true }
 lumino-arrangement-core = { workspace = true }
 # 注意：playback / midi-io / midi-loader 依赖已随 midi_state/playback_state

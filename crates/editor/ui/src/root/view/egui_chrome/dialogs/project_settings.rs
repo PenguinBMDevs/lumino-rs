@@ -3,7 +3,7 @@
 //! 单独成文件把 `dialogs.rs` 保持在 600 行以内。
 
 use lumino_core::tr;
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::{ProjectNoteCountModel, ProjectSettingsModel};
 
 use crate::Message;
@@ -46,7 +46,7 @@ impl Root {
                 == lumino_core::storage::config::NoteCountDisplay::ProjectSettings)
                 .then(|| ProjectNoteCountModel {
                     label: t.note_count_label.to_owned(),
-                    value: lumino_extras::i18n::format_thousands(dialog.note_count as u64),
+                    value: lumino_core::i18n::format_thousands(dialog.note_count as u64),
                 }),
             ok: t.project_ok.to_owned(),
             cancel: t.project_cancel.to_owned(),

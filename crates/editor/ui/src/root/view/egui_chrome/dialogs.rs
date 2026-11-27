@@ -84,12 +84,12 @@ impl Root {
                     palette: self.settings_palette(),
                     labels: settings_labels(language),
                     selected,
-                    eraser: lumino_extras::i18n::eraser_behavior_name(
+                    eraser: lumino_core::i18n::eraser_behavior_name(
                         editing.eraser_behavior,
                         language,
                     )
                     .to_owned(),
-                    track_add: lumino_extras::i18n::track_add_behavior_name(
+                    track_add: lumino_core::i18n::track_add_behavior_name(
                         editing.track_add_behavior,
                         language,
                     )
@@ -181,9 +181,9 @@ impl Root {
     /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 上一代 页同源）。
     fn compatibility_page(
         &self,
-        language: lumino_extras::i18n::Language,
+        language: lumino_core::i18n::Language,
     ) -> CompatibilityPageModel {
-        let t = lumino_extras::i18n::settings_translations(language);
+        let t = lumino_core::i18n::settings_translations(language);
         let compat = &self.settings.compat;
         let running = matches!(compat.check_state, GpuCheckUiState::Running);
         let can_check = !running && compat.retry_gate == GpuCheckRetryGate::Ready;

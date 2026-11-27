@@ -1,7 +1,7 @@
 //! 自定义精度对话框：生产状态 → egui 模型，以及动作 → `Message` 映射。
 
 use lumino_core::tr;
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::{CustomPrecisionModel, DotOptionModel};
 
 use crate::Message;
@@ -23,7 +23,7 @@ impl crate::root::Root {
                 .copied()
                 .map(|dot| DotOptionModel {
                     dot,
-                    label: lumino_extras::i18n::dot_type_name(dot, language).to_owned(),
+                    label: lumino_core::i18n::dot_type_name(dot, language).to_owned(),
                     selected: state.dot_type == dot,
                 })
                 .collect(),

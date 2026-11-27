@@ -4272,9 +4272,7 @@ dependencies = [
 name = "lumino-extras"
 version = "0.2.1"
 dependencies = [
- "lumino-core",
  "png 0.17.16",
- "serde_json",
  "tracing",
 ]
 
@@ -4563,7 +4561,6 @@ version = "0.2.1"
 dependencies = [
  "lumino-arrangement-core",
  "lumino-core",
- "lumino-extras",
  "lumino-message",
  "lumino-note-core",
  "once_cell",

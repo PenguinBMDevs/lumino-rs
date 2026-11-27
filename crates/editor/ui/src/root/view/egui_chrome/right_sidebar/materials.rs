@@ -5,7 +5,7 @@
 //! 素材拖出只在按下瞬间回传 `MaterialDragStarted(index)`，跟随预览与松手
 //! 放置继续由 上一代 编辑器状态机驱动。
 
-use lumino_extras::i18n::main_translations;
+use lumino_core::i18n::main_translations;
 use lumino_message::MaterialContextMenuItem as SidebarContextItem;
 use lumino_message::RightSidebarAction as SidebarAction;
 use lumino_ui_egui::chrome::right_panel::RightSidebarAction as PanelAction;
@@ -107,7 +107,7 @@ pub(super) fn model(root: &Root) -> MaterialsPanelModel {
 /// 悬停提示行：名称 / 作者 / 位置 / 轨道数 / 来源；无效素材只显示「素材无效」。
 fn tooltip_lines(
     entry: &MaterialEntry,
-    t: &'static lumino_extras::i18n::MainTranslations,
+    t: &'static lumino_core::i18n::MainTranslations,
 ) -> Vec<String> {
     if !entry.valid {
         return vec![t.material_invalid.to_owned()];

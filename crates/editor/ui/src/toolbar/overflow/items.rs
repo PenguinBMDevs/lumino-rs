@@ -10,7 +10,7 @@
 //!   菜单是"缺席者的补位"，不该把仍然可见的按钮再列一遍。
 
 use lumino_core::storage::config::AutoScrollMode;
-use lumino_extras::i18n::{Language, MainTranslations, main_translations};
+use lumino_core::i18n::{Language, MainTranslations, main_translations};
 
 use crate::Message;
 use crate::resources::icon;

@@ -9,8 +9,8 @@ use lumino_ui_egui::chrome::{DialogPalette, SettingsLabels, SettingsPalette, Sho
 use crate::root::Root;
 
 /// 生产设置面板文案 → egui 设置对话框模型（中/英文同一条链路）。
-pub(super) fn settings_labels(language: lumino_extras::i18n::Language) -> SettingsLabels {
-    let t = lumino_extras::i18n::settings_translations(language);
+pub(super) fn settings_labels(language: lumino_core::i18n::Language) -> SettingsLabels {
+    let t = lumino_core::i18n::settings_translations(language);
     SettingsLabels {
         menu: vec![
             t.general.to_owned(),
@@ -27,15 +27,15 @@ pub(super) fn settings_labels(language: lumino_extras::i18n::Language) -> Settin
         title: t.general_title.to_owned(),
         eraser_label: t.eraser_behavior.to_owned(),
         eraser_options: vec![
-            lumino_extras::i18n::eraser_behavior_name(EraserBehavior::Default, language).to_owned(),
-            lumino_extras::i18n::eraser_behavior_name(EraserBehavior::DirectSelect, language)
+            lumino_core::i18n::eraser_behavior_name(EraserBehavior::Default, language).to_owned(),
+            lumino_core::i18n::eraser_behavior_name(EraserBehavior::DirectSelect, language)
                 .to_owned(),
         ],
         track_add_label: t.track_add_behavior.to_owned(),
         track_add_options: vec![
-            lumino_extras::i18n::track_add_behavior_name(TrackAddBehavior::AutoSwitch, language)
+            lumino_core::i18n::track_add_behavior_name(TrackAddBehavior::AutoSwitch, language)
                 .to_owned(),
-            lumino_extras::i18n::track_add_behavior_name(TrackAddBehavior::StayCurrent, language)
+            lumino_core::i18n::track_add_behavior_name(TrackAddBehavior::StayCurrent, language)
                 .to_owned(),
         ],
         log_section: t.log_retention_section.to_owned(),
@@ -47,8 +47,8 @@ pub(super) fn settings_labels(language: lumino_extras::i18n::Language) -> Settin
 }
 
 /// 快捷键页（标题 + 占位说明）。
-pub(super) fn shortcuts_page(language: lumino_extras::i18n::Language) -> ShortcutsPageModel {
-    let t = lumino_extras::i18n::settings_translations(language);
+pub(super) fn shortcuts_page(language: lumino_core::i18n::Language) -> ShortcutsPageModel {
+    let t = lumino_core::i18n::settings_translations(language);
     ShortcutsPageModel {
         title: t.shortcuts_title.to_owned(),
         placeholder: t.shortcuts_placeholder.to_owned(),

@@ -2,7 +2,7 @@
 //!
 //! 从 `tests.rs` 拆出（后者已承载整窗外壳装配，长度接近上限）。
 
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 use lumino_ui_egui::chrome::MenuEntry;
 
 use crate::Message;
@@ -65,7 +65,7 @@ fn titlebar_export_material_enabled_for_cross_track_selection() {
         .expect("应带可交互菜单树")
         .menus[0]
         .entries;
-    let translations = lumino_extras::i18n::main_translations(Language::ZhCn);
+    let translations = lumino_core::i18n::main_translations(Language::ZhCn);
     let (enabled, action) = entries
         .iter()
         .find_map(|entry| match entry {

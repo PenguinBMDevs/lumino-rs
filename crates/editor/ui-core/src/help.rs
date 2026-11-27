@@ -10,7 +10,7 @@ use std::collections::HashSet;
 pub use topics::{HelpSection, HelpTip, HelpTopic, TOPICS};
 
 use lumino_core::i18n::tr_in;
-use lumino_extras::i18n::{Language, main_translations};
+use lumino_core::i18n::{Language, main_translations};
 use lumino_message::Tool;
 
 impl HelpSection {

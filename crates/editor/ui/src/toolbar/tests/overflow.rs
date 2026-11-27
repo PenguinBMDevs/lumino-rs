@@ -14,7 +14,7 @@ use crate::toolbar::overflow::interaction::{
     PRECISION_GAP, PRECISION_SELECTOR_WIDTH, TOOLBAR_HORIZONTAL_PADDING, tools_section_width,
 };
 use crate::toolbar::overflow::{MORE_BUTTON_WIDTH, MORE_GAP, ToolItem, ToolbarGroup};
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 
 /// 扫描区间：从"连更多按钮都紧巴"到"远超全展开宽度"
 const WIDTHS: std::ops::RangeInclusive<u32> = 320..=2400;

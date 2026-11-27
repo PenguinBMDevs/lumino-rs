@@ -2,7 +2,7 @@
 //!
 //! 定义左侧路由栏的分组标识及其灯条颜色与提示文案。
 
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 use lumino_ui_core::geom::Color;
 
 /// 侧边栏分组 ID

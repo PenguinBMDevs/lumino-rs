@@ -2,7 +2,7 @@
 
 use super::*;
 use lumino_core::SnapSpec;
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 use lumino_ui_egui::chrome::{
     DialogModel, DialogPalette, MenuEntry, RightSidebarPanelKind, SettingsPalette, ToolbarAction,
@@ -488,7 +488,7 @@ fn settings_dialog_model_carries_general_page_values() {
 fn settings_dialog_labels_follow_language() {
     let theme = lumino_ui_core::Theme::TokyoNightStorm.to_string();
     let config = lumino_core::storage::config::UiConfig {
-        language: lumino_extras::i18n::Language::EnUs,
+        language: lumino_core::i18n::Language::EnUs,
         ..lumino_core::storage::config::UiConfig::default()
     };
     let root = Root::new_settings_dialog(&theme, &config);
@@ -497,7 +497,7 @@ fn settings_dialog_labels_follow_language() {
     let Some(DialogModel::Settings(values)) = model.dialog else {
         panic!("英文界面下设置对话框也应整窗接管");
     };
-    let t = lumino_extras::i18n::settings_translations(lumino_extras::i18n::Language::EnUs);
+    let t = lumino_core::i18n::settings_translations(lumino_core::i18n::Language::EnUs);
     assert_eq!(values.labels.title, t.general_title);
     assert_eq!(values.labels.confirm, t.confirm);
     assert_eq!(values.labels.menu.len(), 10);

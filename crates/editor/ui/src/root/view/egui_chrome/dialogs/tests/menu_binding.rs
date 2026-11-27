@@ -6,7 +6,7 @@
 //!
 //! 索引漂移不会产生编译错误，只会让功能静默落到错误的页面上。
 
-use lumino_extras::i18n::{Language, settings_translations};
+use lumino_core::i18n::{Language, settings_translations};
 
 use super::settings_labels;
 

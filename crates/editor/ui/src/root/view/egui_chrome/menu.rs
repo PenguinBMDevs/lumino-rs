@@ -4,7 +4,7 @@
 //! 序号只用于跨 crate 传递（`lumino-ui-egui` 不依赖 UI 层），真正的事件仍由
 //! 生产 `titlebar::menu::menus()` 提供。
 
-use lumino_extras::i18n::Language;
+use lumino_core::i18n::Language;
 use lumino_ui_egui::chrome::{MenuBarModel, MenuEntry, MenuModel};
 
 use crate::Message;

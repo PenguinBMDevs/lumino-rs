@@ -11,7 +11,7 @@ fn titlebar_menu_model_resolves_every_action() {
     assert_eq!(bar.menus.len(), 4, "文件/编辑/视图/帮助");
     assert_eq!(
         bar.menus[0].label,
-        lumino_extras::i18n::main_translations(Language::ZhCn).menu_file
+        lumino_core::i18n::main_translations(Language::ZhCn).menu_file
     );
 
     // 整棵树的每个动作序号都必须能解析回生产 `Message`。
@@ -26,7 +26,7 @@ fn titlebar_menu_model_resolves_every_action() {
     assert!(root.menu_action_message(usize::MAX).is_none());
 
     // 空工程没有框选：导出为素材置灰。
-    let translations = lumino_extras::i18n::main_translations(Language::ZhCn);
+    let translations = lumino_core::i18n::main_translations(Language::ZhCn);
     let export = bar.menus[0].entries.iter().find_map(|entry| match entry {
         MenuEntry::Action { label, enabled, .. } if *label == translations.file_export_material => {
             Some(*enabled)
@@ -83,7 +83,7 @@ fn file_menu_recent_submenu_tracks_recent_files() {
         .expect("自绘标题栏应有模型")
         .menu
         .expect("应带可交互菜单树");
-    let translations = lumino_extras::i18n::main_translations(Language::ZhCn);
+    let translations = lumino_core::i18n::main_translations(Language::ZhCn);
 
     let recent = bar.menus[0]
         .entries
