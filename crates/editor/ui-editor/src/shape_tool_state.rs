@@ -51,7 +51,7 @@ pub(crate) struct ShapeToolState {
     ///
     /// 从 `SelectionUiState` 迁入：它描述的是「形状会话的几何写回进度」，
     /// 不是框选 UI 状态。
-    pub(crate) pending_drag_applied: (f32, f32),
+    pending_drag_applied: (f32, f32),
 }
 
 impl ShapeToolState {

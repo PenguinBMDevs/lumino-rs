@@ -131,12 +131,7 @@ impl Editor {
         // 已组合：快照只回退本次参数；刚提升：撤销组合会连提升一起回到 pending 矢量。
         if !promoted {
             let snapshot = self.editor_state.pending_composed.clone();
-            self.shape_tools.pending_edit_undo.push(snapshot);
-            while self.shape_tools.pending_edit_undo.len() > 64 {
-                self.shape_tools.pending_edit_undo.remove(0);
-            }
-            self.shape_tools.pending_edit_redo.clear();
-            self.shape_tools.pending_composed_redo.clear();
+            self.shape_tools.push_pending_edit_snapshot(snapshot);
         }
         self.update_pending_composed_model(index, model);
         Ok(())

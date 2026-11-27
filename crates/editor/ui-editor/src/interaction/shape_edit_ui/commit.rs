@@ -41,13 +41,7 @@ impl Editor {
                     }
                 }
                 self.shape_tools
-                    .pending_edit_undo
-                    .push(state.original_composed);
-                while self.shape_tools.pending_edit_undo.len() > 64 {
-                    self.shape_tools.pending_edit_undo.remove(0);
-                }
-                self.shape_tools.pending_edit_redo.clear();
-                self.shape_tools.pending_composed_redo.clear();
+                    .push_pending_edit_snapshot(state.original_composed);
                 self.refresh_pending_mirror_geometry();
                 true
             }
@@ -58,13 +52,7 @@ impl Editor {
                 }
                 // 一次组拖动 = 一次 undo：快照包含全部成员模型与音符
                 self.shape_tools
-                    .pending_edit_undo
-                    .push(state.original_composed);
-                while self.shape_tools.pending_edit_undo.len() > 64 {
-                    self.shape_tools.pending_edit_undo.remove(0);
-                }
-                self.shape_tools.pending_edit_redo.clear();
-                self.shape_tools.pending_composed_redo.clear();
+                    .push_pending_edit_snapshot(state.original_composed);
                 self.refresh_pending_mirror_geometry();
                 true
             }

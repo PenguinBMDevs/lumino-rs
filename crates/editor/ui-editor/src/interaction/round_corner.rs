@@ -273,12 +273,7 @@ impl Editor {
         };
         mode.origin = None;
         mode.cursor = None;
-        self.shape_tools.pending_edit_undo.push(before);
-        while self.shape_tools.pending_edit_undo.len() > 64 {
-            self.shape_tools.pending_edit_undo.remove(0);
-        }
-        self.shape_tools.pending_edit_redo.clear();
-        self.shape_tools.pending_composed_redo.clear();
+        self.shape_tools.push_pending_edit_snapshot(before);
         true
     }
 }
