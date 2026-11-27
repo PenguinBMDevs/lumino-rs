@@ -34,8 +34,18 @@
 //! `tr!` 不做任何替换。
 
 mod catalog;
+mod compat;
+mod format;
 
 pub use crate::types::Language;
+pub use crate::{tr, trf};
+pub use compat::{
+    MainTranslations, SettingsTranslations, main_translations, settings_translations,
+};
+pub use format::{
+    dot_type_name, eraser_behavior_name, format_thousands, note_precision_name,
+    selection_box_mode_name, synth_backend_name, track_add_behavior_name,
+};
 
 use std::sync::atomic::{AtomicU8, Ordering};
 

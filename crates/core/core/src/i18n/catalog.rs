@@ -30,6 +30,7 @@ mod error_display;
 mod export;
 mod gfx_dialog;
 mod help;
+mod legacy_extras;
 mod project_core;
 mod runner_host;
 mod runner_menu;
@@ -54,6 +55,7 @@ static SECTIONS: &[Section] = &[
     project_core::lookup,
     error_display::lookup,
     help::lookup,
+    legacy_extras::lookup,
 ];
 
 /// 查英文译文；未登记返回 `None`（调用方回退中文原文）。
@@ -81,6 +83,7 @@ mod tests {
         ("project_core", include_str!("catalog/project_core.rs")),
         ("error_display", include_str!("catalog/error_display.rs")),
         ("help", include_str!("catalog/help.rs")),
+        ("legacy_extras", include_str!("catalog/legacy_extras.rs")),
     ];
 
     /// 反转义 Rust 字符串字面量内容（仅覆盖本仓会用到的最小集合，含 `\u{XXXX}`）。
