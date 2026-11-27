@@ -70,6 +70,25 @@ jobs:
         with:
           path: site
 
+      # 2026-11-27 实测：upload 与 deploy 之间有竞态——上传 finalize 后 0.3s
+      # deploy 就查询 artifact，GitHub 索引尚未可见，偶发报
+      # 「No artifacts named "github-pages"」。先轮询到可见再部署（最多 60s）。
+      - name: Wait for Pages artifact visibility
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in $(seq 1 12); do
+            count=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+              --jq '[.artifacts[] | select(.name == "github-pages")] | length')
+            if [ "$count" -ge 1 ]; then
+              echo "github-pages artifact visible after ${i} checks"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::github-pages artifact still missing after 60s"
+          exit 1
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5.0.1

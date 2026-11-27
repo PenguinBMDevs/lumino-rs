@@ -524,4 +524,44 @@ mod tests {
             "Host 侧的 dispatch_action_always 必须删除，避免第二份通道表"
         );
     }
+
+    /// 通道覆盖：`OverlayActions` 的每个字段都必须在本文件的 plan 里被消费。
+    ///
+    /// 没有这条守卫时，新增通道只改 `OverlayActions` 也能编译通过——动作被
+    /// 静默丢弃，直到用户点按钮没反应才发现。
+    #[test]
+    fn every_overlay_channel_is_consumed() {
+        const ACTIONS_SRC: &str = include_str!("../../../host/render/egui_overlay/actions.rs");
+        const PLAN_SRC: &str = include_str!("apply_actions.rs");
+
+        let body_start = ACTIONS_SRC
+            .find("pub struct OverlayActions {")
+            .expect("OverlayActions 结构体必须存在");
+        let body = &ACTIONS_SRC[body_start..];
+        let body_end = body.find("\n}").expect("OverlayActions 结构体必须有闭合");
+        let fields: Vec<&str> = body[..body_end]
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub "))
+            .filter_map(|rest| rest.split_once(':').map(|(name, _)| name))
+            .collect();
+        assert_eq!(
+            fields.len(),
+            51,
+            "通道数变化时请同步更新本断言，并确认新通道已接入 plan"
+        );
+
+        let normalized = PLAN_SRC.split_whitespace().collect::<Vec<_>>().join(" ");
+        let missing: Vec<_> = fields
+            .into_iter()
+            .filter(|field| {
+                !normalized.contains(&format!(", {field},"))
+                    && !normalized.contains(&format!("actions.{field}"))
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "OverlayActions 有 {} 个通道没有消费者（动作会被静默丢弃）：{missing:?}",
+            missing.len()
+        );
+    }
 }

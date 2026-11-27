@@ -9,6 +9,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 2026-11-27：GitHub 偶发对匿名 git 拉取返回 403（xsynth-Lumino），3 次重试不够。
+# 提高 cargo 网络重试；并在各 job 用 actions/cache 缓存 ~/.cargo/git。
+env:
+  CARGO_NET_RETRY: 10
+
 jobs:
   # ── BOM 守卫：独立 ubuntu job（与 lint 同级的门禁）─────────────────
   # 单独开一台 ubuntu 机器专跑这个扫描，不占 3-OS lint 矩阵的 windows/macos 机位：
@@ -64,6 +69,16 @@ jobs:
       # HF 缓存只读：每类机器一个 zstd 包，见 .github/actions/hf-cache。
       # 写入统一收敛到 hf-cache-refresh.yml（每 3 天全量重建），
       # 日常 CI 不再回写，避免不同 run 互相覆盖/污染。缓存范围仅项目 target。
+      # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
+      # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
+      - name: Cache cargo git dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-git-${{ runner.os }}-
+
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
@@ -135,6 +150,16 @@ jobs:
           tool: nextest
 
       # 只读缓存：定时刷新见 hf-cache-refresh.yml。
+      # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
+      # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
+      - name: Cache cargo git dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-git-${{ runner.os }}-
+
       - name: HF cache (restore)
         uses: ./.github/actions/hf-cache
         with:
@@ -231,6 +256,16 @@ jobs:
       # 单开命名空间，路径只列自己会产出的目录（顶层 target/release 是
       # 宿主单元，少了它每轮都要重编全部 proc-macro/build script）。
       # canary 缓存也由 hf-cache-refresh.yml 每 3 天刷新；本 job 只读。
+      # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
+      # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
+      - name: Cache cargo git dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-git-${{ runner.os }}-
+
       - name: HF cache (restore, canary)
         uses: ./.github/actions/hf-cache
         with:
