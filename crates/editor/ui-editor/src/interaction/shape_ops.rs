@@ -286,49 +286,8 @@ impl Editor {
         }
         let mut written = Vec::with_capacity(notes.len());
         for (track, group) in by_track {
-            written.extend(self.write_shape_notes_on_track(track, &group));
+            written.extend(write_shape_notes_on_track(self, track, &group));
         }
-        written
-    }
-
-    fn write_shape_notes_on_track(&mut self, track: usize, notes: &[ShapeNote]) -> Vec<ShapeNote> {
-        if notes.is_empty() {
-            return Vec::new();
-        }
-        self.editor_state.data.ensure_track(track);
-        let mut written: Vec<ShapeNote> = Vec::with_capacity(notes.len());
-        if notes.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
-            for sn in notes {
-                let note = Note::new(sn.tick, sn.key, sn.length)
-                    .with_velocity(sn.velocity)
-                    .with_channel(sn.channel);
-                if self
-                    .editor_state
-                    .data
-                    .insert_note_with_id(track, note)
-                    .is_some()
-                {
-                    written.push(*sn);
-                }
-            }
-        } else {
-            let payload: Vec<Note> = notes
-                .iter()
-                .map(|sn| {
-                    Note::new(sn.tick, sn.key, sn.length)
-                        .with_velocity(sn.velocity)
-                        .with_channel(sn.channel)
-                })
-                .collect();
-            let before = self.editor_state.data.track_notes(track).len();
-            self.editor_state.data.batch_insert_notes_with_ids(&payload);
-            if self.editor_state.data.track_notes(track).len() == before {
-                return Vec::new();
-            }
-            written.extend_from_slice(notes);
-        }
-        self.broadcast_shape_sync(track, &written, true);
-        self.editor_state.data.mark_current_track_changed();
         written
     }
 
@@ -343,24 +302,6 @@ impl Editor {
         }
         for (track, group) in by_track {
             remove_shape_notes_on_track(self, track, &group);
-        }
-    }
-
-    /// 形状音符的协作对账（改变音符数量 → 按值广播「删 / 加」）
-    ///
-    /// 形状对象本身**不同步**（已拍板口径）；这里只同步它产生的音符。
-    /// 开关判定在 `EditorData::push_collab_transform_sync` 内部。
-    fn broadcast_shape_sync(&mut self, track: usize, notes: &[ShapeNote], is_insert: bool) {
-        for sn in notes {
-            self.editor_state.data.push_collab_transform_sync(
-                is_insert,
-                sn.tick,
-                sn.key,
-                sn.length,
-                sn.velocity,
-                sn.channel,
-                track,
-            );
         }
     }
 }
@@ -398,8 +339,74 @@ fn remove_shape_notes_on_track(editor: &mut Editor, track: usize, notes: &[Shape
         let _ = editor.editor_state.data.remove_note(track, idx);
     }
     let removed: Vec<ShapeNote> = notes.to_vec();
-    editor.broadcast_shape_sync(track, &removed, false);
+    broadcast_shape_sync(editor, track, &removed, false);
 }
 
 #[cfg(test)]
 mod tests;
+
+fn write_shape_notes_on_track(
+    editor: &mut Editor,
+    track: usize,
+    notes: &[ShapeNote],
+) -> Vec<ShapeNote> {
+    if notes.is_empty() {
+        return Vec::new();
+    }
+    editor.editor_state.data.ensure_track(track);
+    let mut written: Vec<ShapeNote> = Vec::with_capacity(notes.len());
+    if notes.len() <= crate::interaction::BATCH_INSERT_THRESHOLD {
+        for sn in notes {
+            let note = Note::new(sn.tick, sn.key, sn.length)
+                .with_velocity(sn.velocity)
+                .with_channel(sn.channel);
+            if editor
+                .editor_state
+                .data
+                .insert_note_with_id(track, note)
+                .is_some()
+            {
+                written.push(*sn);
+            }
+        }
+    } else {
+        let payload: Vec<Note> = notes
+            .iter()
+            .map(|sn| {
+                Note::new(sn.tick, sn.key, sn.length)
+                    .with_velocity(sn.velocity)
+                    .with_channel(sn.channel)
+            })
+            .collect();
+        let before = editor.editor_state.data.track_notes(track).len();
+        editor
+            .editor_state
+            .data
+            .batch_insert_notes_with_ids(&payload);
+        if editor.editor_state.data.track_notes(track).len() == before {
+            return Vec::new();
+        }
+        written.extend_from_slice(notes);
+    }
+    broadcast_shape_sync(editor, track, &written, true);
+    editor.editor_state.data.mark_current_track_changed();
+    written
+}
+
+/// 形状音符的协作对账（改变音符数量 → 按值广播「删 / 加」）
+///
+/// 形状对象本身**不同步**（已拍板口径）；这里只同步它产生的音符。
+/// 开关判定在 `EditorData::push_collab_transform_sync` 内部。
+fn broadcast_shape_sync(editor: &mut Editor, track: usize, notes: &[ShapeNote], is_insert: bool) {
+    for sn in notes {
+        editor.editor_state.data.push_collab_transform_sync(
+            is_insert,
+            sn.tick,
+            sn.key,
+            sn.length,
+            sn.velocity,
+            sn.channel,
+            track,
+        );
+    }
+}

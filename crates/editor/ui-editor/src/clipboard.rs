@@ -115,7 +115,7 @@ impl Editor {
         // 两种格式；关闭（默认）时只写 Lumino 二进制，不为用不到的格式支付编码成本
         #[cfg(windows)]
         {
-            let domino = self.domino_payload();
+            let domino = domino_payload(self);
             if let Some(bytes) = self.build_clipboard_binary(track, division) {
                 // 优先一次会话内同时携带 Domino 格式，便于跨 DAW 粘贴
                 if let Some(dom) = domino
@@ -151,24 +151,6 @@ impl Editor {
                 ok
             }
             None => false,
-        }
-    }
-
-    /// 按开关决定本次复制要写入的 Domino 互通载荷（`None` = 不写该格式）。
-    ///
-    /// **闸门点**：关闭时 `build_clipboard_domino` 完全不被调用——不做 `NoteEvent`
-    /// 收集、不做 zlib 压缩，这是本开关的全部收益来源（20 万音符档位实测省 60~150ms
-    /// 与 26MB 堆峰值）。判断本身只是一次 bool 读取，且紧贴编码调用点，
-    /// 不引入任何每帧或缓存失效成本。
-    ///
-    /// 与 [`Self::build_clipboard_domino`] 同处 `#[cfg(windows)]`：非 Windows 下
-    /// Domino 路径整体被裁掉，不得为此留下跨平台分支。
-    #[cfg(windows)]
-    fn domino_payload(&self) -> Option<Vec<u8>> {
-        if self.domino_clipboard_enabled {
-            self.build_clipboard_domino()
-        } else {
-            None
         }
     }
 
@@ -212,4 +194,22 @@ pub(crate) fn set_clipboard_text(text: &str) -> bool {
 /// 仅从系统剪贴板读文本（经 lumino-platform：桌面 arboard / Android 待接入 JNI）
 pub(crate) fn read_clipboard_text() -> Result<String, lumino_platform::clipboard::ClipboardError> {
     lumino_platform::clipboard::get_text()
+}
+
+/// 按开关决定本次复制要写入的 Domino 互通载荷（`None` = 不写该格式）。
+///
+/// **闸门点**：关闭时 `build_clipboard_domino` 完全不被调用——不做 `NoteEvent`
+/// 收集、不做 zlib 压缩，这是本开关的全部收益来源（20 万音符档位实测省 60~150ms
+/// 与 26MB 堆峰值）。判断本身只是一次 bool 读取，且紧贴编码调用点，
+/// 不引入任何每帧或缓存失效成本。
+///
+/// 与 [`Editor::build_clipboard_domino`] 同处 `#[cfg(windows)]`：非 Windows 下
+/// Domino 路径整体被裁掉，不得为此留下跨平台分支。
+#[cfg(windows)]
+fn domino_payload(editor: &Editor) -> Option<Vec<u8>> {
+    if editor.domino_clipboard_enabled {
+        editor.build_clipboard_domino()
+    } else {
+        None
+    }
 }

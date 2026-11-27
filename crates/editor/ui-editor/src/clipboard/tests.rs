@@ -133,7 +133,7 @@ mod clipboard_io {
         // 关闭（默认）：闸门短路，不产出 Domino 载荷
         assert!(!editor.domino_clipboard_enabled());
         assert!(
-            editor.domino_payload().is_none(),
+            crate::clipboard::domino_payload(&editor).is_none(),
             "关闭时不得构建 Domino 载荷"
         );
         // 对照组：编码器自身可用，证明上面的 None 来自闸门而非编码失败
@@ -144,7 +144,7 @@ mod clipboard_io {
 
         // 开启：闸门等价于直接编码
         editor.set_domino_clipboard_enabled(true);
-        let via_gate = editor.domino_payload().expect("开启时应返回 Domino 载荷");
+        let via_gate = crate::clipboard::domino_payload(&editor).expect("开启时应返回 Domino 载荷");
         let direct = editor
             .build_clipboard_domino()
             .expect("开启时直接编码应成功");

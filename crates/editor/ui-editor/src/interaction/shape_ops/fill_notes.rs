@@ -40,7 +40,7 @@ impl Editor {
             key_count,
         );
         let velocity = model.style.velocity.max(1);
-        let gate = self.spam_gate_ticks(model);
+        let gate = spam_gate_ticks(self, model);
         // DRAW-011 `apart`：描边与内部走不同通道。默认描边为通道 0；
         // 开启后描边改用形状的 colour_slot（内部仍走区域色 / 0）。
         let stroke_channel = if model.style.apart {
@@ -116,7 +116,7 @@ impl Editor {
             poly32.push(first);
         }
         let velocity = model.style.velocity.max(1);
-        let gate = self.spam_gate_ticks(model);
+        let gate = spam_gate_ticks(self, model);
         let range = model.ops.iter().find_map(|op| match op {
             ShapeOp::GateRange(params) => Some(params),
             _ => None,
@@ -257,13 +257,6 @@ impl Editor {
         }
         out
     }
-
-    /// Spam 门长（tick）：`gate_beats × ppq`，至少 1 tick
-    fn spam_gate_ticks(&self, model: &ShapeModel) -> f32 {
-        (model.style.gate_beats * f32::from(self.editor_state.view.ppq))
-            .round()
-            .max(1.0)
-    }
 }
 
 fn time_range_spans(spans: &[Span], squares: &[(i64, i64)], params: &GateRangeParams) -> Vec<Span> {
@@ -371,3 +364,10 @@ fn fit_spans(pieces: &mut [Span], span: Span) {
 
 #[cfg(test)]
 mod tests;
+
+/// Spam 门长（tick）：`gate_beats × ppq`，至少 1 tick
+fn spam_gate_ticks(editor: &Editor, model: &ShapeModel) -> f32 {
+    (model.style.gate_beats * f32::from(editor.editor_state.view.ppq))
+        .round()
+        .max(1.0)
+}

@@ -119,34 +119,14 @@ impl Editor {
             } else {
                 self.remap_selection_by_identity(&selection_identity);
             }
-            self.invalidate_arrange_selection_after_history("撤销");
+            invalidate_arrange_selection_after_history(self, "撤销");
             self.mark_notes_changed();
-            self.flush_collab_sync();
+            flush_collab_sync(self);
             tracing::info!("Editor: Undo 成功");
             true
         } else {
             tracing::info!("Editor: 没有可撤销的操作");
             false
-        }
-    }
-
-    /// 历史回退后处理工程走带选区。
-    ///
-    /// 走带选区有两种形态，语义截然不同：
-    /// - **冻结集**（拖动 / 变速 / 粘贴后的精确 `(视觉轨, start_tick, key)` 集合）：
-    ///   是**位置快照**，历史回退后位置全部失效。保留它会让后续拖动 / 删除 / 复制
-    ///   作用不到任何音符，且**无任何提示**——用户只会认为软件坏了。故必须清空。
-    /// - **矩形**（用户框选的时值区间）：是**活语义**，描述的是「这一块区域」而非
-    ///   「这些音符」。历史回退后音符回到矩形内即可继续命中，保留反而符合直觉。
-    ///
-    /// P0 修复：原实现对走带选区零处理，撤销后冻结集悬空。
-    fn invalidate_arrange_selection_after_history(&mut self, op: &str) {
-        let data = &mut self.editor_state.data;
-        if data.arrange_selection.frozen().is_some() {
-            data.arrange_selection.clear();
-            tracing::debug!(
-                "Editor: {op}后清空走带冻结选区（位置快照已失效，保留会导致后续操作静默失效）"
-            );
         }
     }
 
@@ -251,34 +231,15 @@ impl Editor {
             } else {
                 self.remap_selection_by_identity(&selection_identity);
             }
-            self.invalidate_arrange_selection_after_history("重做");
+            invalidate_arrange_selection_after_history(self, "重做");
             self.mark_notes_changed();
-            self.flush_collab_sync();
+            flush_collab_sync(self);
             tracing::info!("Editor: Redo 成功");
             true
         } else {
             tracing::info!("Editor: 没有可重做的操作");
             false
         }
-    }
-
-    /// 统一冲刷协作待广播队列（DRAW-035B）。
-    ///
-    /// 批处理期间（`collab_batch_depth > 0`，仅历史多步跳转使用）只累积不发射，
-    /// 由批处理结束时统一调用本方法；因此「一次跳 N 步」只产生 **1 批**广播，
-    /// 而不是逐步 undo/redo 的 N 批。单步 Ctrl+Z/Y 的 depth 恒为 0，
-    /// 调用时序与改动前一致。
-    fn flush_collab_sync(&mut self) {
-        if self.collab_batch_depth > 0 {
-            return;
-        }
-        #[cfg(test)]
-        {
-            self.collab_broadcast_batches += 1;
-        }
-        broadcast_pending_collab_sync(self);
-        broadcast_pending_collab_create_sync(self);
-        self.broadcast_pending_collab_transform_sync();
     }
 
     /// 把 `EditorData` 中累积的「变换类操作（移调/翻转/变速/批量编辑）」广播给协作对端。
@@ -415,7 +376,7 @@ impl Editor {
         };
         self.collab_batch_depth = self.collab_batch_depth.saturating_sub(1);
         // 成功与中途失败都冲刷：队列里是已经发生的变更，不能丢
-        self.flush_collab_sync();
+        flush_collab_sync(self);
         // 多步跳转的脏标记由 `mark_tracks_changed_after_history` 在生产者侧
         // 累积（当前轨结构重建 + 洋葱皮受影响轨并集），这里不再强制全量重建。
         // 每一步 undo/redo 自身仍会清空中间态 note_delta_events 并标记变更。
@@ -498,4 +459,43 @@ fn broadcast_pending_collab_create_sync(editor: &mut Editor) {
         };
         lumino_message::events::emit(lumino_message::events::Event::Window(event));
     }
+}
+
+/// 历史回退后处理工程走带选区。
+///
+/// 走带选区有两种形态，语义截然不同：
+/// - **冻结集**（拖动 / 变速 / 粘贴后的精确 `(视觉轨, start_tick, key)` 集合）：
+///   是**位置快照**，历史回退后位置全部失效。保留它会让后续拖动 / 删除 / 复制
+///   作用不到任何音符，且**无任何提示**——用户只会认为软件坏了。故必须清空。
+/// - **矩形**（用户框选的时值区间）：是**活语义**，描述的是「这一块区域」而非
+///   「这些音符」。历史回退后音符回到矩形内即可继续命中，保留反而符合直觉。
+///
+/// P0 修复：原实现对走带选区零处理，撤销后冻结集悬空。
+fn invalidate_arrange_selection_after_history(editor: &mut Editor, op: &str) {
+    let data = &mut editor.editor_state.data;
+    if data.arrange_selection.frozen().is_some() {
+        data.arrange_selection.clear();
+        tracing::debug!(
+            "Editor: {op}后清空走带冻结选区（位置快照已失效，保留会导致后续操作静默失效）"
+        );
+    }
+}
+
+/// 统一冲刷协作待广播队列（DRAW-035B）。
+///
+/// 批处理期间（`collab_batch_depth > 0`，仅历史多步跳转使用）只累积不发射，
+/// 由批处理结束时统一调用本方法；因此「一次跳 N 步」只产生 **1 批**广播，
+/// 而不是逐步 undo/redo 的 N 批。单步 Ctrl+Z/Y 的 depth 恒为 0，
+/// 调用时序与改动前一致。
+fn flush_collab_sync(editor: &mut Editor) {
+    if editor.collab_batch_depth > 0 {
+        return;
+    }
+    #[cfg(test)]
+    {
+        editor.collab_broadcast_batches += 1;
+    }
+    broadcast_pending_collab_sync(editor);
+    broadcast_pending_collab_create_sync(editor);
+    editor.broadcast_pending_collab_transform_sync();
 }

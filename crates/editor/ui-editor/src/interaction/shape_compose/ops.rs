@@ -180,7 +180,7 @@ impl Editor {
             self.shape_tools.mould_knife = None;
             return Err(MouldReject::KnifeStale);
         }
-        if self.dough_matches_knife(&knife) {
+        if dough_matches_knife(self, &knife) {
             return Err(MouldReject::SameShape);
         }
         if self.compose_pending_mould(knife) {
@@ -254,29 +254,6 @@ impl Editor {
     /// 取走刀相关的一次性通知（UI 层转 toast）
     pub fn take_mould_notice(&mut self) -> Option<MouldNotice> {
         self.shape_tools.mould_notice.take()
-    }
-
-    /// 当前面团是否就是刀里的某个形状
-    fn dough_matches_knife(&self, knife: &MouldKnife) -> bool {
-        if knife.rings().is_empty() {
-            return false;
-        }
-        let track = self.editor_state.data.current_track;
-        let Some(reference) = self
-            .editor_state
-            .shape_select
-            .selected_shapes()
-            .find(|shape| shape.pending.is_some())
-            .and_then(|shape| shape.pending)
-        else {
-            return false;
-        };
-        let Some(source) = self.pending_source(reference) else {
-            return false;
-        };
-        let model = self.model_from_source_at_view(&source, track, 1.0);
-        let ring = ring_of(&model);
-        knife.contains_ring(&ring)
     }
 
     /// 当前选中的手画音符（当前轨）→ 饼干模的刀
@@ -388,4 +365,27 @@ fn summarize_copy_params(params: &CopyPathParams) -> Option<(u32, f32)> {
     let groups = n + 1;
     let step = params.pts.first().map(|pt| pt[0].abs() / groups as f32)?;
     Some((groups, step))
+}
+
+/// 当前面团是否就是刀里的某个形状
+fn dough_matches_knife(editor: &Editor, knife: &MouldKnife) -> bool {
+    if knife.rings().is_empty() {
+        return false;
+    }
+    let track = editor.editor_state.data.current_track;
+    let Some(reference) = editor
+        .editor_state
+        .shape_select
+        .selected_shapes()
+        .find(|shape| shape.pending.is_some())
+        .and_then(|shape| shape.pending)
+    else {
+        return false;
+    };
+    let Some(source) = editor.pending_source(reference) else {
+        return false;
+    };
+    let model = editor.model_from_source_at_view(&source, track, 1.0);
+    let ring = ring_of(&model);
+    knife.contains_ring(&ring)
 }

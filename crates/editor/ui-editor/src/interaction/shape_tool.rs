@@ -54,7 +54,7 @@ impl Editor {
         }
         // 填充桶：点击待确认图形内部 → 标记填充
         if self.editor_state.shape_tool.fill_enabled
-            && let Some(idx) = self.shape_hit_test(tick, key)
+            && let Some(idx) = shape_hit_test(self, tick, key)
         {
             self.editor_state.shape_tool.shapes[idx].filled = true;
             self.mark_notes_changed();
@@ -79,16 +79,16 @@ impl Editor {
             self.mark_notes_changed();
         }
     }
+}
 
-    /// 命中待确认图形内部（用于填充桶点击填充），返回图形索引
-    fn shape_hit_test(&self, tick: f32, key: f32) -> Option<usize> {
-        let px_per_tick = self.editor_state.view.zoom_x;
-        let px_per_key = self.editor_state.view.zoom_y;
-        for (i, shape) in self.editor_state.shape_tool.shapes.iter().enumerate() {
-            if point_in_shape(shape.spec(), px_per_tick, px_per_key, tick, key) {
-                return Some(i);
-            }
+/// 命中待确认图形内部（用于填充桶点击填充），返回图形索引
+fn shape_hit_test(editor: &Editor, tick: f32, key: f32) -> Option<usize> {
+    let px_per_tick = editor.editor_state.view.zoom_x;
+    let px_per_key = editor.editor_state.view.zoom_y;
+    for (i, shape) in editor.editor_state.shape_tool.shapes.iter().enumerate() {
+        if point_in_shape(shape.spec(), px_per_tick, px_per_key, tick, key) {
+            return Some(i);
         }
-        None
     }
+    None
 }

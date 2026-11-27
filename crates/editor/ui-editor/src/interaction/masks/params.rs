@@ -118,37 +118,37 @@ impl Editor {
     /// DEC-001：已 Bake 形状只读，不提供遮罩回写。
     pub fn toggle_mask_selected(&mut self) -> bool {
         if self.pending_single_selection() {
-            return self.toggle_pending_mask();
+            return toggle_pending_mask(self);
         }
         false
     }
+}
 
-    fn toggle_pending_mask(&mut self) -> bool {
-        let index = {
-            let mut selected = self.editor_state.shape_select.selected_shapes();
-            let Some(shape) = selected.next() else {
-                return false;
-            };
-            if selected.next().is_some() {
-                return false;
-            }
-            let Some(PendingShapeRef::Shape(index)) = shape.pending else {
-                return false;
-            };
-            index
+fn toggle_pending_mask(editor: &mut Editor) -> bool {
+    let index = {
+        let mut selected = editor.editor_state.shape_select.selected_shapes();
+        let Some(shape) = selected.next() else {
+            return false;
         };
-        {
-            let Some(shape) = self.editor_state.shape_tool.shapes.get_mut(index) else {
-                return false;
-            };
-            shape.mask = if shape.mask.is_some() {
-                None
-            } else {
-                Some(MaskParams::default())
-            };
+        if selected.next().is_some() {
+            return false;
         }
-        self.rebuild_pending_mirrors();
-        self.mark_notes_changed();
-        true
+        let Some(PendingShapeRef::Shape(index)) = shape.pending else {
+            return false;
+        };
+        index
+    };
+    {
+        let Some(shape) = editor.editor_state.shape_tool.shapes.get_mut(index) else {
+            return false;
+        };
+        shape.mask = if shape.mask.is_some() {
+            None
+        } else {
+            Some(MaskParams::default())
+        };
     }
+    editor.rebuild_pending_mirrors();
+    editor.mark_notes_changed();
+    true
 }

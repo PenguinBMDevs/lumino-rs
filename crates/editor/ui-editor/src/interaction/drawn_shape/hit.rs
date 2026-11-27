@@ -36,7 +36,7 @@ impl Editor {
             // DEBT-14：待确认组合（含抽屉 Insert）按「预览音符覆盖区」命中。
             // 只测轮廓会漏掉填充图形内部——用户看到的是音符块，点在块内就必须选中。
             if let Some(lumino_editor_state::PendingShapeRef::Composed(index)) = shape.pending
-                && self.composed_notes_hit(probe, index)
+                && composed_notes_hit(self, probe, index)
             {
                 return Some(shape.id);
             }
@@ -79,27 +79,7 @@ impl Editor {
     }
 }
 
-impl Editor {
-    /// 待确认组合的「预览音符覆盖区」命中（DEBT-14）
-    ///
-    /// 抽屉 Insert 的预览是一块块音符，用户点的是音符而不是细轮廓；
-    /// 只按轮廓做 6px 容差会在填充图形内部完全打不中。
-    fn composed_notes_hit(&self, probe: lumino_ui_core::geom::Point, index: usize) -> bool {
-        /// 音符块外扩（逻辑像素），避免边缘一两像素的抖动漏选
-        const PAD: f32 = 2.0;
-        let Some(composed) = self.editor_state.pending_composed.get(index) else {
-            return false;
-        };
-        composed.notes().any(|note| {
-            let a = self.line_pos_screen_pos((note.tick, f32::from(note.key)));
-            let b = self
-                .line_pos_screen_pos((note.tick + note.length.max(1.0), f32::from(note.key) + 1.0));
-            let (x0, x1) = (a.x.min(b.x) - PAD, a.x.max(b.x) + PAD);
-            let (y0, y1) = (a.y.min(b.y) - PAD, a.y.max(b.y) + PAD);
-            probe.x >= x0 && probe.x <= x1 && probe.y >= y0 && probe.y <= y1
-        })
-    }
-}
+impl Editor {}
 
 /// 形状命中：精确判定 + 细图形外扩
 ///
@@ -169,4 +149,24 @@ fn polyline_hit(
     screen
         .windows(2)
         .any(|seg| point_segment_distance(probe, seg[0], seg[1]) <= HIT_TOLERANCE_PX)
+}
+
+/// 待确认组合的「预览音符覆盖区」命中（DEBT-14）
+///
+/// 抽屉 Insert 的预览是一块块音符，用户点的是音符而不是细轮廓；
+/// 只按轮廓做 6px 容差会在填充图形内部完全打不中。
+fn composed_notes_hit(editor: &Editor, probe: lumino_ui_core::geom::Point, index: usize) -> bool {
+    /// 音符块外扩（逻辑像素），避免边缘一两像素的抖动漏选
+    const PAD: f32 = 2.0;
+    let Some(composed) = editor.editor_state.pending_composed.get(index) else {
+        return false;
+    };
+    composed.notes().any(|note| {
+        let a = editor.line_pos_screen_pos((note.tick, f32::from(note.key)));
+        let b = editor
+            .line_pos_screen_pos((note.tick + note.length.max(1.0), f32::from(note.key) + 1.0));
+        let (x0, x1) = (a.x.min(b.x) - PAD, a.x.max(b.x) + PAD);
+        let (y0, y1) = (a.y.min(b.y) - PAD, a.y.max(b.y) + PAD);
+        probe.x >= x0 && probe.x <= x1 && probe.y >= y0 && probe.y <= y1
+    })
 }
