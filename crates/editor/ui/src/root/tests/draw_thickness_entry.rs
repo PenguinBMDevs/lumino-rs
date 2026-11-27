@@ -13,6 +13,7 @@
 //! 的既有同步通道——只测工具栏自身会漏掉"值到不了编辑器"。
 
 use super::*;
+use crate::toolbar::Popover;
 use crate::toolbar::{Event, Tool, ToolPanelItem};
 
 /// 打开悬浮条（「粗细」按钮所在容器）的 Root。
@@ -39,7 +40,7 @@ fn test_thickness_entry_toggles_in_window_panel_without_window_events() {
     root.update(Event::toggle_thickness_panel());
 
     assert!(
-        root.toolbar.thickness_panel_open,
+        root.toolbar.is_popover_open(Popover::ThicknessPanel),
         "点击「粗细」应打开窗口内面板"
     );
     assert!(
@@ -61,7 +62,10 @@ fn test_thickness_entry_toggles_in_window_panel_without_window_events() {
 
     // 再点一次收起（开合语义）
     root.update(Event::toggle_thickness_panel());
-    assert!(!root.toolbar.thickness_panel_open, "再次点击应收起面板");
+    assert!(
+        !root.toolbar.is_popover_open(Popover::ThicknessPanel),
+        "再次点击应收起面板"
+    );
 }
 
 /// 场景 2（全局口径，关键）：滑杆值一路同步到编辑器，且是**同一份**值。
@@ -162,7 +166,10 @@ fn test_thickness_entry_closes_in_window_panels_like_any_other_action() {
 
     root.update(Event::toggle_thickness_panel());
 
-    assert!(root.toolbar.thickness_panel_open, "粗细面板应打开");
+    assert!(
+        root.toolbar.is_popover_open(Popover::ThicknessPanel),
+        "粗细面板应打开"
+    );
     assert!(
         !root.state.fill_division_dialog.is_open,
         "「粗细」应与其它工具栏动作同口径收起窗口内浮层"

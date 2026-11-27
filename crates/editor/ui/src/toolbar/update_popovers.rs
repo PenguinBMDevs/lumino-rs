@@ -28,12 +28,12 @@ impl Toolbar {
     pub(super) fn update_dropdowns(&mut self, event: Event) {
         match event {
             Event::ToggleOverflowMenu => {
-                self.overflow_menu_open = !self.overflow_menu_open;
+                self.toggle_popover(Popover::OverflowMenu);
                 // 与绘制工具面板互斥：打开溢出菜单时关闭工具面板
                 self.tool_panel_open = false;
                 tracing::debug!(
                     "工具栏: 溢出菜单 {}",
-                    if self.overflow_menu_open {
+                    if self.is_popover_open(Popover::OverflowMenu) {
                         "打开"
                     } else {
                         "关闭"
@@ -41,17 +41,17 @@ impl Toolbar {
                 );
             }
             Event::CloseOverflowMenu => {
-                self.overflow_menu_open = false;
+                self.close_popover(Popover::OverflowMenu);
                 tracing::debug!("工具栏: 关闭溢出菜单");
             }
             Event::ToggleBrushDropdown => {
-                self.brush_dropdown_open = !self.brush_dropdown_open;
+                self.toggle_popover(Popover::BrushDropdown);
                 // 与其他面板互斥
-                self.overflow_menu_open = false;
+                self.close_popover(Popover::OverflowMenu);
                 self.tool_panel_open = false;
                 tracing::debug!(
                     "工具栏: 画刷工具下拉 {}",
-                    if self.brush_dropdown_open {
+                    if self.is_popover_open(Popover::BrushDropdown) {
                         "打开"
                     } else {
                         "关闭"
@@ -59,18 +59,18 @@ impl Toolbar {
                 );
             }
             Event::CloseBrushDropdown => {
-                self.brush_dropdown_open = false;
+                self.close_popover(Popover::BrushDropdown);
                 tracing::debug!("工具栏: 关闭画刷工具下拉");
             }
             Event::ToggleShapeDropdown => {
-                self.shape_dropdown_open = !self.shape_dropdown_open;
+                self.toggle_popover(Popover::ShapeDropdown);
                 // 与其他面板互斥：打开形状工具下拉时关闭其余浮层
-                self.overflow_menu_open = false;
+                self.close_popover(Popover::OverflowMenu);
                 self.tool_panel_open = false;
-                self.brush_dropdown_open = false;
+                self.close_popover(Popover::BrushDropdown);
                 tracing::debug!(
                     "工具栏: 形状工具下拉 {}",
-                    if self.shape_dropdown_open {
+                    if self.is_popover_open(Popover::ShapeDropdown) {
                         "打开"
                     } else {
                         "关闭"
@@ -78,7 +78,7 @@ impl Toolbar {
                 );
             }
             Event::CloseShapeDropdown => {
-                self.shape_dropdown_open = false;
+                self.close_popover(Popover::ShapeDropdown);
                 tracing::debug!("工具栏: 关闭形状工具下拉");
             }
             Event::ShapeTypeSelected(shape) => {
@@ -102,18 +102,18 @@ impl Toolbar {
                 tracing::debug!("工具栏: 全局绘制粗细变更为 {} 层", self.brush.thickness);
             }
             Event::ToggleThicknessPanel => {
-                self.thickness_panel_open = !self.thickness_panel_open;
-                if self.thickness_panel_open {
+                self.toggle_popover(Popover::ThicknessPanel);
+                if self.is_popover_open(Popover::ThicknessPanel) {
                     // 与其余**窗口内**面板互斥（同一时刻至多一块；分音符填充面板的
                     // 状态在 `Root::state`，由 ToolbarHandler 的"外部动作即收起"统一处理）。
                     // 注意**不动** `tool_panel_open`：本面板锚定在悬浮条自己的按钮上，
                     // 关掉悬浮条等于把锚点一起拆了。
-                    self.brush_dropdown_open = false;
-                    self.shape_dropdown_open = false;
+                    self.close_popover(Popover::BrushDropdown);
+                    self.close_popover(Popover::ShapeDropdown);
                 }
                 tracing::debug!(
                     "工具栏: 粗细面板 {}",
-                    if self.thickness_panel_open {
+                    if self.is_popover_open(Popover::ThicknessPanel) {
                         "打开"
                     } else {
                         "关闭"
@@ -121,8 +121,8 @@ impl Toolbar {
                 );
             }
             Event::CloseThicknessPanel => {
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
+                self.close_popover(Popover::ThicknessPanel);
+                self.close_popover(Popover::TextParams);
                 tracing::debug!("工具栏: 关闭粗细面板");
             }
             _ => {}

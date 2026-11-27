@@ -12,6 +12,7 @@ pub(crate) mod overflow;
 mod resize;
 mod snapshot;
 pub(crate) use snapshot::{bpm_at_tick, tempo_index_at_tick};
+mod popover;
 #[cfg(test)]
 mod tests;
 pub mod types;
@@ -64,6 +65,21 @@ pub struct ToolbarPerfContext<'a> {
     pub tempo_points: &'a [lumino_note_core::midi_types::TempoPoint],
 }
 
+/// 工具栏内除常驻悬浮条外的互斥浮层。
+///
+/// 存储只有 [`Toolbar::active_popover`] 一个 `Option`：**同一时刻至多一个**，
+/// 不再用 6 个 `bool` 靠 `dismiss_popovers` 事后纠正。`ToolPanel`（音符绘制
+/// 悬浮条）不在其中：它是常驻浮层，只由显式事件开关，不参与互斥守卫。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Popover {
+    OverflowMenu,
+    BrushDropdown,
+    ShapeDropdown,
+    OnionSkinMenu,
+    ThicknessPanel,
+    TextParams,
+}
+
 /// 工具栏组件
 pub struct Toolbar {
     /// 当前工具
@@ -108,8 +124,11 @@ pub struct Toolbar {
     /// 持久化：随 `.lmpj` 工程文件落盘（`metadata.toml` 的 `[settings]` 段），
     /// 见 `OnionSkinMode::as_str` 与 `SettingsMetadata::onion_skin_mode`。
     pub onion_skin_mode: lumino_ui_core::onion_skin_mode::OnionSkinMode,
-    /// 「洋葱皮选项」下拉菜单是否打开（按钮右侧下拉三角开合）
-    pub onion_skin_menu_open: bool,
+    /// **唯一**的互斥浮层存储：`None` = 全部收起。
+    ///
+    /// 只允许通过 `open_popover` / `close_popover` / `toggle_popover` 修改，
+    /// 「至多一个」由类型保证，不靠调用方自觉。
+    active_popover: Option<Popover>,
     /// PPQ 编辑模式（true = 正在编辑）
     pub ppq_editing: bool,
     /// PPQ 编辑缓冲区（允许整数表达式，如 `480*2`）
@@ -127,8 +146,6 @@ pub struct Toolbar {
     /// 播放中编辑 BPM 时播放头会继续前进；不锚定就会在提交时改到"当前"另一个
     /// 速度点，与用户开始编辑时看到的 BPM 不是同一个。
     pub bpm_edit_anchor_tick: f32,
-    /// 溢出菜单是否打开
-    pub overflow_menu_open: bool,
     /// 音符绘制悬浮工具条是否打开（工具栏绘制入口按钮触发）
     pub tool_panel_open: bool,
     /// 悬浮工具条偏移：`(dx, dy)`，dx = 相对卷帘水平中心的偏移，
@@ -139,8 +156,6 @@ pub struct Toolbar {
     /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量递推跟随，
     /// 使面板在光标离开面板/窗口范围时仍持续移动（首次 move 时为 None 仅记录）
     pub(crate) tool_panel_last_cursor: Option<(f32, f32)>,
-    /// 画刷工具下拉是否打开（悬浮条「画刷」条目再次点击触发）
-    pub brush_dropdown_open: bool,
     /// **全局绘制粗细**（= 生成音符的纵向 key 层数，1-100）+ 画刷每层音轨分配。
     ///
     /// ⚠️ `thickness` 是**全局**值（曲线 / 形状的描边与画刷笔画共用），不是画刷私有；
@@ -148,16 +163,10 @@ pub struct Toolbar {
     /// `toolbar/thickness_dropdown.rs`），画刷下拉只**展示**它、画刷「绘制行为」
     /// 对话框只编辑 `tracks`（每层音轨）。详见 `lumino_core::BrushConfig` 的类型注释。
     pub brush: BrushConfig,
-    /// 「粗细」悬浮面板是否打开（悬浮条右端「粗细」按钮开合，向上弹出）
-    pub thickness_panel_open: bool,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
     /// 三点圆弧模式（DRAW-014）：与 `fill_enabled` 同级，选中「圆弧」条目时为 true
     pub arc_mode: bool,
-    /// 形状工具下拉是否打开（悬浮条「形状」条目再次点击触发，菜单选择矩形/圆形/三角形）
-    pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
     pub current_shape: ShapeType,
-    /// 文字工具参数面板是否打开
-    pub text_params_open: bool,
 }

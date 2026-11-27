@@ -4,6 +4,7 @@
 //! `ToolbarAction`；真正的事件全部在这里翻译成生产 `Message`，
 //! 与 上一代 工具栏按钮走同一条 `toolbar::Event` 构造器。
 
+use crate::toolbar::Popover;
 use lumino_core::SnapSpec;
 use lumino_core::tr;
 use lumino_ui_core::button_descs::{ButtonId, button_desc};
@@ -99,15 +100,17 @@ pub(super) fn snap_menu(toolbar: &toolbar::Toolbar) -> Option<SnapMenuModel> {
 
 /// 洋葱皮范围菜单是否打开 → egui 模型。
 pub(super) fn onion_menu(toolbar: &toolbar::Toolbar) -> Option<OnionMenuModel> {
-    toolbar.onion_skin_menu_open.then(|| OnionMenuModel {
-        items: OnionSkinMode::all()
-            .into_iter()
-            .map(|mode| OnionMenuItem {
-                label: onion_label(mode).to_owned(),
-                selected: mode == toolbar.onion_skin_mode,
-            })
-            .collect(),
-    })
+    toolbar
+        .is_popover_open(Popover::OnionSkinMenu)
+        .then(|| OnionMenuModel {
+            items: OnionSkinMode::all()
+                .into_iter()
+                .map(|mode| OnionMenuItem {
+                    label: onion_label(mode).to_owned(),
+                    selected: mode == toolbar.onion_skin_mode,
+                })
+                .collect(),
+        })
 }
 
 /// 与 上一代 `render_onion_skin_button` 同口径的本地化标签。
@@ -278,7 +281,7 @@ pub(super) fn overflow_menu(
     language: lumino_core::i18n::Language,
     arrangement_mode: bool,
 ) -> Option<OverflowMenuModel> {
-    if !toolbar.overflow_menu_open || !overflow.has_overflow() {
+    if !toolbar.is_popover_open(Popover::OverflowMenu) || !overflow.has_overflow() {
         return None;
     }
     Some(OverflowMenuModel {

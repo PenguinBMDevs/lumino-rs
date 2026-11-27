@@ -12,10 +12,10 @@ use super::*;
 #[test]
 fn test_open_shape_drawer_closes_shape_dropdown() {
     let mut toolbar = Toolbar::new();
-    toolbar.shape_dropdown_open = true;
+    toolbar.open_popover(Popover::ShapeDropdown);
     toolbar.update(Event::OpenShapeDrawerDialog);
     assert!(
-        !toolbar.shape_dropdown_open,
+        !toolbar.is_popover_open(Popover::ShapeDropdown),
         "打开形状抽屉属于外部动作，应关闭形状下拉"
     );
 }
@@ -27,7 +27,10 @@ fn test_tool_panel_plain_click_selects_without_opening_settings() {
 
     toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Brush));
     assert_eq!(toolbar.current_tool, Tool::Brush, "普通点击应选择画刷工具");
-    assert!(!toolbar.brush_dropdown_open, "普通点击不应打开画刷设置下拉");
+    assert!(
+        !toolbar.is_popover_open(Popover::BrushDropdown),
+        "普通点击不应打开画刷设置下拉"
+    );
     assert!(toolbar.tool_panel_open, "选择条目后悬浮条应保持打开");
 }
 
@@ -41,10 +44,13 @@ fn test_tool_panel_settings_requested_brush_opens_dropdown() {
     toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
     assert_eq!(toolbar.current_tool, Tool::Brush, "再次点击画刷应切到画刷");
     assert!(
-        toolbar.brush_dropdown_open,
+        toolbar.is_popover_open(Popover::BrushDropdown),
         "再次点击画刷应打开画刷设置下拉"
     );
-    assert!(!toolbar.shape_dropdown_open, "画刷/形状下拉应互斥");
+    assert!(
+        !toolbar.is_popover_open(Popover::ShapeDropdown),
+        "画刷/形状下拉应互斥"
+    );
 }
 
 /// 已启用条目再次点击：形状 **并** 打开形状选择下拉（矩形/圆形/三角形）。
@@ -56,10 +62,13 @@ fn test_tool_panel_settings_requested_shape_opens_dropdown() {
     toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Shape));
     assert_eq!(toolbar.current_tool, Tool::Shape, "再次点击形状应切到形状");
     assert!(
-        toolbar.shape_dropdown_open,
+        toolbar.is_popover_open(Popover::ShapeDropdown),
         "再次点击形状应打开形状选择下拉"
     );
-    assert!(!toolbar.brush_dropdown_open, "画刷/形状下拉应互斥");
+    assert!(
+        !toolbar.is_popover_open(Popover::BrushDropdown),
+        "画刷/形状下拉应互斥"
+    );
 }
 
 /// 已启用条目再次点击颜料桶：确保填充开启（分音符填充面板由 Root 侧弹出）。
@@ -75,7 +84,10 @@ fn test_tool_panel_settings_requested_fill_keeps_fill_on() {
         ToolPanelItem::FillBucket,
     ));
     assert!(toolbar.fill_enabled, "再次点击颜料桶应开启填充");
-    assert!(!toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open);
+    assert!(
+        !toolbar.is_popover_open(Popover::BrushDropdown)
+            && !toolbar.is_popover_open(Popover::ShapeDropdown)
+    );
 
     toolbar.update(Event::ToolPanelItemSettingsRequested(
         ToolPanelItem::FillBucket,
@@ -88,22 +100,28 @@ fn test_tool_panel_settings_requested_fill_keeps_fill_on() {
 fn test_text_settings_opens_text_params_panel() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
-    toolbar.brush_dropdown_open = true;
-    toolbar.shape_dropdown_open = true;
-    toolbar.thickness_panel_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
+    toolbar.open_popover(Popover::ShapeDropdown);
+    toolbar.open_popover(Popover::ThicknessPanel);
 
     toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Text));
     assert_eq!(toolbar.current_tool, Tool::Text);
-    assert!(toolbar.text_params_open, "文字设置请求应打开参数面板");
     assert!(
-        !toolbar.brush_dropdown_open
-            && !toolbar.shape_dropdown_open
-            && !toolbar.thickness_panel_open,
+        toolbar.is_popover_open(Popover::TextParams),
+        "文字设置请求应打开参数面板"
+    );
+    assert!(
+        !toolbar.is_popover_open(Popover::BrushDropdown)
+            && !toolbar.is_popover_open(Popover::ShapeDropdown)
+            && !toolbar.is_popover_open(Popover::ThicknessPanel),
         "参数面板必须与其它工具面板互斥"
     );
 
     toolbar.update(Event::CloseTextParamsPanel);
-    assert!(!toolbar.text_params_open, "关闭事件应收起参数面板");
+    assert!(
+        !toolbar.is_popover_open(Popover::TextParams),
+        "关闭事件应收起参数面板"
+    );
 }
 
 /// 无独立设置的条目（曲线）收到设置请求：退化为普通选择，不打开任何下拉。
@@ -116,7 +134,8 @@ fn test_tool_panel_settings_requested_curve_degrades_to_plain_select() {
     toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Curve));
     assert_eq!(toolbar.current_tool, Tool::Curve);
     assert!(
-        !toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown)
+            && !toolbar.is_popover_open(Popover::ShapeDropdown),
         "无设置条目不应打开任何设置下拉"
     );
 }
@@ -133,16 +152,19 @@ fn test_tool_panel_settings_requested_curve_degrades_to_plain_select() {
 #[test]
 fn test_brush_dropdown_stays_open_on_hover_until_close_event() {
     let mut toolbar = Toolbar::new();
-    toolbar.brush_dropdown_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
 
     // 悬停事件不应关闭下拉（鼠标进出按钮会反复发它）
     toolbar.update(Event::ButtonHovered(None));
-    assert!(toolbar.brush_dropdown_open, "悬停不应关闭画刷下拉");
+    assert!(
+        toolbar.is_popover_open(Popover::BrushDropdown),
+        "悬停不应关闭画刷下拉"
+    );
 
     // 点击面板内空白（外部关闭消息）：应关闭
     toolbar.update(Event::CloseBrushDropdown);
     assert!(
-        !toolbar.brush_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown),
         "CloseBrushDropdown（点击面板外空白）应关闭画刷下拉"
     );
 }
@@ -151,10 +173,10 @@ fn test_brush_dropdown_stays_open_on_hover_until_close_event() {
 #[test]
 fn test_brush_dropdown_toggle_closes() {
     let mut toolbar = Toolbar::new();
-    toolbar.brush_dropdown_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
     toolbar.update(Event::ToggleBrushDropdown);
     assert!(
-        !toolbar.brush_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown),
         "打开状态下再次 ToggleBrushDropdown 应关闭画刷下拉"
     );
 }
@@ -165,7 +187,7 @@ fn test_brush_dropdown_toggle_closes() {
 fn test_shape_type_selected_updates_state_and_closes_dropdown() {
     let mut toolbar = Toolbar::new();
     toolbar.current_tool = Tool::Shape;
-    toolbar.shape_dropdown_open = true;
+    toolbar.open_popover(Popover::ShapeDropdown);
     assert_eq!(toolbar.current_shape, ShapeType::Rectangle);
 
     toolbar.update(Event::ShapeTypeSelected(ShapeType::Circle));
@@ -175,12 +197,12 @@ fn test_shape_type_selected_updates_state_and_closes_dropdown() {
         "ShapeTypeSelected 应更新 current_shape 状态变量"
     );
     assert!(
-        !toolbar.shape_dropdown_open,
+        !toolbar.is_popover_open(Popover::ShapeDropdown),
         "选择图形后形状工具下拉应自动关闭"
     );
 
     // 再切到三角形，验证状态变量可被正确更新多次
-    toolbar.shape_dropdown_open = true;
+    toolbar.open_popover(Popover::ShapeDropdown);
     toolbar.update(Event::ShapeTypeSelected(ShapeType::Triangle));
     assert_eq!(toolbar.current_shape, ShapeType::Triangle);
 }
@@ -189,11 +211,14 @@ fn test_shape_type_selected_updates_state_and_closes_dropdown() {
 #[test]
 fn test_tool_selected_closes_shape_dropdown() {
     let mut toolbar = Toolbar::new();
-    toolbar.shape_dropdown_open = true;
+    toolbar.open_popover(Popover::ShapeDropdown);
     toolbar.current_shape = ShapeType::Circle;
 
     toolbar.update(Event::ToolSelected(Tool::Pencil));
-    assert!(!toolbar.shape_dropdown_open, "切换工具应关闭形状工具下拉");
+    assert!(
+        !toolbar.is_popover_open(Popover::ShapeDropdown),
+        "切换工具应关闭形状工具下拉"
+    );
     // current_shape 作为持久偏好保留，不应被重置
     assert_eq!(toolbar.current_shape, ShapeType::Circle);
 }
@@ -373,17 +398,17 @@ fn test_toggle_close_resets_drag_state() {
 fn test_close_tool_panel_closes_settings_dropdown() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
-    toolbar.brush_dropdown_open = true;
-    toolbar.thickness_panel_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
+    toolbar.open_popover(Popover::ThicknessPanel);
 
     toolbar.update(Event::ToggleToolPanel);
     assert!(!toolbar.tool_panel_open);
     assert!(
-        !toolbar.brush_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown),
         "关闭悬浮条应一并收起其承载的画刷设置下拉"
     );
     assert!(
-        !toolbar.thickness_panel_open,
+        !toolbar.is_popover_open(Popover::ThicknessPanel),
         "关闭悬浮条应一并收起粗细面板（锚点已不存在）"
     );
 }
@@ -405,7 +430,7 @@ fn test_open_draw_settings_dialog_leaves_tool_state_untouched() {
     toolbar.tool_panel_open = true;
     toolbar.current_tool = Tool::Brush;
     toolbar.fill_enabled = true;
-    toolbar.brush_dropdown_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
     let offset_before = toolbar.tool_panel_offset;
 
     toolbar.update(Event::OpenDrawSettingsDialog);
@@ -418,7 +443,7 @@ fn test_open_draw_settings_dialog_leaves_tool_state_untouched() {
         "点齿轮不应移动悬浮条"
     );
     assert!(
-        !toolbar.brush_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown),
         "窗口内临时浮层照旧被'外部动作'收起（齿轮不享受例外）"
     );
 }
@@ -468,7 +493,10 @@ fn test_thickness_panel_toggles_without_touching_tool_state() {
     let offset_before = toolbar.tool_panel_offset;
 
     toolbar.update(Event::ToggleThicknessPanel);
-    assert!(toolbar.thickness_panel_open, "首次点击「粗细」应打开面板");
+    assert!(
+        toolbar.is_popover_open(Popover::ThicknessPanel),
+        "首次点击「粗细」应打开面板"
+    );
     assert_eq!(toolbar.current_tool, Tool::Shape, "开面板不得切走当前工具");
     assert!(toolbar.fill_enabled, "开面板不得改动颜料桶填充态");
     assert!(
@@ -482,7 +510,7 @@ fn test_thickness_panel_toggles_without_touching_tool_state() {
 
     toolbar.update(Event::ToggleThicknessPanel);
     assert!(
-        !toolbar.thickness_panel_open,
+        !toolbar.is_popover_open(Popover::ThicknessPanel),
         "再次点击「粗细」应收起面板（开合语义）"
     );
 }
@@ -493,12 +521,15 @@ fn test_thickness_panel_stays_open_while_dragging_slider() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
     toolbar.update(Event::ToggleThicknessPanel);
-    assert!(toolbar.thickness_panel_open, "前置：面板已打开");
+    assert!(
+        toolbar.is_popover_open(Popover::ThicknessPanel),
+        "前置：面板已打开"
+    );
 
     for v in [5_u8, 40, 100, 1] {
         toolbar.update(Event::DrawThicknessChanged(v));
         assert!(
-            toolbar.thickness_panel_open,
+            toolbar.is_popover_open(Popover::ThicknessPanel),
             "拖滑杆（粗细={v}）不得关闭面板"
         );
         assert_eq!(toolbar.brush.thickness, v, "粗细应写入全局值");
@@ -506,7 +537,10 @@ fn test_thickness_panel_stays_open_while_dragging_slider() {
 
     // 显式关闭（点面板内空白）
     toolbar.update(Event::CloseThicknessPanel);
-    assert!(!toolbar.thickness_panel_open, "关闭事件应收起面板");
+    assert!(
+        !toolbar.is_popover_open(Popover::ThicknessPanel),
+        "关闭事件应收起面板"
+    );
 }
 
 /// 全局粗细与滑杆量程同源：越界值由 `set_thickness` 夹到 `1..=100`。
@@ -540,28 +574,29 @@ fn test_thickness_panel_exclusive_and_closed_by_external_actions() {
     toolbar.tool_panel_open = true;
 
     // 打开粗细面板 → 收起画刷 / 形状下拉
-    toolbar.brush_dropdown_open = true;
-    toolbar.shape_dropdown_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
+    toolbar.open_popover(Popover::ShapeDropdown);
     toolbar.update(Event::ToggleThicknessPanel);
-    assert!(toolbar.thickness_panel_open);
+    assert!(toolbar.is_popover_open(Popover::ThicknessPanel));
     assert!(
-        !toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown)
+            && !toolbar.is_popover_open(Popover::ShapeDropdown),
         "打开粗细面板应收起其余窗口内面板"
     );
 
     // 反向：打开画刷设置（工具条目再次点击）应收起粗细面板
     toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
     assert!(
-        !toolbar.thickness_panel_open,
+        !toolbar.is_popover_open(Popover::ThicknessPanel),
         "其它工具栏动作（工具条目再次点击）应收起粗细面板"
     );
 
     // 外部动作同样收起（此处用齿轮的独立窗口请求做代表）
     toolbar.update(Event::ToggleThicknessPanel);
-    assert!(toolbar.thickness_panel_open);
+    assert!(toolbar.is_popover_open(Popover::ThicknessPanel));
     toolbar.update(Event::OpenDrawSettingsDialog);
     assert!(
-        !toolbar.thickness_panel_open,
+        !toolbar.is_popover_open(Popover::ThicknessPanel),
         "齿轮请求照旧按'外部一动作即收起'处理（新面板不享受例外）"
     );
 }
@@ -609,12 +644,12 @@ fn test_at_most_one_popover_open() {
     for event in events {
         toolbar.update(event);
         let open = [
-            toolbar.overflow_menu_open,
-            toolbar.brush_dropdown_open,
-            toolbar.shape_dropdown_open,
-            toolbar.onion_skin_menu_open,
-            toolbar.thickness_panel_open,
-            toolbar.text_params_open,
+            toolbar.is_popover_open(Popover::OverflowMenu),
+            toolbar.is_popover_open(Popover::BrushDropdown),
+            toolbar.is_popover_open(Popover::ShapeDropdown),
+            toolbar.is_popover_open(Popover::OnionSkinMenu),
+            toolbar.is_popover_open(Popover::ThicknessPanel),
+            toolbar.is_popover_open(Popover::TextParams),
         ]
         .into_iter()
         .filter(|open| *open)

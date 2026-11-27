@@ -1,6 +1,7 @@
 //! 悬浮绘制工具条：模型镜像与动作翻译单测（从 `tests.rs` 拆出）。
 
 use super::*;
+use crate::toolbar::Popover;
 use lumino_core::{BrushConfig, TextLayoutMode};
 use lumino_ui_egui::chrome::{
     ShapeKind, ToolPanelItemKind, ToolPanelPanelOwner, ToolPanelSettingsPanel, ToolbarAction,
@@ -53,7 +54,7 @@ fn tool_panel_model_reflects_production_state() {
     );
 
     // 画刷面板。
-    root.toolbar.brush_dropdown_open = true;
+    root.toolbar.open_popover(Popover::BrushDropdown);
     let model = root.egui_chrome_model().tool_panel.expect("悬浮条");
     assert_eq!(
         model.panel.as_ref().map(ToolPanelSettingsPanel::owner),
@@ -67,8 +68,8 @@ fn tool_panel_model_reflects_production_state() {
     assert_eq!(brush.show_behavior, brush.thickness > 1);
 
     // 形状面板。
-    root.toolbar.brush_dropdown_open = false;
-    root.toolbar.shape_dropdown_open = true;
+    root.toolbar.close_popover(Popover::BrushDropdown);
+    root.toolbar.open_popover(Popover::ShapeDropdown);
     let model = root.egui_chrome_model().tool_panel.expect("悬浮条");
     let Some(ToolPanelSettingsPanel::Shape(shape)) = model.panel else {
         panic!("应为形状面板");
@@ -78,7 +79,7 @@ fn tool_panel_model_reflects_production_state() {
     assert_eq!(shape.drawer, "形状抽屉");
 
     // 分音符填充面板。
-    root.toolbar.shape_dropdown_open = false;
+    root.toolbar.close_popover(Popover::ShapeDropdown);
     root.state.fill_division_dialog.is_open = true;
     root.state.fill_division_dialog.value = "16".to_owned();
     let model = root.egui_chrome_model().tool_panel.expect("悬浮条");
@@ -91,7 +92,7 @@ fn tool_panel_model_reflects_production_state() {
 
     // 文字参数面板：当前字体必然在候选里（字体扫描为空时也成立）。
     root.state.fill_division_dialog.is_open = false;
-    root.toolbar.text_params_open = true;
+    root.toolbar.open_popover(Popover::TextParams);
     let model = root.egui_chrome_model().tool_panel.expect("悬浮条");
     let Some(ToolPanelSettingsPanel::TextParams(text)) = model.panel else {
         panic!("应为文字参数面板");
@@ -103,8 +104,8 @@ fn tool_panel_model_reflects_production_state() {
     );
 
     // 粗细面板。
-    root.toolbar.text_params_open = false;
-    root.toolbar.thickness_panel_open = true;
+    root.toolbar.close_popover(Popover::TextParams);
+    root.toolbar.open_popover(Popover::ThicknessPanel);
     root.toolbar.brush.set_thickness(42);
     let model = root.egui_chrome_model().tool_panel.expect("悬浮条");
     let Some(ToolPanelSettingsPanel::Thickness(thickness)) = model.panel else {

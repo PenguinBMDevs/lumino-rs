@@ -1,6 +1,7 @@
 //! 由 `tests.rs` 拆出的后半段测试，按原顺序保留。
 
 use super::*;
+use crate::toolbar::Popover;
 
 #[test]
 fn titlebar_menu_model_resolves_every_action() {
@@ -209,7 +210,7 @@ fn toolbar_popup_model_and_actions_follow_production_state() {
     );
 
     root.toolbar.snap_picker_open = false;
-    root.toolbar.onion_skin_menu_open = true;
+    root.toolbar.open_popover(Popover::OnionSkinMenu);
     let model = root.egui_chrome_model();
     let onion = model
         .toolbar
@@ -269,7 +270,7 @@ fn toolbar_overflow_follows_width_and_resolves_items() {
     assert!(wide.overflow_menu.is_none());
 
     // 窄窗口：折叠 + 「更多」+ 协作被收进菜单；菜单打开后有项。
-    root.toolbar.overflow_menu_open = true;
+    root.toolbar.open_popover(Popover::OverflowMenu);
     let narrow = root.egui_chrome_model_for(900.0).toolbar.expect("工具栏");
     assert!(narrow.more_visible, "窄窗口应出现更多按钮");
     assert!(!narrow.collaboration_visible, "溢出时协作最先折叠");

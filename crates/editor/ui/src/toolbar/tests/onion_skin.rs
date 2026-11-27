@@ -36,7 +36,7 @@ fn test_toggle_onion_skin_leaves_tool_state_untouched() {
     toolbar.current_tool = Tool::Pencil;
     toolbar.fill_enabled = true;
     toolbar.tool_panel_open = true;
-    toolbar.brush_dropdown_open = true;
+    toolbar.open_popover(Popover::BrushDropdown);
 
     toolbar.update(Event::ToggleOnionSkin);
 
@@ -48,7 +48,7 @@ fn test_toggle_onion_skin_leaves_tool_state_untouched() {
         "音符画悬浮工具条是常驻浮层，不随显示开关收起"
     );
     assert!(
-        !toolbar.brush_dropdown_open,
+        !toolbar.is_popover_open(Popover::BrushDropdown),
         "窗口内下拉照旧按外部动作收起（统一口径）"
     );
 }
@@ -133,7 +133,10 @@ fn test_onion_skin_mode_defaults_to_all_tracks() {
         lumino_ui_core::onion_skin_mode::OnionSkinMode::AllTracks,
         "默认范围应为全部音轨"
     );
-    assert!(!toolbar.onion_skin_menu_open, "下拉菜单默认关闭");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "下拉菜单默认关闭"
+    );
 }
 
 /// 三角开合：一次打开、再一次关闭；显式关闭事件也能关。
@@ -142,14 +145,23 @@ fn test_onion_skin_menu_toggles() {
     let mut toolbar = Toolbar::new();
 
     toolbar.update(Event::ToggleOnionSkinMenu);
-    assert!(toolbar.onion_skin_menu_open, "点三角应展开菜单");
+    assert!(
+        toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "点三角应展开菜单"
+    );
 
     toolbar.update(Event::ToggleOnionSkinMenu);
-    assert!(!toolbar.onion_skin_menu_open, "再点三角应收起菜单");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "再点三角应收起菜单"
+    );
 
     toolbar.update(Event::ToggleOnionSkinMenu);
     toolbar.update(Event::CloseOnionSkinMenu);
-    assert!(!toolbar.onion_skin_menu_open, "显式关闭事件应收起菜单");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "显式关闭事件应收起菜单"
+    );
 }
 
 /// 选中范围 = 写入模式 + **顺手打开开关** + 收起菜单。
@@ -161,14 +173,17 @@ fn test_selecting_mode_applies_and_enables_and_closes() {
     use lumino_ui_core::onion_skin_mode::OnionSkinMode;
 
     let mut toolbar = Toolbar::new();
-    toolbar.onion_skin_menu_open = true;
+    toolbar.open_popover(Popover::OnionSkinMenu);
     assert!(!toolbar.onion_skin_enabled, "前提：开关初始关闭");
 
     toolbar.update(Event::OnionSkinModeSelected(OnionSkinMode::PreviousTrack));
 
     assert_eq!(toolbar.onion_skin_mode, OnionSkinMode::PreviousTrack);
     assert!(toolbar.onion_skin_enabled, "选范围应顺手打开开关");
-    assert!(!toolbar.onion_skin_menu_open, "选中后应收起菜单");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "选中后应收起菜单"
+    );
 }
 
 /// 「指定音轨」本轮未接入：**不得写入状态**（否则留下一个什么都没做的勾选态），
@@ -179,7 +194,7 @@ fn test_unimplemented_mode_is_not_written() {
 
     let mut toolbar = Toolbar::new();
     toolbar.onion_skin_mode = OnionSkinMode::NextTrack;
-    toolbar.onion_skin_menu_open = true;
+    toolbar.open_popover(Popover::OnionSkinMenu);
 
     toolbar.update(Event::OnionSkinModeSelected(OnionSkinMode::SpecificTrack));
 
@@ -188,7 +203,10 @@ fn test_unimplemented_mode_is_not_written() {
         OnionSkinMode::NextTrack,
         "未接入的模式不得覆盖当前模式"
     );
-    assert!(!toolbar.onion_skin_menu_open, "点击后仍应收起菜单");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "点击后仍应收起菜单"
+    );
 }
 
 /// 关闭开关**不清模式**：重新打开时按原范围显示（用户硬约束：开关管显不显，模式管显哪些）。
@@ -212,14 +230,20 @@ fn test_disabling_keeps_mode() {
 #[test]
 fn test_other_action_closes_onion_skin_menu() {
     let mut toolbar = Toolbar::new();
-    toolbar.onion_skin_menu_open = true;
+    toolbar.open_popover(Popover::OnionSkinMenu);
 
     toolbar.update(Event::ToolSelected(Tool::Pencil));
 
-    assert!(!toolbar.onion_skin_menu_open, "外部动作应收起洋葱皮下拉");
+    assert!(
+        !toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "外部动作应收起洋葱皮下拉"
+    );
 
     // 悬停事件不得关闭（重绘会重发 on_enter，会把刚打开的菜单关掉）
-    toolbar.onion_skin_menu_open = true;
+    toolbar.open_popover(Popover::OnionSkinMenu);
     toolbar.update(Event::ButtonHovered(Some(ButtonId::OnionSkin)));
-    assert!(toolbar.onion_skin_menu_open, "悬停不应收起菜单");
+    assert!(
+        toolbar.is_popover_open(Popover::OnionSkinMenu),
+        "悬停不应收起菜单"
+    );
 }

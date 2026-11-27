@@ -3,6 +3,7 @@
 use winit;
 
 use crate::host::Host;
+use crate::toolbar::Popover;
 use crate::{message, toolbar};
 use lumino_ui_core::sidebar_event::Route;
 
@@ -224,8 +225,8 @@ impl Host {
     /// PPQ 编辑 / 分音符填充面板）。存在时必须照常派发——否则按键「按了没反应」。
     fn toolbar_transient_open(&self, target: toolbar::Tool) -> bool {
         let toolbar = &self.root.toolbar;
-        if toolbar.brush_dropdown_open
-            || toolbar.shape_dropdown_open
+        if toolbar.is_popover_open(Popover::BrushDropdown)
+            || toolbar.is_popover_open(Popover::ShapeDropdown)
             || toolbar.snap_picker_open
             || toolbar.fill_enabled
             || toolbar.arc_mode

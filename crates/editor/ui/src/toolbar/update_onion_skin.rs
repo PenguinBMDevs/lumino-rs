@@ -4,7 +4,7 @@
 //! 新逻辑不再往里堆。语义完全等价——`update` 在所有"外部一动作即收起"的守卫
 //! **之后**、大 `match` **之前**调用这里，命中即返回。
 
-use super::{Event, Toolbar};
+use super::{Event, Popover, Toolbar};
 
 impl Toolbar {
     /// 处理洋葱皮事件；返回 `true` 表示事件已在此处理（调用方应直接返回）。
@@ -29,10 +29,10 @@ impl Toolbar {
                 );
             }
             Event::ToggleOnionSkinMenu => {
-                self.onion_skin_menu_open = !self.onion_skin_menu_open;
+                self.toggle_popover(Popover::OnionSkinMenu);
                 tracing::debug!(
                     "工具栏: 洋葱皮选项下拉 {}",
-                    if self.onion_skin_menu_open {
+                    if self.is_popover_open(Popover::OnionSkinMenu) {
                         "打开"
                     } else {
                         "关闭"
@@ -40,7 +40,7 @@ impl Toolbar {
                 );
             }
             Event::CloseOnionSkinMenu => {
-                self.onion_skin_menu_open = false;
+                self.close_popover(Popover::OnionSkinMenu);
             }
             Event::OnionSkinModeSelected(mode) => {
                 if mode.is_implemented() {
@@ -51,7 +51,7 @@ impl Toolbar {
                         tracing::debug!("工具栏: 洋葱皮显示范围切换为 {}", mode.as_str());
                     }
                 }
-                self.onion_skin_menu_open = false;
+                self.close_popover(Popover::OnionSkinMenu);
             }
             _ => return false,
         }

@@ -13,8 +13,8 @@ impl Toolbar {
                 self.arc_mode = false;
                 // 关闭附着于工具栏的下拉（画刷/形状），避免工具切换后残留；
                 // 但**不关闭**音符绘制悬浮工具条——它是独立常驻浮层，与工具切换无关。
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
+                self.close_popover(Popover::BrushDropdown);
+                self.close_popover(Popover::ShapeDropdown);
             }
             Event::FillToggled(enabled) => {
                 self.fill_enabled = enabled;
@@ -27,13 +27,13 @@ impl Toolbar {
             Event::ToggleToolPanel => {
                 self.tool_panel_open = !self.tool_panel_open;
                 // 与溢出菜单、画刷/形状下拉/粗细面板互斥：打开绘制工具条时关闭其余浮层
-                self.overflow_menu_open = false;
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
+                self.close_popover(Popover::OverflowMenu);
+                self.close_popover(Popover::BrushDropdown);
+                self.close_popover(Popover::ShapeDropdown);
                 // 关闭时一并收起粗细面板：它锚定在悬浮条的按钮上，悬浮条不在就没有锚点；
                 // 留着"开"状态会让下次打开悬浮条时凭空弹出一块面板（用户早已看不见它）
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
+                self.close_popover(Popover::ThicknessPanel);
+                self.close_popover(Popover::TextParams);
                 // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
                 if !self.tool_panel_open {
                     self.tool_panel_dragging = false;
@@ -53,23 +53,23 @@ impl Toolbar {
                 self.tool_panel_dragging = false;
                 self.tool_panel_last_cursor = None;
                 // 悬浮条关闭即无从承载工具设置下拉 / 粗细面板，一并收起
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-                self.thickness_panel_open = false;
-                self.text_params_open = false;
+                self.close_popover(Popover::BrushDropdown);
+                self.close_popover(Popover::ShapeDropdown);
+                self.close_popover(Popover::ThicknessPanel);
+                self.close_popover(Popover::TextParams);
                 tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
             }
             Event::ToolPanelItemSelected(item) => {
                 // 普通点击：仅执行选择语义（切工具 / 切换填充共存态），保持面板打开。
                 self.apply_tool_panel_item(item);
-                self.text_params_open = false;
+                self.close_popover(Popover::TextParams);
                 // 选中后**保持面板打开**：悬浮工具条是常驻浮层，允许连续切换绘制工具
                 // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
                 tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
             }
             Event::ToolPanelItemSettingsRequested(item) => self.open_tool_settings(item),
             Event::CloseTextParamsPanel => {
-                self.text_params_open = false;
+                self.close_popover(Popover::TextParams);
                 tracing::debug!("工具栏: 关闭文字参数面板");
             }
             _ => {}
@@ -115,17 +115,17 @@ impl Toolbar {
         // 视图层只在条目已启用时发本事件（见 `root/draw_toolbar.rs::tool_panel_item_press`），
         // 因此这里仍先套用一次选择语义（幂等，且保证填充态不被 toggle 掉）。
         self.apply_tool_panel_item(item);
-        self.text_params_open = false;
+        self.close_popover(Popover::TextParams);
         match item {
             ToolPanelItem::Brush => {
                 // 画刷设置下拉（全局粗细只读显示 / 绘制行为入口）
-                self.brush_dropdown_open = true;
-                self.shape_dropdown_open = false;
+                self.open_popover(Popover::BrushDropdown);
+                self.close_popover(Popover::ShapeDropdown);
             }
             ToolPanelItem::Shape => {
                 // 形状设置下拉（矩形 / 圆形 / 三角形），二者互斥
-                self.shape_dropdown_open = true;
-                self.brush_dropdown_open = false;
+                self.open_popover(Popover::ShapeDropdown);
+                self.close_popover(Popover::BrushDropdown);
             }
             ToolPanelItem::FillBucket => {
                 // 颜料桶的设置 = 「分音符填充」面板；`apply_tool_panel_item` 对颜料桶
@@ -135,10 +135,10 @@ impl Toolbar {
             }
             // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
             ToolPanelItem::Text => {
-                self.text_params_open = true;
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-                self.thickness_panel_open = false;
+                self.open_popover(Popover::TextParams);
+                self.close_popover(Popover::BrushDropdown);
+                self.close_popover(Popover::ShapeDropdown);
+                self.close_popover(Popover::ThicknessPanel);
             }
             _ => {}
         }

@@ -4,6 +4,7 @@
 //! `ToolbarAction`；这里把生产状态镜像进去，并把点击翻译回与 上一代 悬浮条
 //! **同一批** `toolbar::Event` 构造器。
 
+use crate::toolbar::Popover;
 use lumino_core::i18n::main_translations;
 use lumino_core::{BrushConfig, TextLayoutMode, tr};
 use lumino_ui_egui::chrome::{
@@ -92,7 +93,7 @@ pub(super) fn model(root: &Root, left_inset: f32, top_inset: f32) -> Option<Tool
         gear_tooltip: tr!("打开绘制工具设置").to_owned(),
         thickness_tooltip: t.tool_thickness.to_owned(),
         items,
-        thickness_selected: root.toolbar.thickness_panel_open,
+        thickness_selected: root.toolbar.is_popover_open(Popover::ThicknessPanel),
         panel: panel_model(root, language),
     })
 }
@@ -103,7 +104,7 @@ fn panel_model(
     language: lumino_core::i18n::Language,
 ) -> Option<ToolPanelSettingsPanel> {
     let t = main_translations(language);
-    if root.toolbar.brush_dropdown_open {
+    if root.toolbar.is_popover_open(Popover::BrushDropdown) {
         let thickness = root
             .toolbar
             .brush
@@ -123,7 +124,7 @@ fn panel_model(
             show_behavior: thickness > 1,
         }));
     }
-    if root.toolbar.shape_dropdown_open {
+    if root.toolbar.is_popover_open(Popover::ShapeDropdown) {
         return Some(ToolPanelSettingsPanel::Shape(ShapePanelModel {
             selected: shape_kind(root.toolbar.current_shape),
             rectangle: tr!("矩形").to_owned(),
@@ -148,7 +149,7 @@ fn panel_model(
             },
         ));
     }
-    if root.toolbar.text_params_open {
+    if root.toolbar.is_popover_open(Popover::TextParams) {
         let text = &root.editor.editor_state.text_tool;
         let mut fonts: Vec<String> = lumino_note_core::font_scanner::get_cached_fonts()
             .iter()
@@ -169,7 +170,7 @@ fn panel_model(
             fonts,
         }));
     }
-    if root.toolbar.thickness_panel_open {
+    if root.toolbar.is_popover_open(Popover::ThicknessPanel) {
         let value = root
             .toolbar
             .brush

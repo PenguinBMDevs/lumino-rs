@@ -1,6 +1,7 @@
 //! `egui_chrome` 的模型装配单测：状态映射与瞬态让位。
 
 use super::*;
+use crate::toolbar::Popover;
 use lumino_core::SnapSpec;
 use lumino_core::i18n::Language;
 use lumino_ui_core::onion_skin_mode::OnionSkinMode;
@@ -590,12 +591,12 @@ fn legacy_popups_no_longer_disable_the_overlay() {
     );
 
     let mut onion = Root::new(&lumino_core::storage::config::UiConfig::default());
-    onion.toolbar.onion_skin_menu_open = true;
+    onion.toolbar.open_popover(Popover::OnionSkinMenu);
     assert!(onion.egui_chrome_model().toolbar.is_some());
 
     // 溢出菜单已由 egui 接管：不再让位（内容按真实宽度重算）。
     let mut overflow = Root::new(&lumino_core::storage::config::UiConfig::default());
-    overflow.toolbar.overflow_menu_open = true;
+    overflow.toolbar.open_popover(Popover::OverflowMenu);
     let model = overflow.egui_chrome_model_for(900.0);
     assert!(
         model.toolbar.is_some(),

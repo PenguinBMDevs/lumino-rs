@@ -6,20 +6,6 @@
 
 use super::*;
 
-/// 工具栏内除常驻悬浮条外的互斥浮层。
-///
-/// `ToolPanel`（音符绘制悬浮条）不在其中：它是常驻浮层，只由显式事件开关，
-/// 不参与「收到其它动作即收起」的守卫。
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Popover {
-    OverflowMenu,
-    BrushDropdown,
-    ShapeDropdown,
-    OnionSkinMenu,
-    ThicknessPanel,
-    TextParams,
-}
-
 /// 本事件允许保持打开的浮层。
 #[derive(Clone, Copy)]
 enum PopoverKeep {
@@ -52,7 +38,7 @@ impl Toolbar {
             onion_skin_enabled: false,
             // 显示范围默认「全部音轨」：与删除模式字段前的老行为一致
             onion_skin_mode: lumino_ui_core::onion_skin_mode::OnionSkinMode::default(),
-            onion_skin_menu_open: false,
+            active_popover: None,
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             ppq_edit_error: None,
@@ -60,20 +46,15 @@ impl Toolbar {
             bpm_edit_buffer: String::new(),
             bpm_edit_error: None,
             bpm_edit_anchor_tick: 0.0,
-            overflow_menu_open: false,
             tool_panel_open: false,
             // 默认位置：水平居中（dx=0）、距窗口底部内缩 44px（悬浮于卷帘区域下缘）
             tool_panel_offset: TOOL_PANEL_DEFAULT_OFFSET,
             tool_panel_dragging: false,
             tool_panel_last_cursor: None,
-            brush_dropdown_open: false,
             brush: BrushConfig::new(),
-            thickness_panel_open: false,
             fill_enabled: false,
             arc_mode: false,
-            shape_dropdown_open: false,
             current_shape: ShapeType::default(),
-            text_params_open: false,
         }
     }
 
@@ -193,32 +174,19 @@ impl Toolbar {
     }
 
     /// 收到「其它动作」时收起互斥浮层；每个浮层只放行自己的开合 / 内部交互事件。
+    ///
+    /// 存储只有一个 `Option`：这里只需判断「当前打开的那个是否被本事件放行」。
+    /// 粗细面板与文字参数面板的连带关系已由单存储消解——它们不可能同时打开。
     fn dismiss_popovers(&mut self, event: &Event) {
         let keep = popover_keep(event);
         if matches!(keep, PopoverKeep::All) {
             return;
         }
-        let keeps = |popover| matches!(keep, PopoverKeep::Only(kept) if kept == popover);
-        if !keeps(Popover::OverflowMenu) {
-            self.overflow_menu_open = false;
-        }
-        if !keeps(Popover::BrushDropdown) {
-            self.brush_dropdown_open = false;
-        }
-        if !keeps(Popover::ShapeDropdown) {
-            self.shape_dropdown_open = false;
-        }
-        if !keeps(Popover::OnionSkinMenu) {
-            self.onion_skin_menu_open = false;
-        }
-        if !keeps(Popover::ThicknessPanel) {
-            // 粗细面板收起时文字参数面板一并收起：两者锚定同一悬浮条，
-            // 留着「开」状态会在下次打开时凭空弹出一块面板。
-            self.thickness_panel_open = false;
-            self.text_params_open = false;
-        }
-        if !keeps(Popover::TextParams) {
-            self.text_params_open = false;
+        if let Some(active) = self.active_popover {
+            let kept = matches!(keep, PopoverKeep::Only(kept) if kept == active);
+            if !kept {
+                self.active_popover = None;
+            }
         }
     }
 

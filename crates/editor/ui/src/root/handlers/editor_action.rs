@@ -5,6 +5,7 @@
 
 use crate::message::EditorAction;
 use crate::root::Root;
+use crate::toolbar::Popover;
 use lumino_core::tr;
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
@@ -98,8 +99,8 @@ impl Root {
         self.state.fill_division_dialog.is_open = true;
         self.state.fill_division_dialog.value = current.map(|n| n.to_string()).unwrap_or_default();
         self.toolbar.tool_panel_open = true;
-        self.toolbar.brush_dropdown_open = false;
-        self.toolbar.shape_dropdown_open = false;
+        self.toolbar.close_popover(Popover::BrushDropdown);
+        self.toolbar.close_popover(Popover::ShapeDropdown);
     }
 
     /// 处理钢琴卷帘右键上下文菜单动作
