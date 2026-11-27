@@ -66,7 +66,9 @@ fn test_active_kernel_matches_cpu_loop() {
     // 最小管线装配（与 `WaterfallRenderer::run_active_kernel` 同布局语义）。
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("waterfall_active_test"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../shaders/waterfall_active.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(
+            include_str!("../../shaders/waterfall_active.wgsl").into(),
+        ),
     });
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("waterfall_active_test_bgl"),
