@@ -1,12 +1,7 @@
 {
-  "files_total": 2291,
-  "lines_total": 419669,
+  "files_total": 2295,
+  "lines_total": 419820,
   "files_over_600": [
-    {
-      "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
-      "lines": 898,
-      "test": false
-    },
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
       "lines": 876,
@@ -58,8 +53,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/toolbar/tests.rs",
+      "lines": 662,
+      "test": true
+    },
+    {
       "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
-      "lines": 656,
+      "lines": 657,
       "test": true
     },
     {
@@ -95,11 +95,6 @@
     {
       "path": "crates/editor/editor-state/src/editor_state/brush_tool/tests.rs",
       "lines": 629,
-      "test": true
-    },
-    {
-      "path": "crates/editor/ui/src/toolbar/tests.rs",
-      "lines": 627,
       "test": true
     },
     {
@@ -139,7 +134,7 @@
     }
   ],
   "test_files_over_800": [],
-  "production_files_over_600": 14,
+  "production_files_over_600": 13,
   "functions_over_100": [
     {
       "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
@@ -193,7 +188,7 @@
     {
       "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
       "name": "handle_piano_roll_context_menu",
-      "line": 106,
+      "line": 107,
       "lines": 324,
       "test": false
     },
@@ -534,9 +529,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
+      "path": "crates/editor/ui/src/host/render/egui_overlay/draw.rs",
       "name": "draw",
-      "line": 174,
+      "line": 31,
       "lines": 202,
       "test": false
     },
@@ -611,9 +606,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
+      "path": "crates/editor/ui/src/host/render/egui_overlay/host.rs",
       "name": "render_egui_overlay",
-      "line": 417,
+      "line": 13,
       "lines": 190,
       "test": false
     },
@@ -1600,7 +1595,7 @@
     {
       "path": "crates/editor/ui/src/toolbar/update.rs",
       "name": "update",
-      "line": 81,
+      "line": 62,
       "lines": 113,
       "test": false
     },
@@ -1994,7 +1989,7 @@
     {
       "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
       "name": "handle_piano_roll_context_menu",
-      "line": 106,
+      "line": 107,
       "lines": 324,
       "test": false
     },
@@ -2335,9 +2330,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
+      "path": "crates/editor/ui/src/host/render/egui_overlay/draw.rs",
       "name": "draw",
-      "line": 174,
+      "line": 31,
       "lines": 202,
       "test": false
     },
@@ -2428,8 +2423,8 @@
       40
     ],
     [
-      "ChunkedList",
-      36
+      "Toolbar",
+      39
     ]
   ],
   "wide_structs": [
@@ -2452,10 +2447,6 @@
     [
       "MiditrailRenderer",
       50
-    ],
-    [
-      "Toolbar",
-      38
     ],
     [
       "RootState",
@@ -2487,6 +2478,10 @@
     ],
     [
       "Host",
+      33
+    ],
+    [
+      "Toolbar",
       33
     ],
     [
