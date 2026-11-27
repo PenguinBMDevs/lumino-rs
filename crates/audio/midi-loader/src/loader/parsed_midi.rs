@@ -6,6 +6,7 @@ use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 use crate::LmpjData;
 use crate::ParsedMidi;
+use crate::PortSoundfontMap;
 use crate::info::MidiInfo;
 use crate::{LoaderError, LoaderResult, MidiDocument};
 
@@ -233,6 +234,8 @@ pub async fn load_parsed_midi(
         use10: false,
         // 常规 MIDI 文件无图片转 MIDI 参数
         i2m: None,
+        // 常规 MIDI 文件无端口音色库映射
+        port_soundfonts: PortSoundfontMap::default(),
         timing_report,
     })
 }
@@ -312,6 +315,8 @@ pub async fn load_parsed_midi_from_bytes(
         use10: false,
         // 字节加载路径无图片转 MIDI 参数
         i2m: None,
+        // 字节加载路径无端口音色库映射
+        port_soundfonts: PortSoundfontMap::default(),
         timing_report,
     })
 }

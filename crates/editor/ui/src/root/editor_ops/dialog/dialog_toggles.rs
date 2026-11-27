@@ -2,6 +2,7 @@
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 impl Root {
     /// 对话框开关的统一骨架。
@@ -64,6 +65,25 @@ impl Root {
     pub fn set_tempo_max_bpm_dialog(&mut self, current_bpm: f64) {
         self.state.tempo_max_bpm_dialog.open(current_bpm);
         self.state.dialog_type = DialogType::TempoMaxBpm;
+    }
+
+    /// 注入端口音色库映射并打开对话框（REND-005，独立 OS 窗口）。
+    ///
+    /// `document_max_port` 决定展示到第几个端口；已配置但超出当前布局的端口
+    /// 仍会展示（由状态层保证），避免“打开再确定”丢配置。
+    pub fn set_port_soundfonts_dialog(&mut self, map: &PortSoundfontMap, document_max_port: u8) {
+        self.state
+            .port_soundfonts_dialog
+            .open(map, document_max_port);
+        self.state.dialog_type = DialogType::PortSoundfonts;
+    }
+
+    /// 注入后端名与端口数并打开「端口音色库未生效」提示窗（REND-005）。
+    pub fn set_port_soundfonts_unsupported_dialog(&mut self, backend: String, ports: usize) {
+        self.state
+            .port_soundfonts_unsupported_dialog
+            .open(backend, ports);
+        self.state.dialog_type = DialogType::PortSoundfontsUnsupported;
     }
 
     /// 设置批量编辑对话框是否打开

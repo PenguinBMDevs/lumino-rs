@@ -102,6 +102,8 @@ impl DialogWindow {
             DialogType::About => (tr!("关于"), false),
             DialogType::ShapeDrawer => (tr!("形状抽屉"), true),
             DialogType::History => (tr!("撤销历史"), true),
+            DialogType::PortSoundfonts => (tr!("端口音色库"), false),
+            DialogType::PortSoundfontsUnsupported => (tr!("端口音色库未生效"), false),
             DialogType::Mixer => (tr!("混音台"), true),
         };
 

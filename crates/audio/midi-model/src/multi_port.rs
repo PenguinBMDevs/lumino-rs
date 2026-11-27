@@ -10,6 +10,10 @@
 //! Phase 1（解锁）提供本模块原语与端口上限；导出/实时/追齐的**接线**
 //! 在后续阶段进行，接线前所有调用方走 port=0 恒等路径。
 
+mod port_soundfont;
+
+pub use port_soundfont::{PortSoundfontEntry, PortSoundfontMap};
+
 /// 每个 MIDI 端口占用的通道数（标准 MIDI 通道数）。
 pub const CHANNELS_PER_PORT: u16 = 16;
 
@@ -65,6 +69,16 @@ pub fn channels_for_max_port_clamped(max_port: u8) -> u32 {
 #[inline]
 pub fn track_global_channel(port: u8, channel: u8) -> u16 {
     global_channel(effective_port(port), channel)
+}
+
+/// 端口 `port` 覆盖的全局通道范围（半开区间，自动折叠超上限端口）。
+///
+/// 端口 `p` 占 `[p*16, p*16+16)`；单端口（port=0）为 `0..16`，与现状一致。
+/// 按端口下发 `SetSoundfonts` 时，调用方遍历本范围即可覆盖该端口全部通道。
+#[inline]
+pub fn channels_for_port(port: u8) -> std::ops::Range<u32> {
+    let start = u32::from(global_channel(effective_port(port), 0));
+    start..start + u32::from(CHANNELS_PER_PORT)
 }
 
 /// 逐端口 ch9（打击乐）的全局通道列表：`0..=min(max_port, MAX_PORTS-1)`。
@@ -216,6 +230,18 @@ mod tests {
         // Night Voyager 实测素材端口 0..=6。
         assert_eq!(global_channel(6, 0), 96);
         assert_eq!(global_channel(6, 15), 111);
+    }
+
+    #[test]
+    fn channels_for_port_covers_port_blocks() {
+        assert_eq!(channels_for_port(0), 0u32..16, "单端口 → 0..16");
+        assert_eq!(channels_for_port(1), 16u32..32);
+        assert_eq!(channels_for_port(6), 96u32..112);
+        assert_eq!(
+            channels_for_port(127),
+            240u32..256,
+            "超上限端口折叠到端口 15"
+        );
     }
 
     #[test]

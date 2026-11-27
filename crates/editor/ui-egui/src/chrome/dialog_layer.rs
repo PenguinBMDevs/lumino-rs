@@ -34,6 +34,10 @@ fn show_content(root: &mut egui::Ui, dialog: &DialogModel, icons: &mut IconCache
         // 复用设置场景渲染器：图标缓存由叠加层提供，渲染完再归还。
         DialogModel::Settings(values) => show_settings(root, values, icons),
         DialogModel::ProjectSettings(model) => crate::project_settings::show(root, model),
+        DialogModel::PortSoundfonts(model) => crate::port_soundfonts::show(root, model),
+        DialogModel::PortSoundfontsUnsupported(model) => {
+            crate::port_soundfonts_unsupported::show(root, model)
+        }
         DialogModel::History(model) => crate::history::show(root, model, icons),
         DialogModel::BatchEdit(model) => crate::batch_edit::show(root, model),
         DialogModel::SpeedChange(model) => crate::speed_change::show(root, model),

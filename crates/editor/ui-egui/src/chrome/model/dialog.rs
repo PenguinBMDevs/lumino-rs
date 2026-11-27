@@ -168,6 +168,10 @@ pub struct ProjectSettingsModel {
     pub editing_time: String,
     /// 音符总量（仅 `NoteCountDisplay::ProjectSettings` 时出现）。
     pub note_count: Option<ProjectNoteCountModel>,
+    /// 端口音色库（REND-005）：标签 / 摘要 / 「编辑…」按钮。
+    pub port_soundfonts_label: String,
+    pub port_soundfonts_summary: String,
+    pub port_soundfonts_button: String,
     /// 按钮文案。
     pub ok: String,
     pub cancel: String,

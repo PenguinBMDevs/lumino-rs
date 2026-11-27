@@ -202,6 +202,13 @@ fn lookup_export_3(zh: &str) -> Option<&'static str> {
         "预计剩余: {t}" => Some("Remaining: {t}"),
 
         "预计剩余: 计算中..." => Some("Remaining: calculating..."),
+
+        // ── REND-005：GPU 导出拒绝非空端口映射 ──
+        "GPU 后端暂不支持按端口音色库，请切换 CPU 后端或清除端口音色库映射" => {
+            Some(
+                "The GPU backend does not support per-port soundfonts yet; switch to the CPU backend or clear the port soundfont mappings",
+            )
+        }
         _ => None,
     }
 }

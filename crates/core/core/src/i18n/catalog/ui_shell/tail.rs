@@ -370,6 +370,9 @@ fn lookup_shell_10(zh: &str) -> Option<&'static str> {
         "开始把图片转换为 MIDI" => Some("Start converting the image to MIDI"),
 
         "打开画刷行为设置" => Some("Open brush behavior settings"),
+
+        // ── REND-005：端口音色库选择对话框标题（`root/handlers/dialog/port_soundfonts.rs`）──
+        "选择端口音色库" => Some("Choose Port Soundfont"),
         _ => None,
     }
 }

@@ -14,6 +14,7 @@ use crate::Theme;
 use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, right_sidebar, settings, sidebar, statusbar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 pub use lumino_ui_core::visual_state::VisualState;
 
@@ -115,6 +116,12 @@ pub struct Root {
     /// 真源在 Runner 的 `UiConfig.recent_files`，这里只是给菜单装配用的运行时快照；
     /// 打开/保存成功、清除历史时由 Runner 推送最新列表。
     pub(crate) recent_files: Vec<lumino_core::storage::config::RecentFile>,
+    /// 工程级「端口 → 音色库」映射（REND-005）。
+    ///
+    /// 工程数据：关闭/新建工程时随 `reset_project_settings` 归零，
+    /// 打开 `.lmpj` 时由 `apply_loaded_project_metadata` 链路回填。
+    /// 导出与实时合成从同一字段读取，避免“保存了但导出/试听不一致”。
+    pub(crate) port_soundfonts: PortSoundfontMap,
 }
 
 /// Root 构造参数
@@ -247,6 +254,7 @@ impl Root {
                 cloud: crate::state::cloud_state::CloudUiState::default(),
                 deferred_remote_ops: Vec::new(),
                 recent_files: params.ui_config.recent_files.clone(),
+                port_soundfonts: PortSoundfontMap::default(),
             }
         })
     }
@@ -411,6 +419,23 @@ impl Root {
     /// 更新最近打开/保存的文件列表（Runner 在打开/保存成功、清除历史后推送）。
     pub fn set_recent_files(&mut self, files: Vec<lumino_core::storage::config::RecentFile>) {
         self.recent_files = files;
+    }
+
+    /// 当前工程的「端口 → 音色库」映射（REND-005）。
+    pub fn port_soundfonts(&self) -> &PortSoundfontMap {
+        &self.port_soundfonts
+    }
+
+    /// 替换工程的端口音色库映射（加载工程 / 端口音色库窗口确认）。
+    ///
+    /// 值变化时标记工程未保存：映射属于工程数据，改完不标脏会让 Ctrl+S
+    /// 与关闭确认都误以为没有改动。加载路径随后会 `mark_project_clean`。
+    pub fn set_port_soundfonts(&mut self, map: PortSoundfontMap) {
+        if self.port_soundfonts == map {
+            return;
+        }
+        self.port_soundfonts = map;
+        self.editor.editor_state.data.mark_modified();
     }
 }
 

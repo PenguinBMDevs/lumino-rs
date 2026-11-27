@@ -455,6 +455,24 @@ impl Host {
         self.root.editor.editor_state.use10
     }
 
+    /// 当前工程的端口音色库映射（REND-005；保存/导出/实时共用同一字段）。
+    pub fn get_project_port_soundfonts(&self) -> lumino_midi_model::multi_port::PortSoundfontMap {
+        self.root.port_soundfonts().clone()
+    }
+
+    /// 当前文档使用到的最大 MIDI 端口（0 = 单端口；无文档时 0）。
+    ///
+    /// 端口音色库窗口据此决定展示到第几个端口。
+    pub fn document_max_port(&self) -> u8 {
+        self.root
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map_or(0, lumino_midi_model::MidiDocument::max_port)
+    }
+
     /// 获取并清空对话框结果
     pub fn take_dialog_result(&mut self) -> Option<DialogResult> {
         self.root.take_dialog_result()

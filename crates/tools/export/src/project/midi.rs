@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use lumino_midi_loader::{MidiInfo, ParsedMidi};
+use lumino_midi_loader::{MidiInfo, ParsedMidi, PortSoundfontMap};
 use lumino_project::project::LuminoProject;
 
 use crate::{ExportError, ExportResult};
@@ -48,6 +48,13 @@ pub fn project_to_parsed_midi(
             .settings
             .as_ref()
             .and_then(|settings| settings.i2m.clone()),
+        // 端口音色库映射（REND-005）；旧工程无该段时为空映射（全部回退全局）
+        port_soundfonts: project
+            .metadata
+            .settings
+            .as_ref()
+            .map(|settings| PortSoundfontMap::from_entries(settings.port_soundfonts.clone()))
+            .unwrap_or_default(),
         // 工程文件不含解析期 EOT 诊断（非工程数据）
         timing_report: Default::default(),
     })

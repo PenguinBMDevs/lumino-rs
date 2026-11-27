@@ -1,6 +1,7 @@
 //! 工程设置对话框数据管理
 
 use lumino_core::tr;
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 use crate::root::Root;
 
@@ -27,6 +28,8 @@ pub struct ProjectSettingsDialogData {
     pub time_signatures: Vec<(u32, u8, u8)>,
     /// 启用通道 10（DRAW-032）：区域着色色号上限 15 → 16
     pub use10: bool,
+    /// 端口音色库映射（REND-005；仅用于对话框内摘要展示与「编辑…」入口）
+    pub port_soundfonts: PortSoundfontMap,
 }
 
 impl Root {
@@ -43,6 +46,9 @@ impl Root {
         // 图片转 MIDI 参数（DRAW-030）同属工程数据：重置到默认，
         // 打开工程时再由 `apply_loaded_project_metadata` 回填。
         self.right_sidebar.config = crate::right_sidebar::I2mConfig::default();
+        // REND-005：端口音色库映射同属工程数据，关闭/新建工程必须归零，
+        // 否则上一工程的覆盖会污染下一工程的实时/导出结果。
+        self.port_soundfonts = lumino_midi_model::multi_port::PortSoundfontMap::default();
     }
 
     /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权。
@@ -102,6 +108,8 @@ impl Root {
             .project_settings_dialog
             .time_signature_denominator = denominator.to_string();
         self.state.project_settings_dialog.use10 = data.use10;
+        // REND-005：对话框是独立 Root，映射快照由 Runner 注入；摘要/入口据此展示
+        self.port_soundfonts = data.port_soundfonts;
     }
 
     /// 应用工程设置到主窗口
@@ -133,25 +141,65 @@ impl Root {
         self.editor.editor_state.use10 = use10;
 
         // 同步到编辑器 tempo 数据（用户编辑的源，同时同步 document.tempo_changes）
-        self.editor.editor_state.data.set_tempo_points(vec![
+        //
+        // 重要：工程设置里的 BPM 只代表**初始速度**（tick 0），不能把整条
+        // 变速轨压成一个点——否则用户只改标题/作者再点确定，导入的多次变速
+        // 就会全部丢失（导出音频随之变成恒速）。
+        let mut tempo_points: Vec<crate::editor::editor_state::TempoPoint> = self
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .filter(|point| point.tick > 0.0)
+            .copied()
+            .collect();
+        tempo_points.insert(
+            0,
             crate::editor::editor_state::TempoPoint {
                 tick: 0.0,
                 bpm: tempo,
             },
-        ]);
+        );
+        let tempo_micros: Vec<(u32, u32)> = tempo_points
+            .iter()
+            .map(|point| {
+                (
+                    point.tick.max(0.0) as u32,
+                    lumino_midi_loader::bpm_to_tempo(point.bpm),
+                )
+            })
+            .collect();
+        self.editor.editor_state.data.set_tempo_points(tempo_points);
 
         // 同步拍号变化到编辑器数据（经统一入口，同时同步 document.time_signatures）
-        let mut sorted_ts = time_signatures;
-        sorted_ts.sort_by_key(|(tick, _, _)| *tick);
-        if sorted_ts.is_empty() {
-            sorted_ts.push((0, 4, 4));
-        }
-        self.editor.editor_state.data.set_time_signatures(sorted_ts);
+        //
+        // 同样只更新 tick 0 的拍号，保留后续拍号变化；不能整体替换。
+        let (numerator, denominator) = time_signatures
+            .iter()
+            .find(|(tick, _, _)| *tick == 0)
+            .map(|(_, n, d)| (*n, *d))
+            .or_else(|| time_signatures.first().map(|(_, n, d)| (*n, *d)))
+            .unwrap_or((4, 4));
+        let mut merged_time_signatures: Vec<(u32, u8, u8)> = self
+            .editor
+            .editor_state
+            .data
+            .time_signatures
+            .iter()
+            .copied()
+            .filter(|(tick, _, _)| *tick > 0)
+            .collect();
+        merged_time_signatures.insert(0, (0, numerator, denominator));
+        merged_time_signatures.sort_by_key(|(tick, _, _)| *tick);
+        self.editor
+            .editor_state
+            .data
+            .set_time_signatures(merged_time_signatures);
         // 拍号变化可能影响网格，清空相关缓存
 
-        // 同步到播放管理器
-        let tempo_micros = lumino_midi_loader::bpm_to_tempo(tempo) as u32;
-        self.load_tempo_changes(vec![(0, tempo_micros)]);
+        // 同步到播放管理器：必须下发完整变速轨，而不是单点 BPM。
+        self.load_tempo_changes(tempo_micros);
     }
 
     /// 获取当前项目设置数据（用于填充工程设置对话框）

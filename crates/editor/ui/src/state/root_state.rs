@@ -22,6 +22,9 @@ use std::rc::Rc;
 
 use crate::app_mode::AppMode;
 use crate::shape_drawer::doc::{DrawerDoc, DrawerInteraction};
+use crate::state::port_soundfonts_dialog::{
+    PortSoundfontsDialogState, PortSoundfontsUnsupportedDialogState,
+};
 use lumino_core::BrushConfig;
 use lumino_core::shape::{LibraryWarning, ShapeLibrary, Stroke};
 use lumino_ui_core::help::{HelpDialogState, HelpTipsState};
@@ -111,6 +114,10 @@ pub struct RootState {
     pub collaboration_dialog: CollaborationDialogState,
     /// 工程设置对话框状态
     pub project_settings_dialog: ProjectSettingsDialogState,
+    /// 端口音色库对话框状态（REND-005，独立窗口）
+    pub port_soundfonts_dialog: PortSoundfontsDialogState,
+    /// 「端口音色库未生效」提示窗状态（REND-005，独立窗口）
+    pub port_soundfonts_unsupported_dialog: PortSoundfontsUnsupportedDialogState,
     /// 音频导出对话框状态
     pub audio_export_dialog: AudioExportDialogState,
     /// 视频导出对话框状态
@@ -203,6 +210,8 @@ impl RootState {
             load_confirm_dialog: LoadConfirmDialogState::default(),
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),
+            port_soundfonts_dialog: PortSoundfontsDialogState::new(),
+            port_soundfonts_unsupported_dialog: PortSoundfontsUnsupportedDialogState::default(),
             audio_export_dialog: AudioExportDialogState::new(),
             video_export_dialog: VideoExportDialogState::new(),
             export_progress_dialog: ExportProgressDialogState::new(),

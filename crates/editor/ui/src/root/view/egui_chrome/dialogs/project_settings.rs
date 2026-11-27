@@ -3,7 +3,7 @@
 //! 单独成文件把 `dialogs.rs` 保持在 600 行以内。
 
 use lumino_core::i18n::main_translations;
-use lumino_core::tr;
+use lumino_core::{tr, trf};
 use lumino_ui_egui::chrome::{ProjectNoteCountModel, ProjectSettingsModel};
 
 use crate::Message;
@@ -14,6 +14,7 @@ impl Root {
     pub(super) fn project_settings_model(&self) -> ProjectSettingsModel {
         let t = main_translations(self.settings.display.language);
         let dialog = &self.state.project_settings_dialog;
+        let configured_ports = self.port_soundfonts().len();
         ProjectSettingsModel {
             titlebar: !self.settings.synth.use_native_titlebar,
             title: t.project_title.to_owned(),
@@ -48,6 +49,13 @@ impl Root {
                     label: t.note_count_label.to_owned(),
                     value: lumino_core::i18n::format_thousands(dialog.note_count as u64),
                 }),
+            port_soundfonts_label: tr!("端口音色库").to_string(),
+            port_soundfonts_summary: if configured_ports == 0 {
+                tr!("全部使用全局音色库").to_string()
+            } else {
+                trf!("已配置 {n} 个端口", n = configured_ports)
+            },
+            port_soundfonts_button: tr!("编辑…").to_string(),
             ok: t.project_ok.to_owned(),
             cancel: t.project_cancel.to_owned(),
         }
@@ -80,6 +88,7 @@ impl Root {
                 Message::ProjectSettings(Prod::TimeSignatureDenominatorChanged(value.clone()))
             }
             Action::Use10Changed(value) => Message::ProjectSettings(Prod::Use10Changed(*value)),
+            Action::OpenPortSoundfonts => Message::ProjectSettings(Prod::OpenPortSoundfonts),
             Action::Confirm => Message::ProjectSettings(Prod::Confirm),
             Action::Cancel => Message::ProjectSettings(Prod::CloseDialog),
         })

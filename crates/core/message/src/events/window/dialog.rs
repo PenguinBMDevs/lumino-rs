@@ -139,6 +139,8 @@ pub enum Event {
     OpenProjectSettingsDialog,
     /// 关闭工程设置对话框
     CloseProjectSettingsDialog,
+    /// 打开端口音色库对话框（REND-005；从工程设置进入）
+    OpenPortSoundfontsDialog,
     /// 打开内存监控对话框
     OpenMemoryMonitorDialog,
     /// 关闭内存监控对话框

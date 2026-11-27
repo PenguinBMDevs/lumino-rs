@@ -16,10 +16,10 @@ pub use lumino_message::{
     BatchEditAction, BatchEditField, BrushSettingsAction, CcOption, CustomPrecisionAction, DotType,
     DrawSettingsAction, EditorAction, HistoryAction, Interpolation, LoadConfirmAction,
     LoopRangeAction, MaterialDeleteDialogAction, Message as GenericMessage, NotePrecision,
-    PerfData, Point2, ProjectSettingsAction, RecoverTrackAction, RightSidebarAction,
-    SaveConfirmAction, SettingsDialogAction, ShapeDrawerAction, Size2, SpeedChangeAction,
-    SpeedFactor, TempoMaxBpmDialogAction, ThreadingOption, Tool, TupletType, VelocityAction,
-    VideoClipAction, VideoExportAction,
+    PerfData, Point2, PortSoundfontsAction, PortSoundfontsUnsupportedAction, ProjectSettingsAction,
+    RecoverTrackAction, RightSidebarAction, SaveConfirmAction, SettingsDialogAction,
+    ShapeDrawerAction, Size2, SpeedChangeAction, SpeedFactor, TempoMaxBpmDialogAction,
+    ThreadingOption, Tool, TupletType, VelocityAction, VideoClipAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

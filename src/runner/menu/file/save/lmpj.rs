@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 
 use lumino_core::{tr, trf};
 use lumino_midi_loader::MidiDocument;
+use lumino_midi_model::multi_port::PortSoundfontMap;
 
 use crate::runner::RunnerInner;
 
@@ -37,6 +38,8 @@ pub(in crate::runner) struct LmpjSnapshot {
     /// 必须在主线程快照时读取（工具栏状态不进后台线程），后台组包时写进
     /// `metadata.toml` 的 `[settings]` 段。
     onion_skin_mode: String,
+    /// 端口 → 音色库映射（REND-005；工程数据，随 `[settings]` 段落盘）
+    port_soundfonts: PortSoundfontMap,
 }
 
 impl LmpjSnapshot {
@@ -54,6 +57,8 @@ impl LmpjSnapshot {
             use10: Some(self.use10),
             i2m: Some(self.i2m),
             onion_skin_mode: Some(self.onion_skin_mode),
+            // REND-005：端口音色库映射随工程落盘（空映射不写键）
+            port_soundfonts: self.port_soundfonts.entries().to_vec(),
             ..Default::default()
         });
         project.set_working_time_seconds(self.working_time_seconds);
@@ -83,7 +88,7 @@ impl RunnerInner {
         &self,
         save_path: &Path,
     ) -> Option<LmpjSnapshot> {
-        let (document, shapes, author, copyright, use10, i2m, onion_skin_mode) = {
+        let (document, shapes, author, copyright, use10, i2m, onion_skin_mode, port_soundfonts) = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             // 单一权威源：无文档 = 没有可保存的音符。
@@ -94,6 +99,7 @@ impl RunnerInner {
             let use10 = ui.get_project_use10();
             let i2m = ui.get_project_i2m_config();
             let onion_skin_mode = ui.onion_skin_mode().as_str().to_string();
+            let port_soundfonts = ui.get_project_port_soundfonts();
             (
                 document,
                 shapes,
@@ -102,6 +108,7 @@ impl RunnerInner {
                 use10,
                 i2m,
                 onion_skin_mode,
+                port_soundfonts,
             )
         };
 
@@ -120,6 +127,7 @@ impl RunnerInner {
             use10,
             i2m,
             onion_skin_mode,
+            port_soundfonts,
         })
     }
 
