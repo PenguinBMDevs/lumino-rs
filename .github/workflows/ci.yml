@@ -72,7 +72,7 @@ jobs:
       # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
       # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
       - name: Cache cargo git dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/git
           key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
@@ -153,7 +153,7 @@ jobs:
       # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
       # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
       - name: Cache cargo git dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/git
           key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
@@ -259,7 +259,7 @@ jobs:
       # git 依赖（xsynth-Lumino）单独缓存：2026-11-27 GitHub 偶发对匿名
       # clone 返回 403，缓存命中时无需再拉；未命中时靠 CARGO_NET_RETRY=10 重试。
       - name: Cache cargo git dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/git
           key: cargo-git-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
