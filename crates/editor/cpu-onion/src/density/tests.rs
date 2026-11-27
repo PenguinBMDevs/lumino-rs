@@ -143,6 +143,29 @@ fn overview_switches_at_thirty_visible_measures() {
 }
 
 #[test]
+fn overview_rejects_empty_document_and_invalid_zoom() {
+    let document = sample_document();
+    let index = TrackIndex::build(&document);
+    let mut camera = camera(64.0 / (30.0 * 1920.0));
+    assert!(uses_overview(&index, &camera), "30 个小节应进入总览");
+
+    // 空文档不看缩放。
+    let empty = TrackIndex::build(&MidiDocument::empty_with_tracks(1, 480));
+    assert!(!uses_overview(&empty, &camera), "空文档不得进入总览");
+
+    // 0 / 负 / NaN / Inf 都会让可见小节数的除法溢出成巨大值。
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        camera.zoom_x = bad;
+        assert!(!uses_overview(&index, &camera), "zoom_x = {bad} 必须拒绝");
+    }
+    camera.zoom_x = 64.0 / (30.0 * 1920.0);
+    for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        camera.zoom_y = bad;
+        assert!(!uses_overview(&index, &camera), "zoom_y = {bad} 必须拒绝");
+    }
+}
+
+#[test]
 fn overview_ignores_short_notes_and_key_row_height() {
     let mut document = MidiDocument::empty_with_tracks(2, 480);
     document.insert_note(1, NoteEvent::new(0, 2000, 60, 100, 0));

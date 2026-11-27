@@ -1,6 +1,6 @@
 {
   "files_total": 2257,
-  "lines_total": 415869,
+  "lines_total": 415892,
   "files_over_600": [
     {
       "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
