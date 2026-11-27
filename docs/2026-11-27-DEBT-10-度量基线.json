@@ -1,10 +1,10 @@
 {
-  "files_total": 2252,
-  "lines_total": 416705,
+  "files_total": 2257,
+  "lines_total": 415869,
   "files_over_600": [
     {
       "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
-      "lines": 1018,
+      "lines": 989,
       "test": false
     },
     {
@@ -33,18 +33,8 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/shape_tool/tests.rs",
-      "lines": 775,
-      "test": true
-    },
-    {
       "path": "crates/editor/ui-runtime/src/app.rs",
-      "lines": 771,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "lines": 764,
+      "lines": 769,
       "test": false
     },
     {
@@ -53,13 +43,18 @@
       "test": true
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests/tests_part2.rs",
+      "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests/part2.rs",
       "lines": 740,
       "test": true
     },
     {
       "path": "crates/editor/ui-core/src/state/video_clip_state.rs",
       "lines": 716,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
+      "lines": 700,
       "test": false
     },
     {
@@ -78,14 +73,29 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
+      "lines": 656,
+      "test": true
+    },
+    {
       "path": "crates/editor/ui-editor/src/interaction/drawn_shape/tests.rs",
-      "lines": 636,
+      "lines": 645,
+      "test": true
+    },
+    {
+      "path": "crates/editor/ui-editor/src/tests/drawn_shape_marquee_e2e.rs",
+      "lines": 638,
       "test": true
     },
     {
       "path": "crates/editor/ui-egui/src/chrome/sidebar.rs",
       "lines": 636,
       "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/shape_edit_ui/tests.rs",
+      "lines": 635,
+      "test": true
     },
     {
       "path": "crates/editor/ui-editor/src/interaction/text_tool/tests.rs",
@@ -103,13 +113,8 @@
       "test": true
     },
     {
-      "path": "crates/editor/ui-editor/src/tests/drawn_shape_marquee_e2e.rs",
-      "lines": 627,
-      "test": true
-    },
-    {
       "path": "crates/editor/ui/src/toolbar/tests.rs",
-      "lines": 625,
+      "lines": 627,
       "test": true
     },
     {
@@ -118,29 +123,19 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
-      "lines": 624,
-      "test": true
-    },
-    {
       "path": "crates/editor/ui-editor/src/interaction/shape_ops/tests.rs",
       "lines": 624,
       "test": true
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/shape_edit_ui/tests.rs",
-      "lines": 621,
-      "test": true
+      "path": "crates/editor/ui-editor/src/impls/editor_impl/commit.rs",
+      "lines": 616,
+      "test": false
     },
     {
       "path": "crates/editor/ui-editor/src/interaction/shape_compose/tests/pending.rs",
-      "lines": 621,
+      "lines": 616,
       "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/impls/editor_impl/commit.rs",
-      "lines": 614,
-      "test": false
     },
     {
       "path": "crates/editor/ui-core/src/theme/palette.rs",
@@ -176,17 +171,17 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
+      "name": "handle_video_export",
+      "line": 21,
+      "lines": 352,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-egui/src/shape_drawer.rs",
       "name": "show",
       "line": 49,
       "lines": 351,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
-      "name": "handle_video_export",
-      "line": 21,
-      "lines": 345,
       "test": false
     },
     {
@@ -206,22 +201,22 @@
     {
       "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
       "name": "handle_piano_roll_context_menu",
-      "line": 101,
+      "line": 106,
       "lines": 324,
       "test": false
     },
     {
       "path": "src/runner/menu/file.rs",
       "name": "handle_file_menu_event",
-      "line": 49,
-      "lines": 318,
+      "line": 48,
+      "lines": 317,
       "test": false
     },
     {
       "path": "crates/editor/ui/src/root/handlers/state_update.rs",
       "name": "try_handle_simple_state",
       "line": 12,
-      "lines": 306,
+      "lines": 310,
       "test": false
     },
     {
@@ -248,7 +243,7 @@
     {
       "path": "src/runner/menu/window/collaboration.rs",
       "name": "handle_collaboration_events",
-      "line": 27,
+      "line": 30,
       "lines": 299,
       "test": false
     },
@@ -257,6 +252,13 @@
       "name": "ensure_piano_waterfall_keyboard",
       "line": 111,
       "lines": 298,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/released.rs",
+      "name": "handle_released",
+      "line": 15,
+      "lines": 292,
       "test": false
     },
     {
@@ -281,13 +283,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/released.rs",
-      "name": "handle_released",
-      "line": 15,
-      "lines": 287,
-      "test": false
-    },
-    {
       "path": "src/runner/menu/window/video_export_handler.rs",
       "name": "handle_start_video_export",
       "line": 29,
@@ -306,13 +301,6 @@
       "name": "redraw",
       "line": 18,
       "lines": 284,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/egui_overlay/actions.rs",
-      "name": "apply_overlay_actions",
-      "line": 184,
-      "lines": 278,
       "test": false
     },
     {
@@ -372,13 +360,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
-      "name": "compose_pending_with",
-      "line": 107,
-      "lines": 258,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/velocity_panel.rs",
       "name": "show",
       "line": 105,
@@ -400,6 +381,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
+      "name": "compose_pending_with",
+      "line": 137,
+      "lines": 252,
+      "test": false
+    },
+    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/runner/run.rs",
       "name": "run_render_thread_inner",
       "line": 52,
@@ -409,8 +397,8 @@
     {
       "path": "crates/editor/ui/src/root/handlers/sidebar.rs",
       "name": "handle_sidebar_event",
-      "line": 83,
-      "lines": 244,
+      "line": 82,
+      "lines": 243,
       "test": false
     },
     {
@@ -451,7 +439,7 @@
     {
       "path": "crates/editor/ui-runtime/src/app.rs",
       "name": "render",
-      "line": 454,
+      "line": 452,
       "lines": 227,
       "test": false
     },
@@ -463,6 +451,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
+      "name": "video_export_model",
+      "line": 193,
+      "lines": 225,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-egui/src/shape_canvas.rs",
       "name": "show",
       "line": 180,
@@ -470,24 +465,10 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/runner_menu.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 221,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/chrome/tool_panel/text_panel.rs",
       "name": "show",
       "line": 41,
       "lines": 219,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
-      "name": "video_export_model",
-      "line": 168,
-      "lines": 218,
       "test": false
     },
     {
@@ -568,13 +549,6 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/runner_host.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 202,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
       "name": "draw",
       "line": 174,
@@ -596,17 +570,17 @@
       "test": false
     },
     {
-      "path": "src/runner/menu/window/video_export_handler/pipeline.rs",
-      "name": "run",
-      "line": 79,
+      "path": "crates/editor/ui-editor/src/grid/cursor.rs",
+      "name": "handle_at",
+      "line": 21,
       "lines": 196,
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/audio.rs",
-      "name": "lookup",
-      "line": 11,
-      "lines": 195,
+      "path": "src/runner/menu/window/video_export_handler/pipeline.rs",
+      "name": "run",
+      "line": 79,
+      "lines": 196,
       "test": false
     },
     {
@@ -621,13 +595,6 @@
       "name": "handle",
       "line": 26,
       "lines": 194,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/grid/cursor.rs",
-      "name": "handle_at",
-      "line": 21,
-      "lines": 193,
       "test": false
     },
     {
@@ -701,6 +668,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/apply_actions.rs",
+      "name": "plan_egui_after_canvas",
+      "line": 190,
+      "lines": 185,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-editor/src/interaction/moved.rs",
       "name": "handle_moved",
       "line": 12,
@@ -731,7 +705,7 @@
     {
       "path": "crates/editor/ui/src/root/view/egui_chrome/video_export/counter.rs",
       "name": "section",
-      "line": 36,
+      "line": 38,
       "lines": 179,
       "test": false
     },
@@ -760,7 +734,7 @@
       "path": "crates/editor/ui-editor/src/interaction/pressed.rs",
       "name": "handle_pointer_pressed",
       "line": 129,
-      "lines": 172,
+      "lines": 174,
       "test": false
     },
     {
@@ -813,10 +787,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/impls/playback.rs",
-      "name": "update_playback_key_colors",
-      "line": 108,
-      "lines": 166,
+      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export/data_curve.rs",
+      "name": "section",
+      "line": 43,
+      "lines": 164,
       "test": false
     },
     {
@@ -859,13 +833,6 @@
       "name": "render_frame",
       "line": 124,
       "lines": 162,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export/data_curve.rs",
-      "name": "section",
-      "line": 43,
-      "lines": 160,
       "test": false
     },
     {
@@ -939,17 +906,24 @@
       "test": false
     },
     {
-      "path": "examples/cpu-onionskin/src/render/band.rs",
-      "name": "render_notes",
-      "line": 112,
-      "lines": 156,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/benches/ui_fill_confirm_bench.rs",
       "name": "main",
       "line": 296,
       "lines": 155,
+      "test": false
+    },
+    {
+      "path": "examples/cpu-onionskin/src/render/band.rs",
+      "name": "render_notes",
+      "line": 112,
+      "lines": 155,
+      "test": false
+    },
+    {
+      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
+      "name": "lookup_legacy_1",
+      "line": 11,
+      "lines": 154,
       "test": false
     },
     {
@@ -964,13 +938,6 @@
       "name": "update_playback_notes",
       "line": 17,
       "lines": 153,
-      "test": false
-    },
-    {
-      "path": "crates/core/core/src/i18n/catalog/project_core.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 152,
       "test": false
     },
     {
@@ -991,6 +958,13 @@
       "path": "crates/editor/ui-editor/benches/id_history_ops_bench.rs",
       "name": "main",
       "line": 189,
+      "lines": 152,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/impls/playback.rs",
+      "name": "update",
+      "line": 124,
       "lines": 152,
       "test": false
     },
@@ -1053,7 +1027,7 @@
     {
       "path": "examples/cpu-onionskin/src/app/events.rs",
       "name": "handle_key",
-      "line": 191,
+      "line": 195,
       "lines": 149,
       "test": false
     },
@@ -1089,13 +1063,6 @@
       "path": "crates/editor/gfx/src/global_bucket/cull/extract.rs",
       "name": "extract_count",
       "line": 19,
-      "lines": 145,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/note_renderer/perf_tests/measure.rs",
-      "name": "measure",
-      "line": 29,
       "lines": 145,
       "test": false
     },
@@ -1191,20 +1158,6 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/export.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 140,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/note_renderer/perf_tests/frame_paths.rs",
-      "name": "measure_frame_paths",
-      "line": 77,
-      "lines": 140,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/render/separate_thread/runner/collect.rs",
       "name": "collect_arrangement_instances",
       "line": 29,
@@ -1219,6 +1172,13 @@
       "test": false
     },
     {
+      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
+      "name": "lookup_legacy_3",
+      "line": 300,
+      "lines": 139,
+      "test": false
+    },
+    {
       "path": "crates/editor/egui-bridge/src/painter.rs",
       "name": "new",
       "line": 74,
@@ -1226,9 +1186,23 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/help.rs",
-      "name": "lookup",
-      "line": 7,
+      "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
+      "name": "move_selected_shapes",
+      "line": 700,
+      "lines": 139,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
+      "name": "video_export_action_message",
+      "line": 36,
+      "lines": 138,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/drag.rs",
+      "name": "compute_state_changes",
+      "line": 13,
       "lines": 138,
       "test": false
     },
@@ -1275,17 +1249,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/drag.rs",
-      "name": "compute_state_changes",
-      "line": 13,
-      "lines": 134,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/frame.rs",
-      "name": "process_frame_preparation",
-      "line": 8,
-      "lines": 132,
+      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
+      "name": "lookup_legacy_2",
+      "line": 166,
+      "lines": 133,
       "test": false
     },
     {
@@ -1310,6 +1277,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/host/render/frame.rs",
+      "name": "process_frame_preparation",
+      "line": 8,
+      "lines": 131,
+      "test": false
+    },
+    {
       "path": "crates/editor/editor-state/src/editor_state/shape_ops/strum.rs",
       "name": "apply",
       "line": 15,
@@ -1321,13 +1295,6 @@
       "name": "to_stroke",
       "line": 204,
       "lines": 130,
-      "test": false
-    },
-    {
-      "path": "crates/core/core/src/i18n/catalog/ui_kit.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 129,
       "test": false
     },
     {
@@ -1348,13 +1315,6 @@
       "path": "crates/editor/ui/src/root/view/egui_chrome/curve_preview.rs",
       "name": "curve_preview_model",
       "line": 14,
-      "lines": 128,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
-      "name": "move_selected_shapes",
-      "line": 767,
       "lines": 128,
       "test": false
     },
@@ -1387,9 +1347,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/grid/canvas_input.rs",
-      "name": "dispatch",
-      "line": 66,
+      "path": "crates/editor/ui/src/root/handlers/dialog/video_export/helpers.rs",
+      "name": "build_video_config",
+      "line": 85,
       "lines": 126,
       "test": false
     },
@@ -1418,6 +1378,13 @@
       "path": "crates/editor/ui/src/root/view/egui_chrome/settings_ui/actions.rs",
       "name": "action_message",
       "line": 14,
+      "lines": 122,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/grid/canvas_input.rs",
+      "name": "dispatch",
+      "line": 67,
       "lines": 122,
       "test": false
     },
@@ -1527,13 +1494,6 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/cloud_collab.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 118,
-      "test": false
-    },
-    {
       "path": "crates/editor/gfx/src/miditrail_renderer/instances/notes.rs",
       "name": "build_note_instances",
       "line": 9,
@@ -1573,13 +1533,6 @@
       "name": "show",
       "line": 71,
       "lines": 117,
-      "test": false
-    },
-    {
-      "path": "crates/core/core/src/i18n/catalog/error_display.rs",
-      "name": "lookup",
-      "line": 24,
-      "lines": 115,
       "test": false
     },
     {
@@ -1639,16 +1592,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
-      "name": "video_export_action_message",
-      "line": 36,
-      "lines": 113,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/src/arrangement_ops/razor.rs",
       "name": "apply_razor_split",
-      "line": 80,
+      "line": 61,
       "lines": 113,
       "test": false
     },
@@ -1716,6 +1662,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui-editor/src/interaction/bake.rs",
+      "name": "restore_baked_group",
+      "line": 50,
+      "lines": 111,
+      "test": false
+    },
+    {
       "path": "src/runner/midi_manager/recovery.rs",
       "name": "reinit_if_needed",
       "line": 261,
@@ -1779,13 +1732,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/bake.rs",
-      "name": "restore_baked_group",
-      "line": 50,
-      "lines": 108,
-      "test": false
-    },
-    {
       "path": "src/services/collaboration_service.rs",
       "name": "connect",
       "line": 124,
@@ -1800,13 +1746,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/handlers/dialog/video_export/helpers.rs",
-      "name": "build_video_config",
-      "line": 85,
-      "lines": 107,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/root/view/egui_chrome/arrangement.rs",
       "name": "arrangement_model",
       "line": 21,
@@ -1816,7 +1755,7 @@
     {
       "path": "crates/editor/ui-editor/src/impls/editor_impl/history.rs",
       "name": "redo",
-      "line": 157,
+      "line": 137,
       "lines": 107,
       "test": false
     },
@@ -1954,13 +1893,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/gfx/src/note_renderer/depth_tests/gpu.rs",
-      "name": "test_overlap_pixels_are_draw_order_independent",
-      "line": 9,
-      "lines": 102,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/event/window/keyboard.rs",
       "name": "handle_pinch_gesture",
       "line": 45,
@@ -1970,7 +1902,7 @@
     {
       "path": "crates/editor/ui-editor/src/drag/dragging.rs",
       "name": "finalize_dragging",
-      "line": 71,
+      "line": 49,
       "lines": 102,
       "test": false
     },
@@ -2019,17 +1951,17 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
+      "name": "handle_video_export",
+      "line": 21,
+      "lines": 352,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-egui/src/shape_drawer.rs",
       "name": "show",
       "line": 49,
       "lines": 351,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
-      "name": "handle_video_export",
-      "line": 21,
-      "lines": 345,
       "test": false
     },
     {
@@ -2049,22 +1981,22 @@
     {
       "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
       "name": "handle_piano_roll_context_menu",
-      "line": 101,
+      "line": 106,
       "lines": 324,
       "test": false
     },
     {
       "path": "src/runner/menu/file.rs",
       "name": "handle_file_menu_event",
-      "line": 49,
-      "lines": 318,
+      "line": 48,
+      "lines": 317,
       "test": false
     },
     {
       "path": "crates/editor/ui/src/root/handlers/state_update.rs",
       "name": "try_handle_simple_state",
       "line": 12,
-      "lines": 306,
+      "lines": 310,
       "test": false
     },
     {
@@ -2091,7 +2023,7 @@
     {
       "path": "src/runner/menu/window/collaboration.rs",
       "name": "handle_collaboration_events",
-      "line": 27,
+      "line": 30,
       "lines": 299,
       "test": false
     },
@@ -2100,6 +2032,13 @@
       "name": "ensure_piano_waterfall_keyboard",
       "line": 111,
       "lines": 298,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui-editor/src/interaction/released.rs",
+      "name": "handle_released",
+      "line": 15,
+      "lines": 292,
       "test": false
     },
     {
@@ -2124,13 +2063,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/released.rs",
-      "name": "handle_released",
-      "line": 15,
-      "lines": 287,
-      "test": false
-    },
-    {
       "path": "src/runner/menu/window/video_export_handler.rs",
       "name": "handle_start_video_export",
       "line": 29,
@@ -2149,13 +2081,6 @@
       "name": "redraw",
       "line": 18,
       "lines": 284,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/egui_overlay/actions.rs",
-      "name": "apply_overlay_actions",
-      "line": 184,
-      "lines": 278,
       "test": false
     },
     {
@@ -2215,13 +2140,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
-      "name": "compose_pending_with",
-      "line": 107,
-      "lines": 258,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/velocity_panel.rs",
       "name": "show",
       "line": 105,
@@ -2243,6 +2161,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
+      "name": "compose_pending_with",
+      "line": 137,
+      "lines": 252,
+      "test": false
+    },
+    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/runner/run.rs",
       "name": "run_render_thread_inner",
       "line": 52,
@@ -2252,8 +2177,8 @@
     {
       "path": "crates/editor/ui/src/root/handlers/sidebar.rs",
       "name": "handle_sidebar_event",
-      "line": 83,
-      "lines": 244,
+      "line": 82,
+      "lines": 243,
       "test": false
     },
     {
@@ -2294,7 +2219,7 @@
     {
       "path": "crates/editor/ui-runtime/src/app.rs",
       "name": "render",
-      "line": 454,
+      "line": 452,
       "lines": 227,
       "test": false
     },
@@ -2306,6 +2231,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
+      "name": "video_export_model",
+      "line": 193,
+      "lines": 225,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-egui/src/shape_canvas.rs",
       "name": "show",
       "line": 180,
@@ -2313,24 +2245,10 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/runner_menu.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 221,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/chrome/tool_panel/text_panel.rs",
       "name": "show",
       "line": 41,
       "lines": 219,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
-      "name": "video_export_model",
-      "line": 168,
-      "lines": 218,
       "test": false
     },
     {
@@ -2411,13 +2329,6 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/runner_host.rs",
-      "name": "lookup",
-      "line": 7,
-      "lines": 202,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
       "name": "draw",
       "line": 174,
@@ -2432,19 +2343,19 @@
       "test": false
     }
   ],
-  "test_functions_over_100": 40,
+  "test_functions_over_100": 43,
   "god_objects": [
     [
       "Editor",
-      495
+      382
     ],
     [
       "Root",
-      311
+      314
     ],
     [
       "Host",
-      271
+      269
     ],
     [
       "Event",
@@ -2456,7 +2367,7 @@
     ],
     [
       "Default",
-      136
+      142
     ],
     [
       "EditorData",
@@ -2476,7 +2387,7 @@
     ],
     [
       "From",
-      52
+      54
     ],
     [
       "ShapeSelectState",
@@ -2485,6 +2396,10 @@
     [
       "OutputConnection",
       50
+    ],
+    [
+      "History",
+      49
     ],
     [
       "MidiManager",
@@ -2509,28 +2424,12 @@
     [
       "ChunkedList",
       36
-    ],
-    [
-      "ToolbarHandler",
-      36
     ]
   ],
   "wide_structs": [
     [
-      "MainTranslations",
-      156
-    ],
-    [
-      "SettingsTranslations",
-      153
-    ],
-    [
       "GpuSynth",
       77
-    ],
-    [
-      "VideoExportDialogState",
-      68
     ],
     [
       "UiConfig",
@@ -2547,10 +2446,6 @@
     [
       "OverlayActions",
       49
-    ],
-    [
-      "Editor",
-      44
     ],
     [
       "Toolbar",
@@ -2595,6 +2490,22 @@
     [
       "AudioExportDialogState",
       30
+    ],
+    [
+      "ToolbarModel",
+      29
+    ],
+    [
+      "AudioRenderConfig",
+      28
+    ],
+    [
+      "MidiManager",
+      28
+    ],
+    [
+      "AudioSettingsModel",
+      27
     ]
   ]
 }
