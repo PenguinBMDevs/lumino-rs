@@ -2,9 +2,10 @@
 //!
 //! ## 为什么需要它
 //!
-//! 项目既有 i18n 走 `lumino-extras::i18n` 的**编译期结构体表**
-//! （`MainTranslations` / `SettingsTranslations`），适合界面骨架（菜单、工具栏、
-//! 设置页）。但界面骨架之外仍有大量硬编码中文：对话框正文、状态提示、错误回显、
+//! 项目既有 i18n 的**编译期结构体表**（`MainTranslations` / `SettingsTranslations`）
+//! 曾位于 `lumino-extras::i18n`；T-34b 已把它迁入本模块的 `compat` 子模块，
+//! 字段值改由 [`tr_in`] 从 catalog 取词，`lumino-extras` 不再维护翻译表。
+//! 结构体仍适合界面骨架（菜单、工具栏、设置页）。但界面骨架之外仍有大量硬编码中文：对话框正文、状态提示、错误回显、
 //! 枚举 `Display`……逐个加结构体字段不可维护；更关键的是 `lumino-core::i18n` 之外
 //! 的低层 crate（network / audio / gfx / dialog）**根本拿不到 `Language`**，
 //! 只能把中文写死。
