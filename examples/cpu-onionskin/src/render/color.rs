@@ -152,13 +152,6 @@ pub fn blend_pixel(dst: u32, src: u32, alpha: f32) -> u32 {
     )
 }
 
-/// 选中态高亮：向白色线性混合 35%（只用于 UI 反馈，不参与"未选中风格"验收）。
-#[must_use]
-#[allow(dead_code)]
-pub fn selected_tint(color: u32) -> u32 {
-    blend_pixel(color, pack_rgb(255, 255, 255), 0.35)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,15 +170,22 @@ mod tests {
         assert_eq!(NoteStyle::new(1).main_border, pack_rgb(80, 129, 170));
     }
 
+    /// 快速路径是 sRGB 域整数近似，线性参考必然更亮；两者都必须落在端点之间。
+    ///
+    /// 两者不是同一算法：`blend_pixel` 在线性光空间插值后再编码，70% 白叠黑
+    /// 得到 218；`blend_preview_fast` 直接对 sRGB 分量做 70/30 整数混合，得到
+    /// 178。差异是刻意的性能取舍，这里把两个值钉住，改任何一边都会红。
     #[test]
-    fn preview_blend_is_between_endpoints() {
+    fn preview_blend_fast_stays_between_endpoints() {
         let black = pack_rgb(0, 0, 0);
         let white = pack_rgb(255, 255, 255);
-        let mixed = blend_preview(black, white);
-        assert_ne!(mixed, black);
-        assert_ne!(mixed, white);
-        let mid = blend_preview(black, white);
-        assert!(mid > black && mid < white);
+        let fast = blend_preview_fast(black, white);
+        let linear = blend_preview(black, white);
+        assert!(fast > black && fast < white);
+        for shift in [0u32, 8, 16] {
+            assert_eq!((fast >> shift) & 0xFF, 178, "sRGB 域 70% 白");
+            assert_eq!((linear >> shift) & 0xFF, 218, "线性空间 70% 白");
+        }
     }
 
     /// 源码头是唯一事实：shader / UI 常量改了就红。

@@ -381,4 +381,39 @@ mod tests {
         assert_eq!(visible_measure_count(&index, &camera), 30);
         assert!(uses_overview(&index, &camera));
     }
+
+    /// 空文档与非有限/非正缩放都不得进入总览档：它把宽度除以 zoom，一旦为零
+    /// 或 NaN，`visible_measure_count` 的除法会溢出成巨大值并误判。
+    #[test]
+    fn overview_rejects_empty_document_and_invalid_zoom() {
+        let document = MidiDocument::empty_with_tracks(1, 480);
+        let mut index = TrackIndex::build(&document);
+        let mut camera = Camera::new(800, 600, 1.0, 1_000_000, 480, 0.01);
+        camera.keyboard_width = 0.0;
+        camera.zoom_x = 800.0 / (30.0 * 1920.0);
+
+        // 空文档：`total_notes == 0` 直接拒绝，不看缩放。
+        assert!(!uses_overview(&index, &camera));
+
+        index.total_notes = 1;
+        index.measure_counts = vec![1; 64];
+        index.measure_ticks = 1920;
+        assert!(uses_overview(&index, &camera));
+
+        for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            camera.zoom_x = bad;
+            assert!(
+                !uses_overview(&index, &camera),
+                "zoom_x = {bad} 必须拒绝总览档"
+            );
+        }
+        camera.zoom_x = 800.0 / (30.0 * 1920.0);
+        for bad in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            camera.zoom_y = bad;
+            assert!(
+                !uses_overview(&index, &camera),
+                "zoom_y = {bad} 必须拒绝总览档"
+            );
+        }
+    }
 }

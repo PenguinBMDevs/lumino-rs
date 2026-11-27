@@ -4564,11 +4564,8 @@ dependencies = [
  "lumino-message",
  "lumino-note-core",
  "once_cell",
- "resvg",
  "thiserror 2.0.20",
- "tiny-skia",
  "tracing",
- "usvg",
 ]
 
 [[package]]
@@ -4611,7 +4608,6 @@ dependencies = [
  "lumino-core",
  "lumino-editor-state",
  "lumino-egui-bridge",
- "lumino-extras",
  "lumino-message",
  "once_cell",
  "pollster 0.4.0",

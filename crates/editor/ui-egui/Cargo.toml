@@ -46,8 +46,5 @@ path = "src/bin/compare_egui.rs"
 
 [dev-dependencies]
 lumino-egui-bridge = { workspace = true }
-# 仅 `tests/settings_bands.rs` 使用（i18n 文案表）：放 dev-deps 才能让
-# `cargo::unused_dependencies` 不再对本 crate 误报。
-lumino-extras = { workspace = true }
 pollster = { workspace = true }
 wgpu = { workspace = true }
