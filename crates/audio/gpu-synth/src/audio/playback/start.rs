@@ -9,98 +9,12 @@ const QUEUE_MIN_BLOCKS: usize = 4;
 /// 队列深度上限（原固定值；512/1024 行为不变）。
 const QUEUE_MAX_BLOCKS: usize = 32;
 
-/// 启动失败时回收已启动线程；成功交还句柄后不再干预播放。
-struct StartupThreadGuard {
-    stop_flag: Arc<AtomicBool>,
-    stop_tx: mpsc::Sender<()>,
-    render_thread: Option<JoinHandle<()>>,
-    stream_owner: Option<JoinHandle<()>>,
-    armed: bool,
-}
+mod guard;
+mod recycler;
+mod stream_owner;
 
-impl StartupThreadGuard {
-    fn new(
-        stop_flag: Arc<AtomicBool>,
-        stop_tx: mpsc::Sender<()>,
-        render_thread: JoinHandle<()>,
-    ) -> Self {
-        Self {
-            stop_flag,
-            stop_tx,
-            render_thread: Some(render_thread),
-            stream_owner: None,
-            armed: true,
-        }
-    }
-
-    fn disarm(mut self) -> (Option<JoinHandle<()>>, Option<JoinHandle<()>>) {
-        self.armed = false;
-        (self.render_thread.take(), self.stream_owner.take())
-    }
-}
-
-impl Drop for StartupThreadGuard {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        self.stop_flag.store(true, Ordering::Relaxed);
-        let _ = self.stop_tx.send(());
-        if let Some(handle) = self.stream_owner.take() {
-            let _ = handle.join();
-        }
-        if let Some(handle) = self.render_thread.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-/// 将旧采样块交还渲染线程；回调暂存数量有界，溢出块由 stream-owner 线程释放。
-struct CallbackBufferRecycler {
-    tx: mpsc::SyncSender<Vec<f32>>,
-    deferred: std::collections::VecDeque<Vec<f32>>,
-    max_deferred: usize,
-}
-
-impl CallbackBufferRecycler {
-    fn new(tx: mpsc::SyncSender<Vec<f32>>, queue_blocks: usize) -> Self {
-        Self {
-            tx,
-            deferred: std::collections::VecDeque::with_capacity(queue_blocks + 1),
-            max_deferred: queue_blocks + 1,
-        }
-    }
-
-    fn recycle(&mut self, buffer: Vec<f32>) {
-        if let Err(e) = self.tx.try_send(buffer) {
-            let buffer = match e {
-                mpsc::TrySendError::Full(buffer) | mpsc::TrySendError::Disconnected(buffer) => {
-                    buffer
-                }
-            };
-            if self.deferred.len() < self.max_deferred {
-                self.deferred.push_back(buffer);
-            }
-        }
-    }
-
-    fn flush(&mut self) {
-        for _ in 0..self.deferred.len() {
-            let Some(buffer) = self.deferred.pop_front() else {
-                break;
-            };
-            if let Err(e) = self.tx.try_send(buffer) {
-                let buffer = match e {
-                    mpsc::TrySendError::Full(buffer) | mpsc::TrySendError::Disconnected(buffer) => {
-                        buffer
-                    }
-                };
-                self.deferred.push_back(buffer);
-                break;
-            }
-        }
-    }
-}
+use guard::StartupThreadGuard;
+use stream_owner::spawn as spawn_stream_owner;
 
 impl AudioPlayback {
     /// Starts a realtime playback session.
@@ -501,95 +415,18 @@ impl AudioPlayback {
         // 绝不在 Send 结构上跨线程移动 !Send 的 `Stream`；线程内建流、播放、
         // 然后持活直到 `stop_flag` 置位（Stream 析构即停止音频回调）。
         let (stream_tx_result, stream_rx_result) = mpsc::channel::<Result<(), SynthError>>();
-        let owner_stop = stop_flag.clone();
-        let stream_owner = thread::Builder::new()
-            .name("lumino-gpu-synth-stream-owner".into())
-            .spawn(move || {
-                let err_fn = |e| {
-                    log_dual!(error, "lumino-gpu-synth playback error: {e}");
-                };
-                let owner_stats = cb_stats.clone();
-                let mut recycler = CallbackBufferRecycler::new(recycle_tx, queue_blocks);
-                let mut next_block: Vec<f32> = Vec::new();
-                let mut next_pos = 0usize;
-                let stream = match device.build_output_stream(
-                    &stream_config,
-                    move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
-                        // REF-LGS-016：这里曾有「纪元变化 → 丢弃队列旧音频」分支，
-                        // 已随死代码一起删除（原因见 `flush_epoch` 处的注释）。
-                        recycler.flush();
-                        cb_stats
-                            .last_request_samples
-                            .store(data.len() as i64, Ordering::SeqCst);
-                        let mut i = 0;
-                        while i < data.len() {
-                            if next_pos >= next_block.len() {
-                                match sample_rx.try_recv() {
-                                    Ok(b) => {
-                                        let previous = std::mem::replace(&mut next_block, b);
-                                        recycler.recycle(previous);
-                                        next_pos = 0;
-                                    }
-                                    Err(_) => {
-                                        data[i..].fill(0.0);
-                                        // AUD-012：只有播放中取不到块才算欠载；
-                                        // 空闲（未播放 / 播放已结束）填静音不是欠载。
-                                        if cb_stats.playing() {
-                                            cb_stats.underruns.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                        break;
-                                    }
-                                }
-                            } else {
-                                let n = (next_block.len() - next_pos).min(data.len() - i);
-                                data[i..i + n].copy_from_slice(&next_block[next_pos..next_pos + n]);
-                                i += n;
-                                next_pos += n;
-                            }
-                        }
-                        cb_stats.samples.fetch_sub(i as i64, Ordering::SeqCst);
-                        cb_stats
-                            .last_samples_after_read
-                            .store(cb_stats.samples.load(Ordering::SeqCst), Ordering::Relaxed);
-                    },
-                    err_fn,
-                    None,
-                ) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        let _ = stream_tx_result
-                            .send(Err(SynthError::Gpu(format!("audio stream: {e}"))));
-                        return;
-                    }
-                };
-                if let Err(e) = stream.play() {
-                    let _ = stream_tx_result
-                        .send(Err(SynthError::Gpu(format!("audio stream play: {e}"))));
-                    return;
-                }
-                // 通知主线程流已就绪；随后保持 Stream 存活直到停止。
-                let _ = stream_tx_result.send(Ok(()));
-                let _stream = stream;
-                let mut last_logged_underruns = 0u64;
-                let mut last_underrun_log = Instant::now();
-                while !owner_stop.load(Ordering::Relaxed) {
-                    let underruns = owner_stats.underruns.load(Ordering::Relaxed);
-                    // AUD-012：只有播放中才把空回调当欠载。空闲时把基线跟到当前值，
-                    // 保证恢复播放后的第一条真欠载仍会打印（而不是被"已记录过"吞掉）。
-                    if !owner_stats.playing() {
-                        last_logged_underruns = underruns;
-                    } else if underruns > last_logged_underruns
-                        && last_underrun_log.elapsed() >= Duration::from_millis(500)
-                    {
-                        log_dual!(warn, "[UNDERRUN] queue empty (total: {underruns})");
-                        last_logged_underruns = underruns;
-                        last_underrun_log = Instant::now();
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            })
-            .map_err(SynthError::Io)?;
-        startup_guard.stream_owner = Some(stream_owner);
+        let stream_owner = spawn_stream_owner(stream_owner::StreamOwnerArgs {
+            device,
+            stream_config,
+            stop_flag: stop_flag.clone(),
+            stats: cb_stats,
+            queue_blocks,
+            recycle_tx,
+            sample_rx,
+            ready_tx: stream_tx_result,
+        })
+        .map_err(SynthError::Io)?;
+        startup_guard.attach_stream_owner(stream_owner);
 
         match stream_rx_result.recv() {
             Ok(Ok(())) => {}
@@ -620,6 +457,7 @@ impl AudioPlayback {
 
 #[cfg(test)]
 mod tests {
+    use super::recycler::CallbackBufferRecycler;
     use super::*;
 
     fn spawn_stoppable(stop: Arc<AtomicBool>, stopped: mpsc::Sender<()>) -> JoinHandle<()> {
@@ -654,7 +492,7 @@ mod tests {
         let render = spawn_stoppable(stop.clone(), stopped_tx.clone());
         let owner = spawn_stoppable(stop.clone(), stopped_tx);
         let mut guard = StartupThreadGuard::new(stop, stop_tx, render);
-        guard.stream_owner = Some(owner);
+        guard.attach_stream_owner(owner);
 
         drop(guard);
 
