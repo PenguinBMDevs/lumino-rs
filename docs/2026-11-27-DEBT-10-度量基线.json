@@ -1,12 +1,7 @@
 {
-  "files_total": 2257,
-  "lines_total": 415892,
+  "files_total": 2291,
+  "lines_total": 419669,
   "files_over_600": [
-    {
-      "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
-      "lines": 989,
-      "test": false
-    },
     {
       "path": "crates/editor/ui/src/host/render/egui_overlay.rs",
       "lines": 898,
@@ -15,11 +10,6 @@
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
       "lines": 876,
-      "test": false
-    },
-    {
-      "path": "crates/editor/editor-state/src/editor_state/drawn_shape.rs",
-      "lines": 857,
       "test": false
     },
     {
@@ -55,11 +45,6 @@
     {
       "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
       "lines": 700,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
-      "lines": 685,
       "test": false
     },
     {
@@ -154,13 +139,13 @@
     }
   ],
   "test_files_over_800": [],
-  "production_files_over_600": 17,
+  "production_files_over_600": 14,
   "functions_over_100": [
     {
       "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
       "name": "start",
-      "line": 109,
-      "lines": 510,
+      "line": 23,
+      "lines": 433,
       "test": false
     },
     {
@@ -192,6 +177,13 @@
       "test": false
     },
     {
+      "path": "src/runner/menu/file.rs",
+      "name": "handle_file_menu_event",
+      "line": 48,
+      "lines": 332,
+      "test": false
+    },
+    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
       "name": "execute_render_pass",
       "line": 10,
@@ -203,13 +195,6 @@
       "name": "handle_piano_roll_context_menu",
       "line": 106,
       "lines": 324,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/file.rs",
-      "name": "handle_file_menu_event",
-      "line": 48,
-      "lines": 317,
       "test": false
     },
     {
@@ -311,6 +296,13 @@
       "test": false
     },
     {
+      "path": "src/runner/menu/window/audio_export.rs",
+      "name": "handle_start_audio_export",
+      "line": 19,
+      "lines": 274,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui/src/root/handlers/sidebar/right_sidebar.rs",
       "name": "handle_right_sidebar_action",
       "line": 11,
@@ -325,10 +317,10 @@
       "test": false
     },
     {
-      "path": "src/runner/menu/window/audio_export.rs",
-      "name": "handle_start_audio_export",
-      "line": 19,
-      "lines": 269,
+      "path": "src/runner/menu/window/dialog.rs",
+      "name": "handle_dialog_events",
+      "line": 47,
+      "lines": 268,
       "test": false
     },
     {
@@ -349,13 +341,6 @@
       "path": "crates/editor/gfx/src/global_bucket/build.rs",
       "name": "build",
       "line": 41,
-      "lines": 259,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/dialog.rs",
-      "name": "handle_dialog_events",
-      "line": 8,
       "lines": 259,
       "test": false
     },
@@ -530,8 +515,8 @@
     {
       "path": "crates/audio/midi-loader/src/loader/parsed_midi.rs",
       "name": "load_parsed_midi",
-      "line": 31,
-      "lines": 208,
+      "line": 32,
+      "lines": 210,
       "test": false
     },
     {
@@ -588,6 +573,13 @@
       "name": "main",
       "line": 104,
       "lines": 195,
+      "test": false
+    },
+    {
+      "path": "crates/editor/dialog/src/window/initialize.rs",
+      "name": "initialize_ui",
+      "line": 45,
+      "lines": 194,
       "test": false
     },
     {
@@ -670,7 +662,7 @@
     {
       "path": "crates/editor/ui/src/root/view/egui_chrome/apply_actions.rs",
       "name": "plan_egui_after_canvas",
-      "line": 190,
+      "line": 204,
       "lines": 185,
       "test": false
     },
@@ -693,13 +685,6 @@
       "name": "new",
       "line": 15,
       "lines": 181,
-      "test": false
-    },
-    {
-      "path": "crates/editor/dialog/src/window/initialize.rs",
-      "name": "initialize_ui",
-      "line": 45,
-      "lines": 179,
       "test": false
     },
     {
@@ -920,17 +905,24 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
-      "name": "lookup_legacy_1",
-      "line": 11,
-      "lines": 154,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/cloud_browser.rs",
       "name": "show",
       "line": 114,
       "lines": 154,
+      "test": false
+    },
+    {
+      "path": "crates/audio/midi-io/src/api/xsynth/init.rs",
+      "name": "init_synth",
+      "line": 128,
+      "lines": 153,
+      "test": false
+    },
+    {
+      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
+      "name": "lookup_legacy_1",
+      "line": 11,
+      "lines": 153,
       "test": false
     },
     {
@@ -1137,13 +1129,6 @@
       "test": false
     },
     {
-      "path": "crates/audio/midi-io/src/api/xsynth/init.rs",
-      "name": "init_synth",
-      "line": 117,
-      "lines": 141,
-      "test": false
-    },
-    {
       "path": "crates/editor/editor-state/src/editor_state/shape_ops/claw.rs",
       "name": "time_mode",
       "line": 133,
@@ -1172,13 +1157,6 @@
       "test": false
     },
     {
-      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
-      "name": "lookup_legacy_3",
-      "line": 300,
-      "lines": 139,
-      "test": false
-    },
-    {
       "path": "crates/editor/egui-bridge/src/painter.rs",
       "name": "new",
       "line": 74,
@@ -1188,7 +1166,7 @@
     {
       "path": "crates/editor/ui-editor/src/interaction/drawn_shape.rs",
       "name": "move_selected_shapes",
-      "line": 700,
+      "line": 144,
       "lines": 139,
       "test": false
     },
@@ -1214,9 +1192,23 @@
       "test": false
     },
     {
+      "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
+      "name": "lookup_legacy_3",
+      "line": 299,
+      "lines": 136,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-egui/src/chrome/right_panel/i2m.rs",
       "name": "draw_row",
       "line": 154,
+      "lines": 136,
+      "test": false
+    },
+    {
+      "path": "src/runner/inner/window.rs",
+      "name": "apply_dialog_result_to_ui",
+      "line": 49,
       "lines": 136,
       "test": false
     },
@@ -1251,7 +1243,7 @@
     {
       "path": "crates/core/core/src/i18n/catalog/legacy_extras.rs",
       "name": "lookup_legacy_2",
-      "line": 166,
+      "line": 165,
       "lines": 133,
       "test": false
     },
@@ -1266,13 +1258,6 @@
       "path": "crates/editor/ui-egui/src/chrome/right_panel/materials.rs",
       "name": "draw_panel",
       "line": 73,
-      "lines": 132,
-      "test": false
-    },
-    {
-      "path": "src/runner/inner/window.rs",
-      "name": "apply_dialog_result_to_ui",
-      "line": 49,
       "lines": 132,
       "test": false
     },
@@ -1333,6 +1318,13 @@
       "test": false
     },
     {
+      "path": "src/runner/lifecycle/dialog.rs",
+      "name": "process_dialog_result",
+      "line": 214,
+      "lines": 127,
+      "test": false
+    },
+    {
       "path": "src/runner/menu/window/video_export/counter_template.rs",
       "name": "render_template",
       "line": 44,
@@ -1357,6 +1349,13 @@
       "path": "src/services/collaboration_service.rs",
       "name": "handle_collaboration_event",
       "line": 245,
+      "lines": 126,
+      "test": false
+    },
+    {
+      "path": "src/runner/midi_manager/recovery.rs",
+      "name": "reinit_if_needed",
+      "line": 273,
       "lines": 126,
       "test": false
     },
@@ -1494,9 +1493,23 @@
       "test": false
     },
     {
+      "path": "src/runner/lifecycle/midi.rs",
+      "name": "handle_midi_reinit",
+      "line": 107,
+      "lines": 119,
+      "test": false
+    },
+    {
       "path": "crates/editor/gfx/src/miditrail_renderer/instances/notes.rs",
       "name": "build_note_instances",
       "line": 9,
+      "lines": 118,
+      "test": false
+    },
+    {
+      "path": "crates/editor/ui/src/root/view/egui_chrome/dialogs.rs",
+      "name": "egui_dialog_model",
+      "line": 52,
       "lines": 118,
       "test": false
     },
@@ -1606,13 +1619,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/dialogs.rs",
-      "name": "egui_dialog_model",
-      "line": 50,
-      "lines": 112,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/video_clip_timeline.rs",
       "name": "show",
       "line": 335,
@@ -1665,13 +1671,6 @@
       "path": "crates/editor/ui-editor/src/interaction/bake.rs",
       "name": "restore_baked_group",
       "line": 50,
-      "lines": 111,
-      "test": false
-    },
-    {
-      "path": "src/runner/midi_manager/recovery.rs",
-      "name": "reinit_if_needed",
-      "line": 261,
       "lines": 111,
       "test": false
     },
@@ -1872,16 +1871,16 @@
       "test": false
     },
     {
-      "path": "src/runner/lifecycle/dialog.rs",
-      "name": "process_dialog_result",
-      "line": 214,
-      "lines": 103,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/cc.rs",
       "name": "apply_cc",
       "line": 4,
+      "lines": 102,
+      "test": false
+    },
+    {
+      "path": "crates/core/core/src/i18n/catalog/ui_view/tail.rs",
+      "name": "lookup_view_9",
+      "line": 264,
       "lines": 102,
       "test": false
     },
@@ -1914,6 +1913,13 @@
       "test": false
     },
     {
+      "path": "crates/editor/dialog/src/window.rs",
+      "name": "new",
+      "line": 72,
+      "lines": 101,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui-editor/src/interaction/text_tool/parametric.rs",
       "name": "rasterize_glyph_alpha_params",
       "line": 36,
@@ -1939,8 +1945,8 @@
     {
       "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
       "name": "start",
-      "line": 109,
-      "lines": 510,
+      "line": 23,
+      "lines": 433,
       "test": false
     },
     {
@@ -1972,6 +1978,13 @@
       "test": false
     },
     {
+      "path": "src/runner/menu/file.rs",
+      "name": "handle_file_menu_event",
+      "line": 48,
+      "lines": 332,
+      "test": false
+    },
+    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
       "name": "execute_render_pass",
       "line": 10,
@@ -1983,13 +1996,6 @@
       "name": "handle_piano_roll_context_menu",
       "line": 106,
       "lines": 324,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/file.rs",
-      "name": "handle_file_menu_event",
-      "line": 48,
-      "lines": 317,
       "test": false
     },
     {
@@ -2091,6 +2097,13 @@
       "test": false
     },
     {
+      "path": "src/runner/menu/window/audio_export.rs",
+      "name": "handle_start_audio_export",
+      "line": 19,
+      "lines": 274,
+      "test": false
+    },
+    {
       "path": "crates/editor/ui/src/root/handlers/sidebar/right_sidebar.rs",
       "name": "handle_right_sidebar_action",
       "line": 11,
@@ -2105,10 +2118,10 @@
       "test": false
     },
     {
-      "path": "src/runner/menu/window/audio_export.rs",
-      "name": "handle_start_audio_export",
-      "line": 19,
-      "lines": 269,
+      "path": "src/runner/menu/window/dialog.rs",
+      "name": "handle_dialog_events",
+      "line": 47,
+      "lines": 268,
       "test": false
     },
     {
@@ -2129,13 +2142,6 @@
       "path": "crates/editor/gfx/src/global_bucket/build.rs",
       "name": "build",
       "line": 41,
-      "lines": 259,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/dialog.rs",
-      "name": "handle_dialog_events",
-      "line": 8,
       "lines": 259,
       "test": false
     },
@@ -2310,8 +2316,8 @@
     {
       "path": "crates/audio/midi-loader/src/loader/parsed_midi.rs",
       "name": "load_parsed_midi",
-      "line": 31,
-      "lines": 208,
+      "line": 32,
+      "lines": 210,
       "test": false
     },
     {
@@ -2351,19 +2357,19 @@
     ],
     [
       "Root",
-      314
+      323
     ],
     [
       "Host",
-      269
+      275
     ],
     [
       "Event",
-      255
+      256
     ],
     [
       "RunnerInner",
-      160
+      161
     ],
     [
       "Default",
@@ -2386,6 +2392,10 @@
       59
     ],
     [
+      "MidiManager",
+      59
+    ],
+    [
       "From",
       54
     ],
@@ -2402,10 +2412,6 @@
       49
     ],
     [
-      "MidiManager",
-      46
-    ],
-    [
       "Api",
       42
     ],
@@ -2419,7 +2425,7 @@
     ],
     [
       "DialogManager",
-      39
+      40
     ],
     [
       "ChunkedList",
@@ -2440,15 +2446,19 @@
       54
     ],
     [
+      "OverlayActions",
+      51
+    ],
+    [
       "MiditrailRenderer",
       50
     ],
     [
-      "OverlayActions",
-      49
+      "Toolbar",
+      38
     ],
     [
-      "Toolbar",
+      "RootState",
       38
     ],
     [
@@ -2456,12 +2466,16 @@
       37
     ],
     [
-      "RootState",
-      36
-    ],
-    [
       "Voice",
       35
+    ],
+    [
+      "MidiManager",
+      35
+    ],
+    [
+      "Root",
+      34
     ],
     [
       "Palette",
@@ -2473,10 +2487,6 @@
     ],
     [
       "Host",
-      33
-    ],
-    [
-      "Root",
       33
     ],
     [
@@ -2492,20 +2502,16 @@
       30
     ],
     [
+      "ProjectSettingsModel",
+      29
+    ],
+    [
       "ToolbarModel",
       29
     ],
     [
       "AudioRenderConfig",
-      28
-    ],
-    [
-      "MidiManager",
-      28
-    ],
-    [
-      "AudioSettingsModel",
-      27
+      29
     ]
   ]
 }
