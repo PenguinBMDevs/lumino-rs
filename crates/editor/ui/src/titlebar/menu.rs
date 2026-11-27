@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use lumino_core::storage::config::RecentFile;
 use lumino_core::i18n::{Language, main_translations};
+use lumino_core::storage::config::RecentFile;
 
 use crate::event::Event;
 

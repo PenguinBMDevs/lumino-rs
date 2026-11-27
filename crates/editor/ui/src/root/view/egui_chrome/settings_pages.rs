@@ -4,8 +4,8 @@
 //! logo/回声洞使用专用行。
 
 use egui::Color32;
-use lumino_core::{tr, trf};
 use lumino_core::i18n::settings_translations;
+use lumino_core::{tr, trf};
 use lumino_ui_core::state::about_egg::{ABOUT_LOGO_SHAKE_AMPLITUDE, ABOUT_LOGO_SIZE};
 use lumino_ui_egui::chrome::{CloudConnModel, CloudPageModel, UiField, UiPageModel, UiRow};
 

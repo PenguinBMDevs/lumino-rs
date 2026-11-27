@@ -4,8 +4,8 @@
 //! `ToolbarAction`；这里把生产状态镜像进去，并把点击翻译回与 上一代 悬浮条
 //! **同一批** `toolbar::Event` 构造器。
 
-use lumino_core::{BrushConfig, TextLayoutMode, tr};
 use lumino_core::i18n::main_translations;
+use lumino_core::{BrushConfig, TextLayoutMode, tr};
 use lumino_ui_egui::chrome::{
     BrushPanelModel, FillDivisionPanelModel, ShapeKind, ShapePanelModel, TextParamsPanelModel,
     ThicknessPanelModel, ToolPanelItemKind, ToolPanelItemModel, ToolPanelModel,

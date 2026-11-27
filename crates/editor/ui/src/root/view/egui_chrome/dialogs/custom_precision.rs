@@ -1,7 +1,7 @@
 //! 自定义精度对话框：生产状态 → egui 模型，以及动作 → `Message` 映射。
 
-use lumino_core::tr;
 use lumino_core::i18n::main_translations;
+use lumino_core::tr;
 use lumino_ui_egui::chrome::{CustomPrecisionModel, DotOptionModel};
 
 use crate::Message;

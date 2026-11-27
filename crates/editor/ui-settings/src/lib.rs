@@ -13,9 +13,9 @@ mod panel;
 #[cfg(test)]
 mod tests;
 
+use lumino_core::i18n::Language;
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
-use lumino_core::i18n::Language;
 use lumino_message::gpu_compat_state::{GpuCheckRetryGate, GpuCheckUiState};
 
 pub use lumino_message::settings_event::Event;

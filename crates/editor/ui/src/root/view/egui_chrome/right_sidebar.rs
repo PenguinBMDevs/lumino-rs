@@ -5,8 +5,8 @@
 //! 钢琴瀑布流的内容是 `lumino-gfx` 离屏纹理，宿主注册成 egui 外部纹理后由
 //! `RightSidebarPanelModel::PianoWaterfall` 引用。
 
-use lumino_core::{tr, trf};
 use lumino_core::i18n::main_translations;
+use lumino_core::{tr, trf};
 use lumino_message::{
     I2mConfigField, I2mSelectField as MessageSelectField, RightSidebarAction as SidebarAction,
 };

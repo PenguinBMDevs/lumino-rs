@@ -1,7 +1,7 @@
 pub mod performance;
 
-use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_core::i18n::{Language, main_translations};
+use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_midi_io::GpuBufferStats;
 use lumino_ui_core::button_descs::ButtonId;
 

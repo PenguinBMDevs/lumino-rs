@@ -1,8 +1,8 @@
 //! 界面页字段动作 → 生产 `Message`。
 
+use lumino_core::i18n::Language;
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SelectionBoxMode};
-use lumino_core::i18n::Language;
 use lumino_ui_core::window;
 use lumino_ui_egui::chrome::UiField;
 use lumino_ui_egui::settings::SettingsAction;

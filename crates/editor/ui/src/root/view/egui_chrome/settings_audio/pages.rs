@@ -1,8 +1,8 @@
 //! 音频页 LGS / 系统 MIDI 行（从 `settings_audio.rs` 拆出）。
 
+use lumino_core::i18n::Language;
 use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_core::tr;
-use lumino_core::i18n::Language;
 use lumino_ui_egui::chrome::{AudioControlModel, AudioField, AudioRowModel};
 
 use super::{combo, load_display_name, row, slider};

@@ -179,10 +179,7 @@ impl Root {
     }
 
     /// 兼容性页：按钮门控 / 结果行 / 三个开关（文案与 上一代 页同源）。
-    fn compatibility_page(
-        &self,
-        language: lumino_core::i18n::Language,
-    ) -> CompatibilityPageModel {
+    fn compatibility_page(&self, language: lumino_core::i18n::Language) -> CompatibilityPageModel {
         let t = lumino_core::i18n::settings_translations(language);
         let compat = &self.settings.compat;
         let running = matches!(compat.check_state, GpuCheckUiState::Running);

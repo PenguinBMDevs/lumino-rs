@@ -2,8 +2,8 @@
 //!
 //! 单独成文件把 `dialogs.rs` 保持在 600 行以内。
 
-use lumino_core::tr;
 use lumino_core::i18n::main_translations;
+use lumino_core::tr;
 use lumino_ui_egui::chrome::{ProjectNoteCountModel, ProjectSettingsModel};
 
 use crate::Message;

@@ -45,9 +45,9 @@ mod video_clip_timeline;
 mod video_export;
 mod video_preview;
 
+use lumino_core::i18n::main_translations;
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_core::tr;
-use lumino_core::i18n::main_translations;
 use lumino_ui_egui::chrome::piano_roll::PianoRollView;
 use lumino_ui_egui::chrome::{
     ChromeModel, DeviceWarningModel, DialogModel, PopupTitlebarModel, ProgressModel, RollBar,

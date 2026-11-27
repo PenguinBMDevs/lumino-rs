@@ -4,9 +4,9 @@
 //! 预计算，egui 只按行模型绘制。动作按 `AudioField` 回传，再映射到生产
 //! `settings::Event`（与 上一代 页面同一批事件）。
 
+use lumino_core::i18n::{Language, settings_translations};
 use lumino_core::storage::config::{GpuLoadDisplay, SynthBackend};
 use lumino_core::tr;
-use lumino_core::i18n::{Language, settings_translations};
 use lumino_ui_core::settings_event::OutputType;
 use lumino_ui_egui::chrome::{AudioControlModel, AudioField, AudioPageModel, AudioRowModel};
 
