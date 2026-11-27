@@ -170,7 +170,10 @@ fn test_shader_sources_share_depth_contract() {
             "note_vertical",
             include_str!("../../../shaders/note_vertical.wgsl"),
         ),
-        ("onion_note", include_str!("../../../shaders/onion_note.wgsl")),
+        (
+            "onion_note",
+            include_str!("../../../shaders/onion_note.wgsl"),
+        ),
         (
             "onion_note_vertical",
             include_str!("../../../shaders/onion_note_vertical.wgsl"),
