@@ -72,11 +72,6 @@ impl EditorTransient {
         );
     }
 
-    /// 移除远端用户的选择（用户离开等）
-    pub fn remove_remote_selection(&mut self, user_id: &str) {
-        self.remote_selections.remove(user_id);
-    }
-
     /// first-writer-wins 冲突判定
     ///
     /// 若 `notes` 中任一音符与某个**更早**（`timestamp < local_timestamp`）的
@@ -120,17 +115,6 @@ impl EditorTransient {
             Some(ts) => self.is_locked_by_other(ts, &self.local_selection_fingerprints),
             None => false,
         }
-    }
-
-    /// 判定目标音符区间是否被远端更早选择锁定（供粘贴/插入等非选区操作调用）
-    ///
-    /// 调用方传入待插入/粘贴的音符指纹列表，若任一目标区间与远端更早选择重叠则返回 true。
-    /// 该检查可防止“粘贴覆盖远端已框选音符”的冲突（随机混合编辑场景）。
-    #[allow(dead_code)]
-    pub fn is_target_locked_by_other(&self, target_notes: &[(usize, f32, u16, f32)]) -> bool {
-        let now = now_ms();
-        // 用当前时刻作为本地时间戳近似（粘贴瞬时），若远端更早则锁定
-        self.is_locked_by_other(now, target_notes)
     }
 
     /// 广播本地选择变更（供协作客户端转发到其他用户）

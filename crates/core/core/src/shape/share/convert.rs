@@ -115,7 +115,30 @@ fn scale_op(op: &mut ShapeOp, factor: f64, depth: usize) -> Result<(), ShareErro
                 }
             }
         }
-        _ => {}
+        // 以下变体不含 tick 字段：Tumours 的 length/dist、Pattern 的 loops 以拍为单位，
+        // Round 的 k 无量纲；其余为纯标记或由上层消费。新增带 tick 字段的变体必须
+        // 在编译期被这里的穷尽匹配拦下，避免跨 PPQ 分享时静默漏换算。
+        ShapeOp::Noop
+        | ShapeOp::Tumours(_)
+        | ShapeOp::Polygon(_)
+        | ShapeOp::Pattern(_)
+        | ShapeOp::Joined(_)
+        | ShapeOp::Straighten(_)
+        | ShapeOp::Round(_)
+        | ShapeOp::RoundShape(_)
+        | ShapeOp::Glue(_)
+        | ShapeOp::Claw(_)
+        | ShapeOp::Strum(_)
+        | ShapeOp::Chop(_)
+        | ShapeOp::GateFlip
+        | ShapeOp::Sustain(_)
+        | ShapeOp::Mask(_)
+        | ShapeOp::Cycle(_)
+        | ShapeOp::GateRange(_)
+        | ShapeOp::Nested(_)
+        | ShapeOp::Merge(_)
+        | ShapeOp::Between(_)
+        | ShapeOp::VelocityEnv(_) => {}
     }
     Ok(())
 }

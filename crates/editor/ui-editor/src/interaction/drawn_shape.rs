@@ -107,58 +107,13 @@ impl Editor {
         }
     }
 
-    /// 登记形状工具的待确认图形（√ 确认后调用，须在 `clear_pending` 之前）
-    ///
-    /// `per_shape_notes[i]` 与 `shape_tool.shapes[i]` 一一对应（由 confirm 侧同源产出）。
-    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
-    pub(crate) fn record_shape_tool_shapes(&mut self, per_shape_notes: Vec<Vec<ShapeNote>>) {
-        let track = self.editor_state.data.current_track;
-        let sources: Vec<DrawnShapeSource> = self
-            .editor_state
-            .shape_tool
-            .shapes
-            .iter()
-            .map(|s| DrawnShapeSource::Shape {
-                kind: s.kind,
-                rect: s.rect,
-                shift_constrained: s.shift_constrained,
-                filled: s.filled,
-                apex_high: s.apex_high,
-            })
-            .collect();
-        for (source, notes) in sources.into_iter().zip(per_shape_notes) {
-            record_drawn_shape_on(self, track, source, notes);
-        }
-    }
-
-    /// 登记曲线工具的待确认路径（√ 确认后调用，须在 `reset` 之前）
-    ///
-    /// 每条完整路径（≥ 2 锚点）展开为一条折线；`per_path_notes[i]` 与 `paths[i]` 对应。
-    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
-    pub(crate) fn record_line_tool_paths(&mut self, per_path_notes: Vec<Vec<ShapeNote>>) {
-        let track = self.editor_state.data.current_track;
-        let polylines: Vec<Vec<(f32, f32)>> = self
-            .editor_state
-            .line_tool
-            .paths
-            .iter()
-            .map(|p| {
-                flatten_path(p)
-                    .into_iter()
-                    .map(|(t, k)| (t as f32, k as f32))
-                    .collect()
-            })
-            .collect();
-        for (points, notes) in polylines.into_iter().zip(per_path_notes) {
-            record_drawn_shape_on(self, track, DrawnShapeSource::Polyline { points }, notes);
-        }
-    }
-
-    /// 登记画刷工具的待确认笔画（√ 确认后调用，须在 `reset` 之前）
+    // ── 待确认产物镜像（未 √ 的几何进入图形选中域） ──────────
     ///
     /// `per_stroke_notes[i]` 与 `brush_tool.strokes[i]` 对应；图形以**落笔基准轨**
     /// （`BrushStroke::base_track`）登记，保证「在哪个轨画的就在哪个轨选中」。
-    #[allow(dead_code)] // 保留给未来“显式保留形状”模式；当前 Bake 不再登记
+    ///
+    /// 当前 Bake 不再登记，仅保留测试入口验证记录语义；生产路径不应调用。
+    #[cfg(test)]
     pub(crate) fn record_brush_strokes(&mut self, per_stroke_notes: Vec<Vec<ShapeNote>>) {
         let fallback = self.editor_state.data.current_track;
         let data: Vec<StrokeRecord> = self
@@ -1016,6 +971,7 @@ fn translate_pending(editor: &mut Editor, r: PendingShapeRef, dtick: f32, dkey: 
 }
 
 /// 登记一个图形对象（自动绑定当前历史分组）
+#[cfg(test)]
 fn record_drawn_shape_on(
     editor: &mut Editor,
     track: usize,

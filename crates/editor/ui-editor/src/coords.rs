@@ -111,7 +111,6 @@ impl super::Editor {
     }
 
     /// tick → 屏幕 Y（仅纵向）
-    #[allow(dead_code)]
     pub(super) fn tick_to_y_vertical(&self, tick: f32) -> f32 {
         let view = &self.editor_state.view;
         let canvas_h = self.editor_state.canvas.size_y;
@@ -121,28 +120,8 @@ impl super::Editor {
     }
 
     /// key → 屏幕 X（仅纵向）
-    #[allow(dead_code)]
     pub(super) fn key_to_x_vertical(&self, key: u16) -> f32 {
         let view = &self.editor_state.view;
         key as f32 * view.zoom_y - view.scroll_y
-    }
-
-    /// 屏幕 Y → tick（仅纵向）
-    #[allow(dead_code)]
-    pub(super) fn y_to_tick_vertical(&self, y: f32) -> f32 {
-        let view = &self.editor_state.view;
-        let canvas_h = self.editor_state.canvas.size_y;
-        let kb_h = view.keyboard_width;
-        let grid_bottom = canvas_h - kb_h;
-        (grid_bottom - y + view.scroll_x) / view.zoom_x
-    }
-
-    /// 屏幕 X → key（仅纵向）
-    #[allow(dead_code)]
-    pub(super) fn x_to_key_vertical(&self, x: f32) -> u16 {
-        let view = &self.editor_state.view;
-        let max = view.visible_key_count.saturating_sub(1) as f32;
-        let key_f = (x + view.scroll_y) / view.zoom_y;
-        key_f.round().clamp(0.0, max) as u16
     }
 }
