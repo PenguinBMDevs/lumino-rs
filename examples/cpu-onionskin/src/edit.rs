@@ -182,11 +182,11 @@ impl Editor {
         if !Arc::make_mut(document).insert_note(track, note) {
             return;
         }
-        if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+        if !density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), 1) {
             self.density_dirty = true;
         }
         self.record_change(None, Some(note));
-        *index = Arc::new(index.with_changes(track, &[], &[note]));
+        *index = Arc::new(index.with_changes_fast(track, &[], &[note]));
         self.selection.clear();
         if let Some(position) = document.track_notes(track).position_of(&note) {
             self.selection.insert(position);
@@ -218,12 +218,12 @@ impl Editor {
             Arc::make_mut(document).remove_note(track, *position);
         }
         for note in &removed {
-            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, -1) {
+            if !density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), -1) {
                 self.density_dirty = true;
             }
             self.record_change(Some(*note), None);
         }
-        *index = Arc::new(index.with_changes(track, &removed, &[]));
+        *index = Arc::new(index.with_changes_fast(track, &removed, &[]));
         self.selection.clear();
         self.status = format!("删除 {} 个音符", removed.len());
         true
@@ -280,12 +280,12 @@ impl Editor {
             return;
         }
         for note in &added {
-            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+            if !density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), 1) {
                 self.density_dirty = true;
             }
             self.record_change(None, Some(*note));
         }
-        *index = Arc::new(index.with_changes(track, &[], &added));
+        *index = Arc::new(index.with_changes_fast(track, &[], &added));
         self.selection.clear();
         let notes = document.track_notes(track);
         for note in &added {

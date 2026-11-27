@@ -153,7 +153,7 @@ impl App {
 
     pub(super) fn choose_mode(&self, camera: &Camera) -> LodMode {
         // 与 lumino-cpu-onion 生产实现同一优先级：彩色覆盖 > 热力图兜底 > Exact。
-        if self.density.can_render_coverage(camera) {
+        if crate::render::density::can_render_coverage(&self.density, camera) {
             return LodMode::Coverage;
         }
         if crate::render::density::uses_overview(&self.index, camera) {

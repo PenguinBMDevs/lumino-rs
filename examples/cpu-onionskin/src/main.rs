@@ -257,11 +257,11 @@ fn main() -> Result<()> {
     }
 
     let density_start = Instant::now();
-    let density = render::density::DensityPyramid::build(&document, workers);
+    let density = render::density::DensityPyramid::build(&document, workers, camera::KEY_COUNT);
     println!(
         "[density] coverage+heat pyramid built in {} ms, {:.1} MiB",
         density_start.elapsed().as_millis(),
-        density.memory_mib()
+        density.memory_bytes() as f64 / (1024.0 * 1024.0)
     );
     let config = app::AppConfig {
         document,

@@ -1,7 +1,5 @@
 //! 彩色覆盖 LOD 的整帧渲染（从 `frame` 拆出，守住单文件 ≤600 行）。
 
-use std::sync::Arc;
-
 use super::App;
 use crate::{
     camera::Camera,
@@ -10,19 +8,29 @@ use crate::{
 
 impl App {
     /// 进入全量帧前把密度/覆盖层修到最新：优先脏区局部重建，失败才整建。
-    pub(super) fn ensure_density_ready(&mut self, camera: &Camera) {
+    ///
+    /// 与生产 `DensityCache::ensure` 一致：只要覆盖层失效就尝试局部重建，
+    /// 不再按缩放预判（缩放判定只决定本帧是否用它）。
+    pub(super) fn ensure_density_ready(&mut self) {
         if self.editor.density_dirty {
-            self.density = density::DensityPyramid::build(&self.document, self.workers);
+            self.density = density::DensityPyramid::build(
+                &self.document,
+                self.workers,
+                crate::camera::KEY_COUNT,
+            );
             self.editor.density_dirty = false;
             return;
         }
         if !self.density.coverage_valid()
-            && self.density.coverage_applicable(camera)
             && !self
                 .density
                 .rebuild_dirty_coverage(&self.document, &self.index)
         {
-            self.density = density::DensityPyramid::build(&self.document, self.workers);
+            self.density = density::DensityPyramid::build(
+                &self.document,
+                self.workers,
+                crate::camera::KEY_COUNT,
+            );
         }
     }
 
@@ -33,16 +41,15 @@ impl App {
         height: usize,
         estimate: u64,
     ) -> RenderStats {
-        let style = Arc::clone(self.renderer.style());
         let frame = self.renderer.frame_mut();
-        self.density.render_coverage(
+        density::render_coverage(
+            &self.density,
             frame,
             width,
             height,
             camera,
-            &style,
-            self.current_track,
-            &mut self.overview_scratch,
+            &self.density_style,
+            &mut self.density_scratch,
         );
         RenderStats {
             visible_notes: estimate,

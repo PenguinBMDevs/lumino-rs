@@ -6,6 +6,9 @@
 2px 描边，不省填充、不省描边、不丢音轨。** 高缩放走彩色覆盖光栅（真实轨道
 色 + 音符宽度），覆盖层不可用时才退回蓝色密度热力图。
 
+密度金字塔与彩色覆盖光栅的构建、增量重建和逐像素采样来自共享内核
+`lumino-cpu-onion`；示例只保留窗口/编辑/呈现等交互层与相机适配。
+
 ![dense 0.1 px/tick](docs/zoom-0.1.png)
 
 ![dense 2 px/tick](docs/zoom-2.0.png)
@@ -80,7 +83,8 @@ Coverage/Overview/Exact 全量帧，专门测最坏路径。
 LOD 优先级与 `lumino-cpu-onion` 主程序一致：
 
 1. **彩色覆盖光栅**：单元 `bin_ticks × zoom_x ≤ 2px` 时启用；保留真实轨道色
-   与音符宽度，当前轨仍用主轨蓝；
+   与音符宽度（共享内核按生产语义排除当前轨；示例没有独立主轨 pass，因此
+   把当前轨也纳入覆盖层，颜色为轨道色而不是主轨蓝——T-32c 示例降级）；
 2. **热力图兜底**：仅覆盖不可用、且同屏可见小节数 ≥30（例如极低 PPQ 导致
    基础 bin 已超过 2px）；
 3. **Exact**：其余缩放，完整矩形 + 填充 + 2px 描边。
@@ -188,9 +192,8 @@ src/
   app.rs             App 状态/配置
   app/window.rs      窗口、相机、Coverage/Overview/Exact 选择
   app/frame.rs       全量帧/增量帧/统计
-  app/coverage.rs    彩色覆盖整帧渲染
-  render/density/coverage.rs  覆盖单元构建与采样
-  render/density/render.rs    蓝色热力图兜底
+  app/coverage.rs    彩色覆盖整帧渲染（chrome 背景 + crate 透明层合成）
+  render/density.rs  密度/覆盖层适配（CanvasCamera、总览档位、透明层合成）
   app/events.rs      鼠标/键盘/编辑
   app/handler.rs     winit ApplicationHandler
   app/present_bridge.rs  呈现 + HUD
@@ -200,9 +203,9 @@ src/
   edit/selection.rs  命中/框选/多选
   edit/drag.rs       移动/框选提交
   edit_overlay.rs    选择高亮/ghost/框
-  render/            band、notes、SIMD、颜色、密度、chrome
-  camera.rs          视口/缩放/滚动
-  model.rs           派生索引（max_len/measure_counts/long_notes）
+  render/            band、notes、SIMD、颜色、密度适配、chrome
+  camera.rs          视口/缩放/滚动（UI 适配层）
+  model.rs           派生索引 re-export（共享内核 lumino-cpu-onion）
 ```
 
 ## 验证
@@ -226,8 +229,9 @@ cargo fmt -p cpu-onionskin -- --check
 - 水平大跨度已分帧到窄条 Exact；缩放/纵向滚动/编辑回退的全量 Exact 不在
   连续滚动统计内，但仍保持填充+描边+全部音轨，不降质量。
 - 彩色覆盖按 2px 单元上限整帧渲染；Paprika 310M 快速缩放 wall=146.3fps，
-  draw p99=10.92ms，work p99=12.23ms。覆盖单元只记录前两条轨道；当前轨
-  在两条候选内优先显示主轨蓝，若被更多轨道压在第三条则按 first-wins 显示。
+  draw p99=10.92ms，work p99=12.23ms。覆盖单元只记录前两条轨道；示例把
+  当前轨也纳入覆盖层（共享内核按生产语义排除当前轨、由主轨 pass 单独绘制），
+  当前轨显示轨道色而不是主轨蓝，这是 T-32c 的示例降级。
 - 覆盖层编辑后只重建脏 tick 区间；Paprika 单笔约 3ms。撤销/重做同样只回放
   按值变更，超过 64 条时转成脏区间做局部重建，不再全量构建。
 - 基准前 1 秒暖机用于排除 DWM 冷启动；`--bench 5` 实际统计 4 秒。

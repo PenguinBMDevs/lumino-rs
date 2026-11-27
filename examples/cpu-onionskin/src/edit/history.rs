@@ -76,10 +76,20 @@ impl Editor {
                 (change.old, change.new)
             };
             if let Some(note) = remove {
-                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, -1);
+                valid &= density.apply_note_range(
+                    note.start_tick,
+                    note.end_tick,
+                    u16::from(note.key),
+                    -1,
+                );
             }
             if let Some(note) = add {
-                valid &= density.apply_note_range(note.start_tick, note.end_tick, note.key, 1);
+                valid &= density.apply_note_range(
+                    note.start_tick,
+                    note.end_tick,
+                    u16::from(note.key),
+                    1,
+                );
             }
         }
         if !valid {

@@ -130,12 +130,11 @@ fn render_notes(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
     } else {
         0
     };
-    let active_keys = job.index.active_keys(
-        tick_lo.saturating_sub(crate::model::LOOKBACK_TICKS),
-        tick_hi,
-        Some(job.current_track),
-    ) & visible_key_mask;
-    let active_rows = if job.index.key_masks.is_empty() {
+    let active_keys = job
+        .index
+        .active_keys(tick_lo, tick_hi, job.current_track, &[])
+        & visible_key_mask;
+    let active_rows = if job.index.key_mask_bytes() == 0 {
         canvas_rows
     } else {
         (active_keys.count_ones() as usize)

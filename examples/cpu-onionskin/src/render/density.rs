@@ -1,36 +1,65 @@
-//! 高缩放简化层：彩色覆盖光栅（主路径）+ 密度热力图（兜底）。
+//! 密度/覆盖层适配：数据与光栅化来自 `lumino_cpu_onion::density`。
 //!
-//! 彩色覆盖光栅把音符矩形压成 `key × tick` 单元，保留最先生效的轨道；按屏幕
-//! 像素采样后仍是真实轨道色和音符宽度。单元超过 2px 时保持 Exact；它与主程序
-//! `lumino-cpu-onion` 的生产优先级一致。
-//!
-//! 同屏可见小节数 **≥30** 且覆盖层不可用时，退回蓝色密度热力图；30 小节仍是
-//! 热力图的唯一判定，不使用短音符宽度/数量等间接阈值。
+//! 本文件只做三件事，不复制 crate 的分层、增量重建与逐像素采样：
+//! 1. `Camera` → `CanvasCamera`：crate 只描述 canvas 区域，示例相机还带
+//!    `keyboard_width` / `ruler_height`；
+//! 2. chrome 背景：crate 输出透明 `0xAARRGGBB`，示例先铺标尺 / 黑键行 /
+//!    标尺底边，只把不透明像素叠上去，绝不拿透明像素覆盖背景；
+//! 3. 总览档位：`≥30` 小节仍按示例相机的 `total_ticks` 裁剪口径判定
+//!    （crate 的 `CanvasCamera` 不知道文档总长，不能代替这一步）。
 
-use std::thread;
+use lumino_cpu_onion::{CanvasCamera, color::NoteStyle as CpuNoteStyle, density::OverviewScratch};
 
-use lumino_midi_loader::MidiDocument;
+use crate::{
+    camera::Camera,
+    model::TrackIndex,
+    render::chrome::{
+        COLOR_BG, COLOR_BLACK_ROW, COLOR_KEYBOARD_EDGE, COLOR_RULER_BG, is_black_key,
+    },
+};
 
-use crate::{camera::Camera, model::TrackIndex};
+pub use lumino_cpu_onion::density::{DensityPyramid, OVERVIEW_MIN_MEASURES};
 
-mod coverage;
-mod grow;
-mod rebuild;
-mod render;
+/// 覆盖/热力图共用的可复用缓冲（避免每帧分配整帧临时像素）。
+#[derive(Debug, Default)]
+pub struct Scratch {
+    /// crate 的逐列 / 逐行缓存。
+    cpu: OverviewScratch,
+    /// canvas 尺寸的透明叠加帧：crate 只接受无 stride 的整帧。
+    canvas: Vec<u32>,
+}
 
-pub use render::render_overview;
+/// 示例相机 → crate 画布相机：去掉键盘栏与标尺偏移，滚动/缩放保持同口径。
+///
+/// `left` / `top` 是调用方实际使用的整数像素偏移（覆盖路径四舍五入、总览
+/// 路径截断）。偏移可能是分数（DPI 缩放后），所以要把整数偏移与相机浮点
+/// 偏移的残差折进 `scroll_*`，否则每条采样列/行会平移 <1px：
+/// - `x = tick * zoom_x - scroll_x`（canvas 局部），对应示例 `x + left`；
+/// - `y = (key_count - 1 - key) * zoom_y - scroll_y`（canvas 局部），
+///   对应示例 `y + top`。
+#[must_use]
+pub fn canvas_camera(
+    camera: &Camera,
+    canvas_width: u32,
+    canvas_height: u32,
+    left: usize,
+    top: usize,
+) -> CanvasCamera {
+    CanvasCamera {
+        width: canvas_width.max(1),
+        height: canvas_height.max(1),
+        scroll_x: camera.scroll_x + left as f32 - camera.keyboard_width,
+        scroll_y: camera.scroll_y + top as f32 - camera.ruler_height,
+        zoom_x: camera.zoom_x,
+        zoom_y: camera.zoom_y,
+        key_count: camera.key_count,
+    }
+}
 
-/// 同屏可见小节数达到该值时，**热力图兜底**允许启用。
-pub const OVERVIEW_MIN_MEASURES: u32 = 30;
-
-/// 基础 bin 的 tick 宽度。
-const BASE_BIN_TICKS: u32 = 64;
-/// 热力层数（64..4096 tick/bin）。
-const LEVELS: usize = 7;
-/// MIDI key 数。
-const KEY_COUNT: usize = 128;
-
-/// 屏幕横向覆盖的可见小节数（首尾部分小节都计入）。
+/// 屏幕横向覆盖的可见小节数（示例相机含 `total_ticks` 裁剪）。
+///
+/// crate 的 `visible_measure_count` 只接受 canvas 相机，拿不到文档总长；
+/// 这里保留示例相机口径，避免视口越过曲尾时多算小节而提前切 LOD。
 #[must_use]
 pub fn visible_measure_count(index: &TrackIndex, camera: &Camera) -> u32 {
     let measure_ticks = index.measure_ticks.max(1);
@@ -43,7 +72,7 @@ pub fn visible_measure_count(index: &TrackIndex, camera: &Camera) -> u32 {
     last.saturating_sub(first).saturating_add(1)
 }
 
-/// 是否允许热力图兜底：**同屏可见小节数 ≥30**。
+/// 是否应切到总览密度 LOD：同屏可见小节数 ≥ [`OVERVIEW_MIN_MEASURES`]。
 #[must_use]
 pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
     if index.total_notes == 0 {
@@ -59,262 +88,297 @@ pub fn uses_overview(index: &TrackIndex, camera: &Camera) -> bool {
     visible_measure_count(index, camera) >= OVERVIEW_MIN_MEASURES
 }
 
-/// 一层热力计数。
-#[derive(Debug)]
-struct DensityLevel {
-    bin_ticks: u32,
-    bins: usize,
-    cells: Vec<u16>,
+/// 彩色覆盖光栅是否可用于当前缩放（只看横向缩放，尺寸仅用于计数恒非零）。
+#[must_use]
+pub fn can_render_coverage(density: &DensityPyramid, camera: &Camera) -> bool {
+    let canvas = canvas_camera(camera, camera.width.max(1), camera.height.max(1), 0, 0);
+    density.can_render_coverage(&canvas)
 }
 
-/// 密度计数 + 彩色覆盖金字塔。
-#[derive(Debug)]
-pub struct DensityPyramid {
-    levels: Vec<DensityLevel>,
-    max_counts: Vec<u16>,
-    /// 彩色覆盖单元（基础 bin 8 tick，逐层 2:1 合并）。
-    coverage: Vec<coverage::CoverageLevel>,
-    /// 覆盖层有效总 tick（文档值或实际最大 end_tick 取大）。
-    total_ticks: u32,
-    /// 编辑后覆盖层失效，下一次需要时局部重建。
-    coverage_valid: bool,
-    /// 待局部重建的 tick 区间 `[lo, hi)`。
-    coverage_dirty: Option<(u32, u32)>,
+/// 彩色覆盖光栅：先铺示例 chrome 背景，再叠加 crate 的透明覆盖层。
+///
+/// crate 的覆盖层按生产语义排除 `current_track`（主轨由 GPU 单独绘制）。
+/// 示例没有独立主轨 pass，这里传 `usize::MAX` 让所有轨道都进入覆盖层；
+/// 代价是当前轨显示轨道色而不是主轨蓝（示例降级，T-32c）。
+pub fn render_coverage(
+    density: &DensityPyramid,
+    frame: &mut [u32],
+    width: usize,
+    height: usize,
+    camera: &Camera,
+    style: &CpuNoteStyle,
+    scratch: &mut Scratch,
+) {
+    if width == 0 || height == 0 || frame.len() < width.saturating_mul(height) {
+        return;
+    }
+    let ruler = (camera.ruler_height.round().max(0.0) as usize).min(height);
+    let keyboard = (camera.keyboard_width.round().max(0.0) as usize).min(width);
+    fill_chrome(frame, width, height, camera, ruler);
+
+    let canvas_width = width - keyboard;
+    let canvas_height = height - ruler;
+    if canvas_width == 0 || canvas_height == 0 {
+        return;
+    }
+    resize_canvas(scratch, canvas_width, canvas_height);
+    let canvas = canvas_camera(
+        camera,
+        canvas_width as u32,
+        canvas_height as u32,
+        keyboard,
+        ruler,
+    );
+    density.render_coverage_with_scratch(
+        &mut scratch.canvas,
+        canvas_width as u32,
+        canvas_height as u32,
+        &canvas,
+        style,
+        usize::MAX,
+        &[],
+        &mut scratch.cpu,
+    );
+    overlay_canvas(
+        frame,
+        width,
+        &scratch.canvas,
+        canvas_width,
+        keyboard,
+        ruler,
+        height,
+    );
 }
 
-impl DensityPyramid {
-    /// 并行统计热力计数；彩色覆盖按轨道顺序单线程构建，保证 first-wins。
-    #[must_use]
-    pub fn build(document: &MidiDocument, workers: usize) -> Self {
-        let total_ticks = u64::from(document.total_ticks());
-        let base_bins = ((total_ticks / u64::from(BASE_BIN_TICKS)) as usize).max(1) + 1;
-        let track_count = document.track_count();
-        let workers = workers.max(1).min(track_count.max(1));
-        let chunk = track_count.div_ceil(workers).max(1);
-        let mut base = vec![0u16; base_bins * KEY_COUNT];
-        let mut max_end = 0u32;
-
-        thread::scope(|scope| {
-            let mut handles = Vec::new();
-            for worker in 0..workers {
-                let start = worker * chunk;
-                let end = (start + chunk).min(track_count);
-                if start >= end {
-                    continue;
-                }
-                handles.push(scope.spawn(move || {
-                    let mut local = vec![0u16; base_bins * KEY_COUNT];
-                    let mut local_end = 0u32;
-                    for track in start..end {
-                        for note in document.track_notes(track).iter() {
-                            local_end = local_end.max(note.end_tick);
-                            let bin = (note.start_tick / BASE_BIN_TICKS) as usize;
-                            if bin >= base_bins {
-                                continue;
-                            }
-                            let index = bin * KEY_COUNT + note.key as usize;
-                            local[index] = local[index].saturating_add(1);
-                        }
-                    }
-                    (local, local_end)
-                }));
-            }
-            for handle in handles {
-                if let Ok((local, local_end)) = handle.join() {
-                    max_end = max_end.max(local_end);
-                    for (destination, source) in base.iter_mut().zip(local) {
-                        *destination = destination.saturating_add(source);
-                    }
-                }
-            }
-        });
-
-        let mut levels = Vec::with_capacity(LEVELS);
-        levels.push(DensityLevel {
-            bin_ticks: BASE_BIN_TICKS,
-            bins: base_bins,
-            cells: base,
-        });
-        for _ in 1..LEVELS {
-            let Some(previous) = levels.last() else {
-                break;
-            };
-            let bins = previous.bins.div_ceil(2).max(1);
-            let mut cells = vec![0u16; bins * KEY_COUNT];
-            for bin in 0..bins {
-                for key in 0..KEY_COUNT {
-                    let a = previous
-                        .cells
-                        .get((bin * 2) * KEY_COUNT + key)
-                        .copied()
-                        .unwrap_or(0);
-                    let b = previous
-                        .cells
-                        .get((bin * 2 + 1) * KEY_COUNT + key)
-                        .copied()
-                        .unwrap_or(0);
-                    cells[bin * KEY_COUNT + key] = a.saturating_add(b);
-                }
-            }
-            levels.push(DensityLevel {
-                bin_ticks: BASE_BIN_TICKS << (levels.len() as u32),
-                bins,
-                cells,
-            });
-        }
-        let max_counts = levels
-            .iter()
-            .map(|level| level.cells.iter().copied().max().unwrap_or(1).max(1))
-            .collect();
-        // 新建工程 `total_ticks == 0` 后直接插入音符时，以实际最大 end_tick 为准；
-        // 否则覆盖层会把所有列压进最后一个 bin。
-        let coverage_ticks = document.total_ticks().max(max_end);
-        let coverage = coverage::build_coverage(document, coverage_ticks);
-        Self {
-            levels,
-            max_counts,
-            coverage,
-            total_ticks: coverage_ticks,
-            coverage_valid: true,
-            coverage_dirty: None,
-        }
+/// 总览热力图：先铺示例 chrome 背景，再叠加 crate 的透明热力层。
+pub fn render_overview(
+    density: &DensityPyramid,
+    frame: &mut [u32],
+    width: usize,
+    height: usize,
+    camera: &Camera,
+    scratch: &mut Scratch,
+) {
+    if width == 0 || height == 0 || frame.len() < width.saturating_mul(height) {
+        return;
     }
+    // 与迁移前的总览路径一致：标尺/键盘按截断取整（覆盖路径用四舍五入）。
+    let ruler = (camera.ruler_height as usize).min(height);
+    let keyboard = (camera.keyboard_width as usize).min(width);
+    fill_chrome(frame, width, height, camera, ruler);
 
-    /// 某层热力 bin 宽度（tick）。
-    #[inline]
-    #[must_use]
-    pub fn bin_ticks(&self, level: usize) -> u32 {
-        self.levels
-            .get(level)
-            .map_or(BASE_BIN_TICKS, |level| level.bin_ticks)
+    let canvas_width = width - keyboard;
+    let canvas_height = height - ruler;
+    if canvas_width == 0 || canvas_height == 0 {
+        return;
     }
+    resize_canvas(scratch, canvas_width, canvas_height);
+    let canvas = canvas_camera(
+        camera,
+        canvas_width as u32,
+        canvas_height as u32,
+        keyboard,
+        ruler,
+    );
+    density.render_overview_with_scratch(
+        &mut scratch.canvas,
+        canvas_width as u32,
+        canvas_height as u32,
+        &canvas,
+        &mut scratch.cpu,
+    );
+    overlay_canvas(
+        frame,
+        width,
+        &scratch.canvas,
+        canvas_width,
+        keyboard,
+        ruler,
+        height,
+    );
+}
 
-    /// 某层最大计数。
-    #[inline]
-    #[must_use]
-    pub fn max_count(&self, level: usize) -> u16 {
-        self.max_counts.get(level).copied().unwrap_or(1).max(1)
-    }
-
-    /// 热力层选择：保证 bin 至少覆盖 ~1 个屏幕像素。
-    #[must_use]
-    pub fn level_for_zoom(&self, zoom_x: f32) -> usize {
-        let mut level = 0usize;
-        while level + 1 < self.levels.len() && (self.bin_ticks(level) as f32 * zoom_x) < 1.0 {
-            level += 1;
-        }
-        level
-    }
-
-    /// 彩色覆盖层是否仍与文档一致。
-    #[inline]
-    #[must_use]
-    pub fn coverage_valid(&self) -> bool {
-        self.coverage_valid
-    }
-
-    /// 覆盖层有效总 tick（渲染右界；目前仅测试断言使用）。
-    #[cfg(test)]
-    #[inline]
-    #[must_use]
-    pub fn total_ticks(&self) -> u32 {
-        self.total_ticks
-    }
-
-    /// 当前缩放是否可能启用彩色覆盖光栅（不检查有效性）。
-    #[must_use]
-    pub fn coverage_applicable(&self, camera: &Camera) -> bool {
-        self.coverage_level_for_zoom(camera.zoom_x).is_some()
-    }
-
-    /// 当前缩放是否可实际渲染彩色覆盖光栅。
-    #[must_use]
-    pub fn can_render_coverage(&self, camera: &Camera) -> bool {
-        self.coverage_valid && self.coverage_applicable(camera)
-    }
-
-    /// 估算内存（MiB，计数 + 覆盖）。
-    #[must_use]
-    pub fn memory_mib(&self) -> f64 {
-        let counts: usize = self
-            .levels
-            .iter()
-            .map(|level| level.cells.len() * std::mem::size_of::<u16>())
-            .sum();
-        let coverage: usize = self
-            .coverage
-            .iter()
-            .map(|level| level.cells.len() * std::mem::size_of::<u32>())
-            .sum();
-        (counts + coverage) as f64 / (1024.0 * 1024.0)
-    }
-
-    /// 带 end_tick 的增量更新；覆盖脏区按 `[start_tick, end_tick)` 标记。
-    ///
-    /// 返回 `false` 表示越过安全内存上限，调用方必须整建。
-    pub fn apply_note_range(
-        &mut self,
-        start_tick: u32,
-        end_tick: u32,
-        key: u8,
-        delta: i32,
-    ) -> bool {
-        if key as usize >= KEY_COUNT || delta == 0 {
-            return true;
-        }
-        let end_tick = end_tick.max(start_tick.saturating_add(1));
-        if !grow::ensure_layout(self, start_tick, end_tick) {
-            self.coverage_dirty = None;
-            self.coverage_valid = false;
-            return false;
-        }
-        self.coverage_valid = false;
-        self.coverage_dirty = Some(match self.coverage_dirty {
-            Some((lo, hi)) => (lo.min(start_tick), hi.max(end_tick)),
-            None => (start_tick, end_tick),
-        });
-        for (level_index, level) in self.levels.iter_mut().enumerate() {
-            let bin = (start_tick / level.bin_ticks) as usize;
-            let Some(cell) = level.cells.get_mut(bin * KEY_COUNT + key as usize) else {
-                continue;
-            };
-            if delta >= 0 {
-                *cell = cell.saturating_add(delta as u16);
+/// 铺 chrome 背景：标尺行、黑键行、标尺底边。
+fn fill_chrome(frame: &mut [u32], width: usize, height: usize, camera: &Camera, ruler: usize) {
+    for y in 0..height {
+        let color = if y < ruler {
+            COLOR_RULER_BG
+        } else {
+            let key = camera.y_to_key(y as f32 + 0.5);
+            if is_black_key(key) {
+                COLOR_BLACK_ROW
             } else {
-                *cell = cell.saturating_sub((-delta) as u16);
+                COLOR_BG
             }
-            if delta > 0 {
-                self.max_counts[level_index] = self.max_counts[level_index].max(*cell);
-            }
+        };
+        if let Some(row) = frame.get_mut(y * width..(y + 1) * width) {
+            row.fill(color);
         }
-        true
     }
-
-    /// 只重建脏区覆盖单元；没有脏区时返回 `false`（调用方应整建）。
-    pub fn rebuild_dirty_coverage(&mut self, document: &MidiDocument, index: &TrackIndex) -> bool {
-        rebuild::rebuild_dirty_coverage(self, document, index)
-    }
-
-    /// 按多个脏 tick 区间重建计数层与覆盖层（历史大变更）。
-    pub fn rebuild_dirty_ranges(
-        &mut self,
-        document: &MidiDocument,
-        index: &TrackIndex,
-        ranges: &[(u32, u32)],
-    ) -> bool {
-        rebuild::rebuild_dirty_ranges(self, document, index, ranges)
+    if ruler > 0
+        && let Some(row) = frame.get_mut((ruler - 1) * width..ruler * width)
+    {
+        row.fill(COLOR_KEYBOARD_EDGE);
     }
 }
 
-/// 简化层渲染的可复用临时缓冲。
-#[derive(Debug, Default)]
-pub struct OverviewScratch {
-    pub(crate) bin_for_x: Vec<usize>,
-    pub(crate) colors: Vec<u32>,
-    pub(crate) key_rows: Vec<u32>,
-    pub(crate) cached_level: Option<usize>,
-    pub(crate) cached_max: u16,
+/// 把 canvas 尺寸的透明叠加层合成到窗口帧：透明像素保留 chrome 背景。
+fn overlay_canvas(
+    frame: &mut [u32],
+    width: usize,
+    canvas: &[u32],
+    canvas_width: usize,
+    left: usize,
+    top: usize,
+    height: usize,
+) {
+    let needed = canvas_width.saturating_mul(height.saturating_sub(top));
+    if canvas.len() < needed {
+        return;
+    }
+    for y in top..height {
+        let source_row = y - top;
+        let source = &canvas[source_row * canvas_width..(source_row + 1) * canvas_width];
+        let Some(row) = frame.get_mut(y * width + left..(y + 1) * width) else {
+            continue;
+        };
+        for (destination, &pixel) in row.iter_mut().zip(source) {
+            if pixel != 0 {
+                // crate 内部是 0xAARRGGBB；softbuffer 帧是 0x00RRGGBB。
+                *destination = pixel & 0x00FF_FFFF;
+            }
+        }
+    }
+}
+
+/// 把共享缓冲调整到 canvas 尺寸（尺寸不变时零开销；crate 会整帧重写）。
+fn resize_canvas(scratch: &mut Scratch, canvas_width: usize, canvas_height: usize) {
+    let len = canvas_width.saturating_mul(canvas_height);
+    if scratch.canvas.len() != len {
+        scratch.canvas.resize(len, 0);
+    }
 }
 
 #[cfg(test)]
-mod tests;
+mod tests {
+    use lumino_midi_loader::{MidiDocument, NoteEvent};
+
+    use super::*;
+
+    fn camera() -> Camera {
+        let mut camera = Camera::new(800, 600, 1.0, 10_000, 480, 0.01);
+        camera.center_on_key(125);
+        camera
+    }
+
+    #[test]
+    fn canvas_camera_matches_ui_offsets() {
+        let camera = camera();
+        let ruler = camera.ruler_height.round() as usize;
+        let keyboard = camera.keyboard_width.round() as usize;
+        let canvas = canvas_camera(
+            &camera,
+            camera.width - keyboard as u32,
+            camera.height - ruler as u32,
+            keyboard,
+            ruler,
+        );
+        for (x, y) in [(0usize, 0usize), (100, 17), (37, 55)] {
+            let expected_tick = camera.x_to_tick((x + keyboard) as f32 + 0.5);
+            let tick = canvas.x_to_tick(x as f32 + 0.5);
+            assert!(
+                (tick - expected_tick).abs() < 1e-4,
+                "{tick} vs {expected_tick}"
+            );
+            let expected_key = camera.y_to_key_f32((y + ruler) as f32 + 0.5);
+            let key = canvas.y_to_key_f32(y as f32 + 0.5);
+            assert!((key - expected_key).abs() < 1e-4, "{key} vs {expected_key}");
+        }
+    }
+
+    #[test]
+    fn coverage_overlay_keeps_chrome_background() {
+        let mut document = MidiDocument::empty_with_tracks(1, 480);
+        document.insert_note(0, NoteEvent::new(0, 2000, 125, 100, 0));
+        let density = DensityPyramid::build(&document, 1, 128);
+        let camera = camera();
+        assert!(can_render_coverage(&density, &camera));
+        let style = CpuNoteStyle::new(1);
+        let mut scratch = Scratch::default();
+        let (width, height) = (800usize, 600usize);
+        let mut frame = vec![0u32; width * height];
+        render_coverage(
+            &density,
+            &mut frame,
+            width,
+            height,
+            &camera,
+            &style,
+            &mut scratch,
+        );
+        assert!(
+            frame.iter().all(|&pixel| pixel != 0),
+            "chrome 背景不得被透明像素覆盖"
+        );
+        let fill = style.fill(0) & 0x00FF_FFFF;
+        assert!(frame.contains(&fill), "覆盖层必须写入真实轨道色");
+    }
+
+    #[test]
+    fn overview_overlay_keeps_chrome_background() {
+        let mut document = MidiDocument::empty_with_tracks(1, 480);
+        document.insert_note(0, NoteEvent::new(0, 2000, 125, 100, 0));
+        let density = DensityPyramid::build(&document, 1, 128);
+        let mut camera = Camera::new(800, 600, 1.0, 10_000, 480, 0.01);
+        camera.center_on_key(125);
+        let mut scratch = Scratch::default();
+        let mut frame = vec![0u32; 800 * 600];
+        render_overview(&density, &mut frame, 800, 600, &camera, &mut scratch);
+        assert!(
+            frame.iter().all(|&pixel| pixel != 0),
+            "chrome 背景不得被透明像素覆盖"
+        );
+        let background = [
+            COLOR_RULER_BG,
+            COLOR_BLACK_ROW,
+            COLOR_BG,
+            COLOR_KEYBOARD_EDGE,
+        ];
+        assert!(
+            frame.iter().any(|pixel| !background.contains(pixel)),
+            "热力层必须写入可见颜色"
+        );
+    }
+
+    #[test]
+    fn overview_count_is_clamped_at_document_end() {
+        let document = MidiDocument::empty_with_tracks(1, 480);
+        let mut index = TrackIndex::build(&document);
+        index.total_notes = 1;
+        index.measure_counts = vec![1; 64];
+        index.measure_ticks = 1920;
+        let mut camera = Camera::new(800, 600, 1.0, 2 * 1920, 480, 0.01);
+        camera.keyboard_width = 0.0;
+        camera.zoom_x = 800.0 / (30.0 * 1920.0);
+        // 视口宽 30 小节但曲尾只有 2 小节：示例相机必须按 total_ticks 裁剪。
+        assert_eq!(visible_measure_count(&index, &camera), 2);
+        assert!(!uses_overview(&index, &camera));
+    }
+
+    #[test]
+    fn overview_threshold_uses_camera_measure_count() {
+        let document = MidiDocument::empty_with_tracks(1, 480);
+        let mut index = TrackIndex::build(&document);
+        index.total_notes = 1;
+        index.measure_counts = vec![1; 64];
+        index.measure_ticks = 1920;
+        let mut camera = Camera::new(800, 600, 1.0, 1_000_000, 480, 0.01);
+        camera.keyboard_width = 0.0;
+        camera.zoom_x = 800.0 / (29.0 * 1920.0);
+        assert_eq!(visible_measure_count(&index, &camera), 29);
+        assert!(!uses_overview(&index, &camera));
+        camera.zoom_x = 800.0 / (30.0 * 1920.0);
+        assert_eq!(visible_measure_count(&index, &camera), 30);
+        assert!(uses_overview(&index, &camera));
+    }
+}

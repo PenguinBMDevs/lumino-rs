@@ -13,7 +13,7 @@ fn fixture() -> (Arc<MidiDocument>, Arc<TrackIndex>, DensityPyramid) {
     document.insert_note(0, lumino_midi_loader::NoteEvent::new(480, 600, 62, 100, 0));
     let document = Arc::new(document);
     let index = Arc::new(TrackIndex::build(&document));
-    let density = DensityPyramid::build(&document, 1);
+    let density = DensityPyramid::build(&document, 1, crate::camera::KEY_COUNT);
     (document, index, density)
 }
 
@@ -63,7 +63,7 @@ fn large_history_uses_ranges_without_full_density() {
     }
     let mut document = Arc::new(document);
     let mut index = Arc::new(TrackIndex::build(&document));
-    let mut density = DensityPyramid::build(&document, 1);
+    let mut density = DensityPyramid::build(&document, 1, crate::camera::KEY_COUNT);
     let mut editor = Editor::new(1920);
     editor.selection = (0..100).collect();
     assert!(editor.delete_selected(&mut document, &mut index, &mut density, 0));

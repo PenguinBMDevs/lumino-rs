@@ -100,7 +100,9 @@ struct App {
     editor: Editor,
     drag_base: Vec<u32>,
     overview_buf: Vec<u32>,
-    overview_scratch: crate::render::density::OverviewScratch,
+    density_scratch: crate::render::density::Scratch,
+    /// 覆盖层的 crate 调色板缓存（示例相机不带主轨蓝语义）。
+    density_style: lumino_cpu_onion::color::NoteStyle,
     renderer: Renderer,
     font: Option<TextRenderer>,
     window: Option<Arc<Window>>,
@@ -166,6 +168,7 @@ impl App {
             .saturating_add(measure_ticks.saturating_mul(100))
             .max(1);
         let ppq = config.document.division();
+        let density_style = lumino_cpu_onion::color::NoteStyle::new(config.document.track_count());
         let now = Instant::now();
         Self {
             document: config.document,
@@ -176,7 +179,8 @@ impl App {
             editor: Editor::new(u32::from(ppq)),
             drag_base: Vec::new(),
             overview_buf: Vec::new(),
-            overview_scratch: Default::default(),
+            density_scratch: Default::default(),
+            density_style,
             renderer,
             font,
             window: None,

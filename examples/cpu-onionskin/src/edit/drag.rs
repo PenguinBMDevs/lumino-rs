@@ -102,18 +102,18 @@ impl Editor {
         }
         Arc::make_mut(document).batch_insert_notes(track, added.to_vec());
         for note in &removed {
-            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, -1) {
+            if !density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), -1) {
                 self.density_dirty = true;
             }
             self.record_change(Some(*note), None);
         }
         for note in &added {
-            if !density.apply_note_range(note.start_tick, note.end_tick, note.key, 1) {
+            if !density.apply_note_range(note.start_tick, note.end_tick, u16::from(note.key), 1) {
                 self.density_dirty = true;
             }
             self.record_change(None, Some(*note));
         }
-        *index = Arc::new(index.with_changes(track, &removed, &added));
+        *index = Arc::new(index.with_changes_fast(track, &removed, &added));
         self.selection.clear();
         self.status = format!("已移动 {} 个音符", added.len());
         true

@@ -145,7 +145,11 @@ impl App {
         self.next_frame = Instant::now();
         self.idle_reported = false;
         if self.editor.density_dirty {
-            self.density = density::DensityPyramid::build(&self.document, self.workers);
+            self.density = density::DensityPyramid::build(
+                &self.document,
+                self.workers,
+                crate::camera::KEY_COUNT,
+            );
             self.editor.density_dirty = false;
         }
     }

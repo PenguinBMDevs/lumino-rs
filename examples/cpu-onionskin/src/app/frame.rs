@@ -172,7 +172,7 @@ impl App {
 
         // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
         // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
-        self.ensure_density_ready(&camera);
+        self.ensure_density_ready();
         let mode = self.choose_mode(&camera);
         let render_start = Instant::now();
         let render_stats = if mode == LodMode::Coverage {
@@ -189,12 +189,12 @@ impl App {
                 self.overview_buf.resize(small_width * small_height, 0);
             }
             density::render_overview(
+                &self.density,
                 &mut self.overview_buf,
                 small_width,
                 small_height,
                 &small_camera,
-                &self.density,
-                &mut self.overview_scratch,
+                &mut self.density_scratch,
             );
             let mut x_map = vec![0usize; width_usize];
             for (x, slot) in x_map.iter_mut().enumerate() {
