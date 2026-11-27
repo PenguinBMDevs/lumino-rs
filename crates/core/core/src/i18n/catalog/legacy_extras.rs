@@ -111,7 +111,6 @@ fn lookup_legacy_1(zh: &str) -> Option<&'static str> {
         "删除后无法恢复，确定要删除吗？" => {
             Some("This cannot be undone. Delete anyway?")
         }
-        "删除素材" => Some("Delete Material"),
         "力度 0-127" => Some("Velocity 0-127"),
         "力度小于等于阈值的音符将不播放（0=关闭过滤）" => {
             Some("Notes with velocity <= threshold will not play (0=disabled)")
@@ -348,7 +347,6 @@ fn lookup_legacy_3(zh: &str) -> Option<&'static str> {
         "自动保存" => Some("Autosave"),
         "自动保存间隔（分钟）:" => Some("Autosave interval (minutes):"),
         "自动化曲线连线粗细:" => Some("Automation line thickness:"),
-        "自动化面板" => Some("Automation"),
         "自动化面板中事件瞄点之间的连线粗细（1-10 像素）" => {
             Some("Line thickness between event anchor points in the automation panel (1-10 pixels)")
         }
@@ -356,7 +354,6 @@ fn lookup_legacy_3(zh: &str) -> Option<&'static str> {
         "自动滚动: 固定" => Some("Auto-Scroll: Fixed"),
         "自动滚动: 滚动" => Some("Auto-Scroll: Scroll"),
         "自动滚动设置" => Some("Auto-Scroll Settings"),
-        "自定义 BPM 上限" => Some("Custom BPM Max"),
         "自由笔画" => Some("Free Stroke"),
         "自由笔画：拖出矢量笔画（实时预览），松手后 √ 一次性生成音符；独立工具，不可与颜料桶共存" => {
             Some(
@@ -425,7 +422,6 @@ fn lookup_legacy_3(zh: &str) -> Option<&'static str> {
         "重做" => Some("Redo"),
         "重置缩放" => Some("Reset Zoom"),
         "量化" => Some("Quantize"),
-        "钢琴卷帘" => Some("Piano Roll"),
         "钢琴瀑布流" => Some("Piano Waterfall"),
         "铅笔工具" => Some("Pencil Tool"),
         "防爆闸（LGS，默认开启）" => Some("Anti-overload gate (LGS, on by default)"),
@@ -441,8 +437,6 @@ fn lookup_legacy_4(zh: &str) -> Option<&'static str> {
     match zh {
         "音色库:" => Some("Soundfont:"),
         "音轨列表" => Some("Track List"),
-        "音轨总览" => Some("Track Overview"),
-        "音频" => Some("Audio"),
         "音频播放输出设备:" => Some("Audio Playback Output Device:"),
         "项目名称" => Some("Project Name"),
         "颜料桶" => Some("Paint Bucket"),

@@ -42,8 +42,6 @@ fn lookup_shell_1(zh: &str) -> Option<&'static str> {
 
         "导出失败: {error}" => Some("Export failed: {error}"),
 
-        "导出完成" => Some("Export complete"),
-
         "调色板" => Some("Palette"),
 
         "调色板生成失败: {e}" => Some("Palette generation failed: {e}"),
@@ -69,8 +67,6 @@ fn lookup_shell_1(zh: &str) -> Option<&'static str> {
             Some("Format: {container}  Codec: {codec}  Quality: {quality}")
         }
         "固定位深调色板" => Some("Fixed Bit Palette"),
-
-        "关闭" => Some("Close"),
 
         "轨道" => Some("Tracks"),
 
@@ -141,8 +137,6 @@ fn lookup_shell_2(zh: &str) -> Option<&'static str> {
         "确认并关闭" => Some("Confirm and Close"),
 
         "三角形" => Some("Triangle"),
-
-        "删除" => Some("Delete"),
 
         "上传到云" => Some("Upload to Cloud"),
 
@@ -231,10 +225,6 @@ fn lookup_shell_3(zh: &str) -> Option<&'static str> {
 
         "已连接，请创建或加入房间" => Some("Connected. Create or join a room"),
 
-        "已暂停" => Some("Paused"),
-
-        "已中止" => Some("Aborted"),
-
         "音轨名称" => Some("Track Name"),
 
         "音乐文件" => Some("Music Files"),
@@ -249,8 +239,6 @@ fn lookup_shell_3(zh: &str) -> Option<&'static str> {
 
         "暂无音轨" => Some("No Tracks"),
 
-        "找回删除音轨" => Some("Recover Deleted Tracks"),
-
         "正在初始化..." => Some("Initializing..."),
 
         "正在初始化... [{source}]" => Some("Initializing... [{source}]"),
@@ -261,7 +249,6 @@ fn lookup_shell_3(zh: &str) -> Option<&'static str> {
 
         "正在中止..." => Some("Aborting..."),
 
-        "重命名" => Some("Rename"),
         _ => None,
     }
 }

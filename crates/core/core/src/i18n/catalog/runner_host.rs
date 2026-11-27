@@ -136,9 +136,6 @@ fn lookup_runner_host_2(zh: &str) -> Option<&'static str> {
                 "No support for {backend} detected; the app may be unstable (see Settings for details)",
             )
         }
-        "放我进去" => Some("Let Me In Anyway"),
-
-        "确认并关闭" => Some("Confirm and Close"),
 
         "未检测到支持 {backend} 的显卡或驱动，可尝试更新显卡驱动。" => Some(
             "No graphics card or driver supporting {backend} was detected. Try updating your graphics driver.",

@@ -14,8 +14,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
 /// 词条分片 1/4：按原 `match` 顺序切分，语义等价。
 fn lookup_runner_menu_1(zh: &str) -> Option<&'static str> {
     match zh {
-        "无标题" => Some("Untitled"),
-
         "Lumino 工程入口" => Some("Lumino Project Entry"),
 
         "准备导出工程" => Some("Preparing to export project"),

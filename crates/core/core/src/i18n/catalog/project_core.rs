@@ -225,9 +225,6 @@ fn lookup_project_core_3(zh: &str) -> Option<&'static str> {
 
         "滚动指示线 (自动翻页)" => Some("Scrolling indicator (auto page flip)"),
 
-        // 「关闭」在 ui_view / ui_shell 已登记为按钮译文，同 key 必须保持一致
-        "关闭" => Some("Close"),
-
         // ── crates/core/message/src/events/window/audio.rs（音频导出下拉显示名）──
         "单声道" => Some("Mono"),
 

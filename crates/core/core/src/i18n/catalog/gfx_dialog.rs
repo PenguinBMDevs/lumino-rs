@@ -8,25 +8,13 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
     match zh {
         // ── 对话框窗口标题（`crates/editor/dialog/src/window.rs`）──
         "自定义贴合" => Some("Custom Precision"),
-        "多人协作" => Some("Collaboration"),
         "加载大文件" => Some("Load Large File"),
         "工程设置" => Some("Project Settings"),
-        "设置" => Some("Settings"),
         "关于" => Some("About"),
-        "变速" => Some("Speed Change"),
-        "批量编辑" => Some("Batch Edit"),
-        "音频导出" => Some("Audio Export"),
-        "视频导出" => Some("Video Export"),
-        "内存占用详情" => Some("Memory Usage Details"),
-        "找回删除音轨" => Some("Recover Deleted Tracks"),
-        "连接云存储" => Some("Connect to Cloud Storage"),
         "云存储文件" => Some("Cloud Files"),
-        "云存储提醒" => Some("Cloud Storage Notice"),
         "画刷绘制行为" => Some("Brush Drawing Behavior"),
         "音符画设置" => Some("Note Drawing Settings"),
         "形状抽屉" => Some("Shape Drawer"),
-        // ── 视频导出进度初始文案（`crates/editor/dialog/src/window/initialize.rs`）──
-        "正在初始化..." => Some("Initializing..."),
         // ── GPU 兼容性检测（`crates/editor/gfx/src/device_check/**`）──
         // 检测结论会渲染到启动警告窗、设置页「兼容性」结果与「复制诊断信息」，
         // 因此内部失败原因按用户可见文案登记。

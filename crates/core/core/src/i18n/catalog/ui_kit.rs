@@ -13,10 +13,6 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
 /// 词条分片 1/3：按原 `match` 顺序切分，语义等价。
 fn lookup_ui_kit_1(zh: &str) -> Option<&'static str> {
     match zh {
-        "导出完成" => Some("Export complete"),
-
-        "导出失败: {error}" => Some("Export failed: {error}"),
-
         "不足 1 秒" => Some("Less than 1 second"),
 
         "{days} 天 {hours} 小时 {minutes} 分钟" => Some("{days} d {hours} h {minutes} min"),
@@ -27,21 +23,9 @@ fn lookup_ui_kit_1(zh: &str) -> Option<&'static str> {
 
         "{seconds} 秒" => Some("{seconds} s"),
 
-        "用户" => Some("User"),
-
         "我的房间" => Some("My Room"),
 
-        "剪切" => Some("Cut"),
-
-        "复制" => Some("Copy"),
-
-        "粘贴" => Some("Paste"),
-
-        "删除" => Some("Delete"),
-
         "全选" => Some("Select All"),
-
-        "批量编辑" => Some("Batch Edit"),
 
         // ── 手绘图形右键菜单（DRAW-019～028，`ui-editor/src/context_menu.rs`）──
         // 说明：这批文案在 HEAD 上已存在调用点但缺英文登记，i18n 覆盖率门禁为红；
@@ -116,8 +100,6 @@ fn lookup_ui_kit_2(zh: &str) -> Option<&'static str> {
 
         "设置内容区域" => Some("Settings content area"),
 
-        "设置" => Some("Settings"),
-
         "不限制" => Some("Unlimited"),
 
         "0=不限制 1-128" => Some("0=Unlimited 1-128"),
@@ -142,10 +124,6 @@ fn lookup_ui_kit_2(zh: &str) -> Option<&'static str> {
         "🟢 在线" => Some("🟢 Online"),
 
         "🔴 离线" => Some("🔴 Offline"),
-
-        "断开" => Some("Disconnect"),
-
-        "连接" => Some("Connect"),
 
         "管理文件" => Some("Manage Files"),
 
@@ -207,15 +185,6 @@ fn lookup_ui_kit_3(zh: &str) -> Option<&'static str> {
         "品牌占位图标与字标的显示透明度（默认 20%）" => {
             Some("Opacity of the brand mark and wordmark (default 20%)")
         }
-        "音色库文件" => Some("Soundfont Files"),
-
-        "SF2 文件" => Some("SF2 Files"),
-
-        "SFZ 文件" => Some("SFZ Files"),
-
-        "所有文件" => Some("All Files"),
-
-        "字体文件" => Some("Font Files"),
 
         "TrueType 字体" => Some("TrueType Fonts"),
 

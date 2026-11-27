@@ -70,9 +70,14 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     /// 目录分域源文件（`include_str!` 保证测试与源码同步）。
+    ///
+    /// 顺序必须与 [`SECTIONS`] 的查找顺序一致：分片在前、`tail` 在后——重复
+    /// key 的判定与「首个命中生效」的实际行为才能对齐。
     const CATALOG_SOURCES: &[(&str, &str)] = &[
         ("ui_view", include_str!("catalog/ui_view.rs")),
+        ("ui_view/tail", include_str!("catalog/ui_view/tail.rs")),
         ("ui_shell", include_str!("catalog/ui_shell.rs")),
+        ("ui_shell/tail", include_str!("catalog/ui_shell/tail.rs")),
         ("ui_kit", include_str!("catalog/ui_kit.rs")),
         ("runner_menu", include_str!("catalog/runner_menu.rs")),
         ("runner_host", include_str!("catalog/runner_host.rs")),
@@ -428,21 +433,27 @@ mod tests {
         );
     }
 
+    /// 一条原文只能登记一次：`lookup` 按 [`SECTIONS`] 顺序取首个命中，后置分片里
+    /// 的重复臂永远读不到——改译文会改到死代码上，翻译表也会悄悄长成两倍。
     #[test]
     fn test_catalog_keys_unique_across_sections() {
-        // 跨域重复本身无害（`lookup` 命中第一个），但**同一 key 的译文必须一致**，
-        // 否则同一条中文会在不同界面显示成不同的英文。
         let mut seen: BTreeMap<String, (&'static str, String)> = BTreeMap::new();
+        let mut dups = Vec::new();
         for (section, zh, en) in all_entries() {
             if let Some((prev_section, prev_en)) = seen.get(&zh) {
-                assert_eq!(
-                    prev_en, &en,
-                    "同一 key 在不同分域译法不一致：{zh:?}（{prev_section} → {prev_en:?}，{section} → {en:?}）"
-                );
+                dups.push(format!(
+                    "{zh:?}：{prev_section} 与 {section}（英文 {prev_en:?} / {en:?}）"
+                ));
                 continue;
             }
             seen.insert(zh, (section, en));
         }
+        assert!(
+            dups.is_empty(),
+            "目录里有 {} 条原文重复登记（后者永远读不到）：\n{}",
+            dups.len(),
+            dups.join("\n")
+        );
     }
 
     #[test]

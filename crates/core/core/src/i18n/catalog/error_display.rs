@@ -80,8 +80,6 @@ fn lookup_error_display_1(zh: &str) -> Option<&'static str> {
 
         "协议错误" => Some("Protocol error"),
 
-        "未连接" => Some("Not connected"),
-
         // `"操作失败"` 已在 `runner_host` 域登记（Operation failed），此处不重复。
 
         // `crates/network/collaboration/src/error.rs`（CollaborationError）

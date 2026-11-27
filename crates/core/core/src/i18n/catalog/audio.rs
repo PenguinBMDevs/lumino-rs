@@ -169,8 +169,6 @@ fn lookup_audio_2(zh: &str) -> Option<&'static str> {
 
         "扫描 MIDI 文件失败: {e}" => Some("Failed to scan the MIDI file: {e}"),
 
-        "MmapSmf 解析失败: {e}" => Some("Failed to parse MmapSmf: {e}"),
-
         "未知" => Some("Unknown"),
 
         "unarc-rs 打开失败: {e}" => Some("unarc-rs failed to open: {e}"),

@@ -237,8 +237,6 @@ fn lookup_shell_9(zh: &str) -> Option<&'static str> {
             Some("This file is large; loading may take a while…")
         }
         // ── 2026-11-20：按钮悬停说明补全（工具栏 / 侧栏 / 悬浮条 / 编辑器按钮）──
-        "端口" => Some("Port"),
-
         "通道" => Some("Channel"),
 
         "精度" => Some("Precision"),
