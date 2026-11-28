@@ -24,13 +24,10 @@ impl Editor {
         crate::puffin_profiler::update_selection_box_animation();
         use crate::EditState;
         use crate::SelectionBoxAnimState;
-        use lumino_core::storage::config::SelectionBoxMode;
 
         // 直接跟随模式：不需要弹簧动画，直接返回
         // Y 向框选工具：Y 维度固定全范围，弹簧动画无意义，直接返回
-        if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct
-            || self.editor_state.tool == lumino_message::Tool::PointerYSelect
-        {
+        if self.selection_box_anim_skipped() {
             // 清除任何残留的动画状态
             self.selection_ui.clear_anim();
             return;
@@ -48,41 +45,15 @@ impl Editor {
             } => {
                 let is_vertical = self.editor_state.is_vertical_roll;
                 // 计算起点的屏幕坐标（固定锚点，转置）
-                let start_pos = if is_vertical {
-                    self.tick_key_to_pos(start_tick, start_key)
-                } else {
-                    let start_x = self.tick_to_x(start_tick);
-                    let start_y = self.key_to_y(start_key);
-                    Point::new(start_x, start_y)
-                };
+                let start_pos = self.tick_key_pos(is_vertical, start_tick, start_key);
 
-                // 计算弹簧目标位置
-                // 弹簧目标 = 选框的**移动端**（与 `Selecting.current_tick` 同源）。
-                //
-                // 历史注释曾要求「目标 = 鼠标精确 tick 位置（不吸附）」；自框选 X 向
-                // 改为**单元覆盖式量化**后，移动端是量化后的单元外沿，动画目标必须
-                // 走同一量化，否则弹簧会收敛到鼠标像素位置 → 动画帧内「看到的框」
-                // 与「命中的框」不一致，且视觉上丢失量化效果。
-                // 取 `marquee_edges(..).1` 即移动端（方向保持语义下与 current_tick 相等）。
-                let snapped_tick = if let Some(pos) = mouse_pos {
-                    let mouse_tick = self.pos_to_tick(pos);
-                    match self.selection_ui.marquee_anchor() {
-                        Some(anchor) => self.marquee_edges(anchor, mouse_tick).1,
-                        None => mouse_tick,
-                    }
-                } else {
-                    current_tick
-                };
-                let snapped_key = if let Some(pos) = mouse_pos {
-                    self.pos_to_key(pos)
-                } else {
-                    current_key
-                };
+                let (snapped_tick, snapped_key) =
+                    self.selection_box_snapped(mouse_pos, current_tick, current_key);
 
                 // 获取或初始化动画状态
                 let anim = self.selection_ui.anim();
 
-                let (display_current, mut velocity, last_snapped_tick, last_snapped_key) =
+                let (display_current, velocity, last_snapped_tick, last_snapped_key) =
                     if let Some(state) = anim {
                         (
                             state.current_pos,
@@ -92,13 +63,7 @@ impl Editor {
                         )
                     } else {
                         // 初始状态：显示位置等于第一个吸附位置（转置）
-                        let init_pos = if is_vertical {
-                            self.tick_key_to_pos(snapped_tick, snapped_key)
-                        } else {
-                            let init_x = self.tick_to_x(snapped_tick);
-                            let init_y = self.key_to_y(snapped_key);
-                            Point::new(init_x, init_y)
-                        };
+                        let init_pos = self.tick_key_pos(is_vertical, snapped_tick, snapped_key);
                         (init_pos, Point::new(0.0, 0.0), snapped_tick, snapped_key)
                     };
 
@@ -108,64 +73,13 @@ impl Editor {
 
                 // 计算弹簧目标位置：吸附位置变化时更新目标，否则保持上一次的目标（转置）
                 let spring_target = if snapped_changed {
-                    if is_vertical {
-                        self.tick_key_to_pos(snapped_tick, snapped_key)
-                    } else {
-                        let target_x = self.tick_to_x(snapped_tick);
-                        let target_y = self.key_to_y(snapped_key);
-                        Point::new(target_x, target_y)
-                    }
-                } else if is_vertical {
-                    self.tick_key_to_pos(last_snapped_tick, last_snapped_key)
+                    self.tick_key_pos(is_vertical, snapped_tick, snapped_key)
                 } else {
-                    let target_x = self.tick_to_x(last_snapped_tick);
-                    let target_y = self.key_to_y(last_snapped_key);
-                    Point::new(target_x, target_y)
+                    self.tick_key_pos(is_vertical, last_snapped_tick, last_snapped_key)
                 };
 
-                // 弹簧物理参数（Q弹效果）
-                const STIFFNESS: f32 = 400.0; // 弹簧刚度（越大回弹越快）
-                const DAMPING: f32 = 15.0; // 阻尼系数（越小越弹）
-                const MASS: f32 = 1.0; // 质量
-                const DT: f32 = 1.0 / 60.0; // 固定时间步长（假设60fps）
-                const SUB_STEPS: i32 = 4; // 每帧子步数，提高稳定性
-
-                let mut current = display_current;
-
-                // 半隐式欧拉积分，多子步提高稳定性
-                for _ in 0..SUB_STEPS {
-                    let dt = DT / SUB_STEPS as f32;
-
-                    // 计算弹簧力（胡克定律）
-                    let displacement_x = spring_target.x - current.x;
-                    let displacement_y = spring_target.y - current.y;
-                    let spring_force_x = STIFFNESS * displacement_x;
-                    let spring_force_y = STIFFNESS * displacement_y;
-
-                    // 计算阻尼力
-                    let damping_force_x = DAMPING * velocity.x;
-                    let damping_force_y = DAMPING * velocity.y;
-
-                    // 计算加速度（F = ma => a = F/m）
-                    let accel_x = (spring_force_x - damping_force_x) / MASS;
-                    let accel_y = (spring_force_y - damping_force_y) / MASS;
-
-                    // 更新速度和位置
-                    velocity.x += accel_x * dt;
-                    velocity.y += accel_y * dt;
-                    current.x += velocity.x * dt;
-                    current.y += velocity.y * dt;
-                }
-
-                // 弹簧收敛判断：位置和速度都足够接近目标时标记收敛
-                let dx = current.x - spring_target.x;
-                let dy = current.y - spring_target.y;
-                let dist_sq = dx * dx + dy * dy;
-                let speed_sq = velocity.x * velocity.x + velocity.y * velocity.y;
-                const POS_THRESHOLD_SQ: f32 = 0.25; // 0.5 像素的平方
-                const VEL_THRESHOLD_SQ: f32 = 0.01; // 0.1 像素/帧的平方
-
-                let converged = dist_sq < POS_THRESHOLD_SQ && speed_sq < VEL_THRESHOLD_SQ;
+                let (current, velocity, converged) =
+                    selection_box_spring_step(display_current, velocity, spring_target);
 
                 self.selection_ui.set_anim(Some(SelectionBoxAnimState {
                     start_pos,
@@ -182,4 +96,108 @@ impl Editor {
             }
         }
     }
+
+    /// 直接跟随模式与 Y 向框选工具下弹簧动画无意义，返回 true 跳过。
+    fn selection_box_anim_skipped(&self) -> bool {
+        use lumino_core::storage::config::SelectionBoxMode;
+
+        self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct
+            || self.editor_state.tool == lumino_message::Tool::PointerYSelect
+    }
+
+    /// 逻辑 (tick, key) → 屏幕坐标：纵向卷帘时转置，横向量化口径不变。
+    fn tick_key_pos(&self, is_vertical: bool, tick: f32, key: u16) -> Point {
+        if is_vertical {
+            self.tick_key_to_pos(tick, key)
+        } else {
+            let x = self.tick_to_x(tick);
+            let y = self.key_to_y(key);
+            Point::new(x, y)
+        }
+    }
+
+    /// 计算当前吸附的 (tick, key)：鼠标移动时重算量化目标，否则沿用当前值。
+    fn selection_box_snapped(
+        &self,
+        mouse_pos: Option<Point>,
+        current_tick: f32,
+        current_key: u16,
+    ) -> (f32, u16) {
+        // 计算弹簧目标位置
+        // 弹簧目标 = 选框的**移动端**（与 `Selecting.current_tick` 同源）。
+        //
+        // 历史注释曾要求「目标 = 鼠标精确 tick 位置（不吸附）」；自框选 X 向
+        // 改为**单元覆盖式量化**后，移动端是量化后的单元外沿，动画目标必须
+        // 走同一量化，否则弹簧会收敛到鼠标像素位置 → 动画帧内「看到的框」
+        // 与「命中的框」不一致，且视觉上丢失量化效果。
+        // 取 `marquee_edges(..).1` 即移动端（方向保持语义下与 current_tick 相等）。
+        let snapped_tick = if let Some(pos) = mouse_pos {
+            let mouse_tick = self.pos_to_tick(pos);
+            match self.selection_ui.marquee_anchor() {
+                Some(anchor) => self.marquee_edges(anchor, mouse_tick).1,
+                None => mouse_tick,
+            }
+        } else {
+            current_tick
+        };
+        let snapped_key = if let Some(pos) = mouse_pos {
+            self.pos_to_key(pos)
+        } else {
+            current_key
+        };
+        (snapped_tick, snapped_key)
+    }
+}
+
+/// 用半隐式欧拉积分推进一帧弹簧，返回 (新位置, 新速度, 是否收敛)。
+fn selection_box_spring_step(
+    display_current: Point,
+    mut velocity: Point,
+    spring_target: Point,
+) -> (Point, Point, bool) {
+    // 弹簧物理参数（Q弹效果）
+    const STIFFNESS: f32 = 400.0; // 弹簧刚度（越大回弹越快）
+    const DAMPING: f32 = 15.0; // 阻尼系数（越小越弹）
+    const MASS: f32 = 1.0; // 质量
+    const DT: f32 = 1.0 / 60.0; // 固定时间步长（假设60fps）
+    const SUB_STEPS: i32 = 4; // 每帧子步数，提高稳定性
+
+    let mut current = display_current;
+
+    // 半隐式欧拉积分，多子步提高稳定性
+    for _ in 0..SUB_STEPS {
+        let dt = DT / SUB_STEPS as f32;
+
+        // 计算弹簧力（胡克定律）
+        let displacement_x = spring_target.x - current.x;
+        let displacement_y = spring_target.y - current.y;
+        let spring_force_x = STIFFNESS * displacement_x;
+        let spring_force_y = STIFFNESS * displacement_y;
+
+        // 计算阻尼力
+        let damping_force_x = DAMPING * velocity.x;
+        let damping_force_y = DAMPING * velocity.y;
+
+        // 计算加速度（F = ma => a = F/m）
+        let accel_x = (spring_force_x - damping_force_x) / MASS;
+        let accel_y = (spring_force_y - damping_force_y) / MASS;
+
+        // 更新速度和位置
+        velocity.x += accel_x * dt;
+        velocity.y += accel_y * dt;
+        current.x += velocity.x * dt;
+        current.y += velocity.y * dt;
+    }
+
+    // 弹簧收敛判断：位置和速度都足够接近目标时标记收敛
+    let dx = current.x - spring_target.x;
+    let dy = current.y - spring_target.y;
+    let dist_sq = dx * dx + dy * dy;
+    let speed_sq = velocity.x * velocity.x + velocity.y * velocity.y;
+    const POS_THRESHOLD_SQ: f32 = 0.25; // 0.5 像素的平方
+    const VEL_THRESHOLD_SQ: f32 = 0.01; // 0.1 像素/帧的平方
+
+    let converged = dist_sq < POS_THRESHOLD_SQ && speed_sq < VEL_THRESHOLD_SQ;
+
+    (current, velocity, converged)
 }

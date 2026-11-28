@@ -4,6 +4,7 @@
 
 use super::Editor;
 use crate::note::Note;
+use lumino_midi_loader::NoteEvent;
 
 impl Editor {
     /// 在指定 tick/音轨处分割音符（Razor 工具）。
@@ -69,107 +70,123 @@ fn apply_razor_split(
     // 直接走 `push_collab_transform_sync`（内部判开关，字段顺序单一来源）。
     // 从后往前分割，避免索引漂移
     for idx in indices_to_split.into_iter().rev() {
-        // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right
-        let Some(note) = editor.editor_state.data.remove_note(track, idx) else {
-            continue;
-        };
-        let note_tick = note.start_tick as f32;
-        let note_key = note.key as u16;
-        let note_length = (note.end_tick - note.start_tick) as f32;
-        let left = Note::from_raw(
-            note_tick,
-            note_key,
-            tick_f - note_tick,
-            note.velocity,
-            note.channel,
-        );
-        let right = Note::from_raw(
-            tick_f,
-            note_key,
-            note_tick + note_length - tick_f,
-            note.velocity,
-            note.channel,
-        );
-        // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护（按值）。
-        // DEBT-03 #120：插入结果必须检查——失败时回滚原音符、不计成功、不广播
-        // （旧实现 `let _ = insert` 导致本地净丢音 + 对端幻影音符）。
-        let track_exists = editor
-            .editor_state
-            .data
-            .document
-            .as_ref()
-            .is_some_and(|doc| track < doc.track_count());
-        if !track_exists {
-            tracing::error!("Razor: 目标轨 {track} 不存在，回滚原音符");
-            editor.editor_state.data.insert_note(
-                track,
-                Note::from_raw(
-                    note_tick,
-                    note_key,
-                    note_length,
-                    note.velocity,
-                    note.channel,
-                ),
-            );
-            continue;
+        if split_razor_at(editor, track, tick_f, idx).is_some() {
+            split_count += 1;
         }
-        let right_ok = editor
-            .editor_state
-            .data
-            .insert_note_with_id(track, right)
-            .is_some();
-        let left_ok = editor
-            .editor_state
-            .data
-            .insert_note_with_id(track, left)
-            .is_some();
-        if !(right_ok && left_ok) {
-            // 轨已校验，理论上不可达；兜底以"优先不丢音"为准（可能产生重复，日志待查）。
-            tracing::error!(
-                "Razor: 切分插入异常（track {track}, right={right_ok}, left={left_ok}），回插原音符"
-            );
-            editor.editor_state.data.insert_note(
-                track,
-                Note::from_raw(
-                    note_tick,
-                    note_key,
-                    note_length,
-                    note.velocity,
-                    note.channel,
-                ),
-            );
-            continue;
-        }
-        editor.editor_state.data.push_collab_transform_sync(
-            false,
-            note_tick,
-            note_key,
-            note_length,
-            note.velocity,
-            note.channel,
-            track,
-        );
-        editor.editor_state.data.push_collab_transform_sync(
-            true,
-            note_tick,
-            note_key,
-            tick_f - note_tick,
-            note.velocity,
-            note.channel,
-            track,
-        );
-        editor.editor_state.data.push_collab_transform_sync(
-            true,
-            tick_f,
-            note_key,
-            note_tick + note_length - tick_f,
-            note.velocity,
-            note.channel,
-            track,
-        );
-        split_count += 1;
     }
     split_count
+}
+
+/// 在 `tick_f` 处切割音轨第 `idx` 个音符，替换为 left + right 两个新音符。
+///
+/// 返回 `Some(())` 表示两个新音符已插入且同步条目已登记；音符不存在或插入
+/// 失败时回插原音符并返回 `None`（不计成功、不广播同步条目）。
+fn split_razor_at(editor: &mut Editor, track: usize, tick_f: f32, idx: usize) -> Option<()> {
+    // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right
+    let note = editor.editor_state.data.remove_note(track, idx)?;
+    let note_tick = note.start_tick as f32;
+    let note_key = note.key as u16;
+    let note_length = (note.end_tick - note.start_tick) as f32;
+    let left = Note::from_raw(
+        note_tick,
+        note_key,
+        tick_f - note_tick,
+        note.velocity,
+        note.channel,
+    );
+    let right = Note::from_raw(
+        tick_f,
+        note_key,
+        note_tick + note_length - tick_f,
+        note.velocity,
+        note.channel,
+    );
+    // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护（按值）。
+    // DEBT-03 #120：插入结果必须检查——失败时回滚原音符、不计成功、不广播
+    // （旧实现 `let _ = insert` 导致本地净丢音 + 对端幻影音符）。
+    let track_exists = editor
+        .editor_state
+        .data
+        .document
+        .as_ref()
+        .is_some_and(|doc| track < doc.track_count());
+    if !track_exists {
+        tracing::error!("Razor: 目标轨 {track} 不存在，回滚原音符");
+        editor.editor_state.data.insert_note(
+            track,
+            Note::from_raw(
+                note_tick,
+                note_key,
+                note_length,
+                note.velocity,
+                note.channel,
+            ),
+        );
+        return None;
+    }
+    let right_ok = editor
+        .editor_state
+        .data
+        .insert_note_with_id(track, right)
+        .is_some();
+    let left_ok = editor
+        .editor_state
+        .data
+        .insert_note_with_id(track, left)
+        .is_some();
+    if !(right_ok && left_ok) {
+        // 轨已校验，理论上不可达；兜底以"优先不丢音"为准（可能产生重复，日志待查）。
+        tracing::error!(
+            "Razor: 切分插入异常（track {track}, right={right_ok}, left={left_ok}），回插原音符"
+        );
+        editor.editor_state.data.insert_note(
+            track,
+            Note::from_raw(
+                note_tick,
+                note_key,
+                note_length,
+                note.velocity,
+                note.channel,
+            ),
+        );
+        return None;
+    }
+    push_razor_split_sync(editor, track, tick_f, &note);
+    Some(())
+}
+
+/// 登记「删原 + 左右两个新音符」三条协作同步条目（协作关闭时为空操作）。
+fn push_razor_split_sync(editor: &mut Editor, track: usize, tick_f: f32, note: &NoteEvent) {
+    let note_tick = note.start_tick as f32;
+    let note_key = note.key as u16;
+    let note_length = (note.end_tick - note.start_tick) as f32;
+    editor.editor_state.data.push_collab_transform_sync(
+        false,
+        note_tick,
+        note_key,
+        note_length,
+        note.velocity,
+        note.channel,
+        track,
+    );
+    editor.editor_state.data.push_collab_transform_sync(
+        true,
+        note_tick,
+        note_key,
+        tick_f - note_tick,
+        note.velocity,
+        note.channel,
+        track,
+    );
+    editor.editor_state.data.push_collab_transform_sync(
+        true,
+        tick_f,
+        note_key,
+        note_tick + note_length - tick_f,
+        note.velocity,
+        note.channel,
+        track,
+    );
 }
 
 /// 收集需要切割的音符索引。

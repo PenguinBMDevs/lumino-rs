@@ -308,8 +308,8 @@ fn run_scenario(
     (stats, data_ok, confirm_notes, runs_count)
 }
 
-fn main() {
-    println!("=== Lumino 画刷（自由笔画）性能基准 ===");
+/// 装载基准文档并装配编辑器，打印数据源与目标线，返回（编辑器, 轮数, 粗细度）
+fn prepare_bench() -> (Editor, usize, u8) {
     let path = std::env::var("LUMINO_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
     let cycles = env_usize("LUMINO_BENCH_CYCLES", DEFAULT_CYCLES);
     // 粗细 = 全局绘制粗细（纵向层数，见 `BrushConfig::MAX_THICKNESS`）。
@@ -347,6 +347,11 @@ fn main() {
         "目标线: 拖拽单帧≤{TARGET_FRAME_MS:.0} 预览≤{TARGET_PREVIEW_MS:.0} 按钮≤{TARGET_BUTTONS_MS:.0} 覆盖≤{TARGET_COVER_MS:.0} √≤{TARGET_CONFIRM_MS:.0} 撤销≤{TARGET_UNDO_MS:.0} (ms)"
     );
 
+    (editor, cycles, thickness)
+}
+
+/// 跑 A/B 两档场景并逐项报告，返回（是否全部达标, 数据校验是否通过）
+fn run_scenarios(editor: &mut Editor, cycles: usize) -> (bool, bool) {
     let scenarios = [
         Scenario {
             name: "A 真实长笔画（1000 点 / 2 万音符）",
@@ -369,7 +374,7 @@ fn main() {
     for spec in &scenarios {
         println!();
         println!("── {}（轮数 {cycles}+1 暖机） ──", spec.name);
-        let (stats, ok, notes, runs) = run_scenario(&mut editor, spec, cycles);
+        let (stats, ok, notes, runs) = run_scenario(editor, spec, cycles);
         data_ok &= ok;
         all_pass &= report(
             "拖拽单帧（Moved）",
@@ -418,16 +423,24 @@ fn main() {
         );
     }
 
-    // ── C 增长曲线：每帧成本 vs 笔画长度（长笔画掉帧根因量化） ──
+    (all_pass, data_ok)
+}
+
+/// ── C 增长曲线：每帧成本 vs 笔画长度（长笔画掉帧根因量化） ──
+fn run_growth_section(editor: &mut Editor, cycles: usize, thickness: u8) -> bool {
+    let mut all_pass = true;
     println!();
     let growth_cycles = cycles.max(4);
-    let rows = growth::run_growth_curve(&mut editor, &GROWTH_LENS, growth_cycles);
+    let rows = growth::run_growth_curve(editor, &GROWTH_LENS, growth_cycles);
     all_pass &= growth::report_growth(&rows, thickness, TARGET_LONG_STROKE_MS);
-    let curve = growth::run_growth_in_stroke(&mut editor, &IN_STROKE_MARKS, growth_cycles);
+    let curve = growth::run_growth_in_stroke(editor, &IN_STROKE_MARKS, growth_cycles);
     all_pass &= growth::report_in_stroke(&curve, TARGET_LONG_STROKE_MS);
     let _ = lumino_message::events::take_events();
+    all_pass
+}
 
-    // ── 旧实现等价链路（模拟，仅前 200 点，折算每音符成本） ──
+/// ── 旧实现等价链路（模拟，仅前 200 点，折算每音符成本） ──
+fn report_old_path(editor: &mut Editor, thickness: u8) {
     println!();
     let probe = stroke_points(&Scenario {
         name: "probe",
@@ -436,7 +449,7 @@ fn main() {
         smooth_pitch: true,
         gated: false,
     });
-    let old_ms = old_path_simulation(&mut editor, &probe, thickness as usize);
+    let old_ms = old_path_simulation(editor, &probe, thickness as usize);
     let old_notes = probe.len() * thickness as usize;
     println!(
         "对比（旧实现等价链路，前 {} 点 ≈ {} 音符）: {:.1} ms → 每音符 {:.2} µs；\
@@ -447,6 +460,17 @@ fn main() {
         old_ms * 1000.0 / old_notes as f64
     );
     let _ = lumino_message::events::take_events();
+}
+
+fn main() {
+    println!("=== Lumino 画刷（自由笔画）性能基准 ===");
+    let (mut editor, cycles, thickness) = prepare_bench();
+
+    let (mut all_pass, data_ok) = run_scenarios(&mut editor, cycles);
+
+    all_pass &= run_growth_section(&mut editor, cycles, thickness);
+
+    report_old_path(&mut editor, thickness);
 
     println!();
     println!(

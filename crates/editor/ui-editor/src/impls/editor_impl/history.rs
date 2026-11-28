@@ -13,49 +13,8 @@ impl Editor {
     /// 若存在未完成的 pending 批量拖动（异步提交中），先阻塞等待其完成，再执行 undo，
     /// 否则 undo 会操作旧数据并提示"未退出编辑状态"。
     pub fn undo(&mut self) -> bool {
-        // 先提交未落盘的幽灵拖动，再排空飞行提交，避免 pending 阻塞 undo
-        // 否则批量拖动后直接 Ctrl+Z 会被拦截返回 false（用户感知的“批量撤销失败”）。
-        // 提交后 undo 将回退刚提交的移动（显示与内存一致，redo 可恢复）。
-        if self.has_pending_drag() {
-            tracing::info!("Editor: Undo 前发现未提交拖动/异步提交，先 flush");
-            self.flush_pending_history();
-        }
-        if self.is_editing() {
-            tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
-            return false;
-        }
-        // DRAW-041C 阶段 3：pending composed 手柄编辑优先于组合撤销
-        if self.undo_pending_edit() {
-            tracing::info!("Editor: 撤销 pending composed 手柄编辑");
-            return true;
-        }
-        // DRAW-049：放置态下的撤销 = 退出 8 手柄，保留 pending 预览；
-        // 必须在 `undo_pending_compose` 之前，否则会把待确认组合当成
-        // 一次组合会话撤销掉，而 8 手柄会话仍残留。
-        if self.bake_placement_active() {
-            self.exit_bake_placement_to_pending();
-            self.mark_notes_changed();
-            tracing::info!("Editor: 撤销 Bake 放置态，回到 pending 预览");
-            return true;
-        }
-        // DRAW-041C：Bake 前组合会话优先（未提交文档，先回到 pending 矢量）
-        if self.undo_pending_compose() {
-            tracing::info!("Editor: 撤销 Bake 前组合");
-            return true;
-        }
-        // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
-        if self.editor_state.brush_tool.undo_path() {
-            // 鼠标工具下待确认几何有镜像条目：撤销回退了几何，镜像必须同帧回灌
-            self.refresh_pending_mirror_geometry();
-            tracing::info!("Editor: 撤销画刷笔画编辑");
-            return true;
-        }
-        // 曲线工具路径编辑历史优先（最近的曲线操作）
-        if self.editor_state.line_tool.undo_path() {
-            self.refresh_pending_mirror_geometry();
-            self.mark_notes_changed();
-            tracing::info!("Editor: 撤销曲线路径编辑");
-            return true;
+        if let Some(result) = self.undo_guard() {
+            return result;
         }
         // 移动专路预判：Operation undo 后轨道为 originals（按值），
         // 通用旧值重映射必空（旧值已删），此处按目标值重选，无全扫。
@@ -135,38 +94,8 @@ impl Editor {
     /// **拦截策略**：同 `undo()`，编辑中拦截；存在 pending 时先 drain。
     /// **路径历史优先**：先重做最近的路径编辑，无则回退 document 历史。
     pub fn redo(&mut self) -> bool {
-        // 同 undo：先提交幽灵拖动再排空，避免批量场景 redo 被拦截失败。
-        if self.has_pending_drag() {
-            tracing::info!("Editor: Redo 前发现未提交拖动/异步提交，先 flush");
-            self.flush_pending_history();
-        }
-        if self.is_editing() {
-            tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
-            return false;
-        }
-        // DRAW-041C 阶段 3：pending composed 手柄编辑重做优先
-        if self.redo_pending_edit() {
-            tracing::info!("Editor: 重做 pending composed 手柄编辑");
-            return true;
-        }
-        // DRAW-041C：Bake 前组合会话优先
-        if self.redo_pending_compose() {
-            tracing::info!("Editor: 重做 Bake 前组合");
-            return true;
-        }
-        // 画刷待确认笔画编辑历史优先
-        if self.editor_state.brush_tool.redo_path() {
-            // 同 undo：鼠标工具下的镜像条目必须随待确认几何同步回灌
-            self.refresh_pending_mirror_geometry();
-            tracing::info!("Editor: 重做画刷笔画编辑");
-            return true;
-        }
-        // 曲线工具路径编辑历史优先
-        if self.editor_state.line_tool.redo_path() {
-            self.refresh_pending_mirror_geometry();
-            self.mark_notes_changed();
-            tracing::info!("Editor: 重做曲线路径编辑");
-            return true;
+        if let Some(result) = self.redo_guard() {
+            return result;
         }
         // 移动专路预判：Operation redo 后轨道为 moved（originals + delta），
         // 按目标新值重选。仅当重做前确有选中时才重选；空选中保持空。
@@ -240,6 +169,99 @@ impl Editor {
             tracing::info!("Editor: 没有可重做的操作");
             false
         }
+    }
+
+    /// undo 前置检查：提交未落盘拖动、拦截编辑态、按优先级处理 pending / 路径历史。
+    ///
+    /// 返回 `Some(result)` 表示前置分支已处理完毕，调用方直接返回该值；
+    /// 返回 `None` 表示应继续走 document 音符历史撤销。
+    fn undo_guard(&mut self) -> Option<bool> {
+        // 先提交未落盘的幽灵拖动，再排空飞行提交，避免 pending 阻塞 undo
+        // 否则批量拖动后直接 Ctrl+Z 会被拦截返回 false（用户感知的“批量撤销失败”）。
+        // 提交后 undo 将回退刚提交的移动（显示与内存一致，redo 可恢复）。
+        if self.has_pending_drag() {
+            tracing::info!("Editor: Undo 前发现未提交拖动/异步提交，先 flush");
+            self.flush_pending_history();
+        }
+        if self.is_editing() {
+            tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
+            return Some(false);
+        }
+        // DRAW-041C 阶段 3：pending composed 手柄编辑优先于组合撤销
+        if self.undo_pending_edit() {
+            tracing::info!("Editor: 撤销 pending composed 手柄编辑");
+            return Some(true);
+        }
+        // DRAW-049：放置态下的撤销 = 退出 8 手柄，保留 pending 预览；
+        // 必须在 `undo_pending_compose` 之前，否则会把待确认组合当成
+        // 一次组合会话撤销掉，而 8 手柄会话仍残留。
+        if self.bake_placement_active() {
+            self.exit_bake_placement_to_pending();
+            self.mark_notes_changed();
+            tracing::info!("Editor: 撤销 Bake 放置态，回到 pending 预览");
+            return Some(true);
+        }
+        // DRAW-041C：Bake 前组合会话优先（未提交文档，先回到 pending 矢量）
+        if self.undo_pending_compose() {
+            tracing::info!("Editor: 撤销 Bake 前组合");
+            return Some(true);
+        }
+        // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
+        if self.editor_state.brush_tool.undo_path() {
+            // 鼠标工具下待确认几何有镜像条目：撤销回退了几何，镜像必须同帧回灌
+            self.refresh_pending_mirror_geometry();
+            tracing::info!("Editor: 撤销画刷笔画编辑");
+            return Some(true);
+        }
+        // 曲线工具路径编辑历史优先（最近的曲线操作）
+        if self.editor_state.line_tool.undo_path() {
+            self.refresh_pending_mirror_geometry();
+            self.mark_notes_changed();
+            tracing::info!("Editor: 撤销曲线路径编辑");
+            return Some(true);
+        }
+        None
+    }
+
+    /// redo 前置检查：与 [`Self::undo_guard`] 对称，只重做方向相反。
+    ///
+    /// 返回 `Some(result)` 表示前置分支已处理完毕，调用方直接返回该值；
+    /// 返回 `None` 表示应继续走 document 音符历史重做。
+    fn redo_guard(&mut self) -> Option<bool> {
+        // 同 undo：先提交幽灵拖动再排空，避免批量场景 redo 被拦截失败。
+        if self.has_pending_drag() {
+            tracing::info!("Editor: Redo 前发现未提交拖动/异步提交，先 flush");
+            self.flush_pending_history();
+        }
+        if self.is_editing() {
+            tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
+            return Some(false);
+        }
+        // DRAW-041C 阶段 3：pending composed 手柄编辑重做优先
+        if self.redo_pending_edit() {
+            tracing::info!("Editor: 重做 pending composed 手柄编辑");
+            return Some(true);
+        }
+        // DRAW-041C：Bake 前组合会话优先
+        if self.redo_pending_compose() {
+            tracing::info!("Editor: 重做 Bake 前组合");
+            return Some(true);
+        }
+        // 画刷待确认笔画编辑历史优先
+        if self.editor_state.brush_tool.redo_path() {
+            // 同 undo：鼠标工具下的镜像条目必须随待确认几何同步回灌
+            self.refresh_pending_mirror_geometry();
+            tracing::info!("Editor: 重做画刷笔画编辑");
+            return Some(true);
+        }
+        // 曲线工具路径编辑历史优先
+        if self.editor_state.line_tool.redo_path() {
+            self.refresh_pending_mirror_geometry();
+            self.mark_notes_changed();
+            tracing::info!("Editor: 重做曲线路径编辑");
+            return Some(true);
+        }
+        None
     }
 
     /// 把 `EditorData` 中累积的「变换类操作（移调/翻转/变速/批量编辑）」广播给协作对端。
