@@ -111,256 +111,322 @@ fn section_ui(ui: &mut egui::Ui, section: &VideoSection) {
 fn row_ui(ui: &mut egui::Ui, row: &VideoRow, full: f32) {
     let ctx = ui.ctx().clone();
     match row {
-        VideoRow::Pick {
-            label,
-            label_width,
-            options,
-            selected,
-            width,
-            id,
-        } => {
-            let rect = row_rect(ui, ROW_H);
-            label_cell(ui, rect, *label_width, label);
-            let combo_rect = egui::Rect::from_min_size(
-                egui::pos2(rect.left() + label_width + GAP, rect.top()),
-                Vec2::new(width.min(full - label_width - GAP), ROW_H),
-            );
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(combo_rect)
-                    .layout(egui::Layout::left_to_right(Align::Center)),
-            );
-            child.spacing_mut().interact_size.y = ROW_H;
-            let current = options.get(*selected).map(String::as_str).unwrap_or("");
-            let mut chosen = None;
-            egui::ComboBox::from_id_salt(("video-pick", *id))
-                .selected_text(RichText::new(current).size(14.0))
-                .width(combo_rect.width() - 6.0)
-                .truncate()
-                .show_ui(&mut child, |ui| {
-                    for (index, option) in options.iter().enumerate() {
-                        if ui.selectable_label(index == *selected, option).clicked() {
-                            chosen = Some(index);
-                        }
-                    }
-                });
-            if let Some(index) = chosen {
-                push_action(&ctx, VideoExportAction::Pick { id: *id, index });
+        VideoRow::Pick { .. } => pick_ui(ui, &ctx, full, row),
+        VideoRow::Slider { .. } => slider_ui(ui, &ctx, full, row),
+        VideoRow::Toggle { .. } => toggle_ui(ui, &ctx, row),
+        VideoRow::Text { .. } => text_ui(ui, row),
+        VideoRow::TextButton { .. } => text_button_ui(ui, &ctx, row),
+        VideoRow::TextArea { .. } => text_area_ui(ui, full, row),
+        VideoRow::TextPair { .. } => text_pair_ui(ui, row),
+        VideoRow::Gap { .. } => gap_ui(ui, row),
+        VideoRow::Label { .. } => label_ui(ui, row),
+        VideoRow::Buttons { .. } => buttons_ui(ui, &ctx, row),
+    }
+}
+
+/// 下拉选择行。
+fn pick_ui(ui: &mut egui::Ui, ctx: &egui::Context, full: f32, row: &VideoRow) {
+    let VideoRow::Pick {
+        label,
+        label_width,
+        options,
+        selected,
+        width,
+        id,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    label_cell(ui, rect, *label_width, label);
+    let combo_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + label_width + GAP, rect.top()),
+        Vec2::new(width.min(full - label_width - GAP), ROW_H),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(combo_rect)
+            .layout(egui::Layout::left_to_right(Align::Center)),
+    );
+    child.spacing_mut().interact_size.y = ROW_H;
+    let current = options.get(*selected).map(String::as_str).unwrap_or("");
+    let mut chosen = None;
+    egui::ComboBox::from_id_salt(("video-pick", *id))
+        .selected_text(RichText::new(current).size(14.0))
+        .width(combo_rect.width() - 6.0)
+        .truncate()
+        .show_ui(&mut child, |ui| {
+            for (index, option) in options.iter().enumerate() {
+                if ui.selectable_label(index == *selected, option).clicked() {
+                    chosen = Some(index);
+                }
             }
-        }
-        VideoRow::Slider {
+        });
+    if let Some(index) = chosen {
+        push_action(ctx, VideoExportAction::Pick { id: *id, index });
+    }
+}
+
+/// 滑杆行（数值用可进入可访问树的 Label 绘制）。
+fn slider_ui(ui: &mut egui::Ui, ctx: &egui::Context, full: f32, row: &VideoRow) {
+    let VideoRow::Slider {
+        label,
+        label_width,
+        value,
+        min,
+        max,
+        step,
+        slider_width,
+        value_text,
+        id,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    label_cell(ui, rect, *label_width, label);
+    let slider_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + label_width + GAP, rect.top()),
+        Vec2::new(slider_width.min(full - label_width - GAP - 60.0), ROW_H),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(slider_rect)
+            .layout(egui::Layout::left_to_right(Align::Center)),
+    );
+    child.spacing_mut().interact_size.y = ROW_H;
+    let mut v = *value;
+    let response = child.add(
+        egui::Slider::new(&mut v, *min..=*max)
+            .step_by(*step as f64)
+            .show_value(false),
+    );
+    if response.changed() {
+        push_action(ctx, VideoExportAction::Slider { id: *id, value: v });
+    }
+    // 数值用 Label 绘制（进入可访问树，读屏可读）。
+    let value_rect = egui::Rect::from_min_max(
+        egui::pos2(slider_rect.right() + GAP, rect.top()),
+        egui::pos2(rect.right(), rect.bottom()),
+    );
+    let mut value_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(value_rect)
+            .layout(egui::Layout::left_to_right(Align::Center)),
+    );
+    value_ui.add(
+        egui::Label::new(RichText::new(value_text).size(14.0).color(theme::text())).truncate(),
+    );
+}
+
+/// 复选框行。
+fn toggle_ui(ui: &mut egui::Ui, ctx: &egui::Context, row: &VideoRow) {
+    let VideoRow::Toggle { label, checked, id } = row else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    let hit = crate::widgets::switch_row(
+        ui,
+        rect,
+        &crate::widgets::SwitchRow {
+            id: egui::Id::unique(("video-export-toggle", *id)),
+            checked: *checked,
+            enabled: true,
             label,
-            label_width,
-            value,
-            min,
-            max,
-            step,
-            slider_width,
-            value_text,
-            id,
-        } => {
-            let rect = row_rect(ui, ROW_H);
-            label_cell(ui, rect, *label_width, label);
-            let slider_rect = egui::Rect::from_min_size(
-                egui::pos2(rect.left() + label_width + GAP, rect.top()),
-                Vec2::new(slider_width.min(full - label_width - GAP - 60.0), ROW_H),
-            );
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(slider_rect)
-                    .layout(egui::Layout::left_to_right(Align::Center)),
-            );
-            child.spacing_mut().interact_size.y = ROW_H;
-            let mut v = *value;
-            let response = child.add(
-                egui::Slider::new(&mut v, *min..=*max)
-                    .step_by(*step as f64)
-                    .show_value(false),
-            );
-            if response.changed() {
-                push_action(&ctx, VideoExportAction::Slider { id: *id, value: v });
-            }
-            // 数值用 Label 绘制（进入可访问树，读屏可读）。
-            let value_rect = egui::Rect::from_min_max(
-                egui::pos2(slider_rect.right() + GAP, rect.top()),
-                egui::pos2(rect.right(), rect.bottom()),
-            );
-            let mut value_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(value_rect)
-                    .layout(egui::Layout::left_to_right(Align::Center)),
-            );
-            value_ui.add(
-                egui::Label::new(RichText::new(value_text).size(14.0).color(theme::text()))
-                    .truncate(),
-            );
-        }
-        VideoRow::Toggle { label, checked, id } => {
-            let rect = row_rect(ui, ROW_H);
-            let hit = crate::widgets::switch_row(
-                ui,
-                rect,
-                &crate::widgets::SwitchRow {
-                    id: egui::Id::unique(("video-export-toggle", *id)),
-                    checked: *checked,
-                    enabled: true,
-                    label,
-                    hint: "",
-                },
-                &theme::switch_style(),
-            );
-            if hit.toggled {
-                push_action(
-                    &ctx,
-                    VideoExportAction::Toggle {
-                        id: *id,
-                        value: !*checked,
-                    },
+            hint: "",
+        },
+        &theme::switch_style(),
+    );
+    if hit.toggled {
+        push_action(
+            ctx,
+            VideoExportAction::Toggle {
+                id: *id,
+                value: !*checked,
+            },
+        );
+    }
+}
+
+/// 文本框行。
+fn text_ui(ui: &mut egui::Ui, row: &VideoRow) {
+    let VideoRow::Text {
+        label,
+        label_width,
+        value,
+        hint,
+        width,
+        id,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    let left = if label.is_empty() {
+        rect.left()
+    } else {
+        label_cell(ui, rect, *label_width, label);
+        rect.left() + label_width + GAP
+    };
+    let w = if *width <= 0.0 {
+        (rect.right() - left).max(60.0)
+    } else {
+        width.min(rect.right() - left)
+    };
+    text_input(
+        ui,
+        egui::Rect::from_min_size(egui::pos2(left, rect.top()), Vec2::new(w, ROW_H)),
+        *id,
+        value,
+        hint,
+    );
+}
+
+/// 「标签 + 输入 + 行尾按钮」行。
+fn text_button_ui(ui: &mut egui::Ui, ctx: &egui::Context, row: &VideoRow) {
+    let VideoRow::TextButton {
+        label,
+        label_width,
+        value,
+        hint,
+        width,
+        text_id,
+        button: tail_button,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    let left = if label.is_empty() {
+        rect.left()
+    } else {
+        label_cell(ui, rect, *label_width, label);
+        rect.left() + label_width + GAP
+    };
+    let button_w = if tail_button.width > 0.0 {
+        tail_button.width
+    } else {
+        text_width(ui, &tail_button.label, 14.0) + 24.0
+    };
+    let button_x = rect.right() - button_w;
+    let w = if *width <= 0.0 {
+        (button_x - GAP - left).max(60.0)
+    } else {
+        width.min((button_x - GAP - left).max(60.0))
+    };
+    text_input(
+        ui,
+        egui::Rect::from_min_size(egui::pos2(left, rect.top()), Vec2::new(w, ROW_H)),
+        *text_id,
+        value,
+        hint,
+    );
+    if button(
+        ui,
+        egui::pos2(button_x, rect.top()),
+        button_w,
+        ROW_H,
+        tail_button,
+    )
+    .clicked()
+    {
+        push_action(ctx, VideoExportAction::Button { id: tail_button.id });
+    }
+}
+
+/// 多行文本域行。
+fn text_area_ui(ui: &mut egui::Ui, full: f32, row: &VideoRow) {
+    let VideoRow::TextArea {
+        label,
+        value,
+        hint,
+        height,
+        id,
+    } = row
+    else {
+        return;
+    };
+    if !label.is_empty() {
+        let rect = row_rect(ui, 18.0);
+        label_cell(ui, rect, full, label);
+    }
+    text_area(ui, *height, *id, value, hint);
+}
+
+/// 一行两个「标签 + 输入」。
+fn text_pair_ui(ui: &mut egui::Ui, row: &VideoRow) {
+    let VideoRow::TextPair {
+        left,
+        right,
+        separator,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, ROW_H);
+    let mut x = rect.left();
+    for (index, cell) in [left, right].iter().enumerate() {
+        if index == 1 {
+            if separator.is_empty() {
+                x += GAP;
+            } else {
+                let w = text_width(ui, separator, 14.0) + GAP;
+                ui.painter().text(
+                    egui::pos2(x, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    separator,
+                    FontId::proportional(14.0),
+                    theme::text(),
                 );
+                x += w;
             }
         }
-        VideoRow::Text {
-            label,
-            label_width,
-            value,
-            hint,
-            width,
-            id,
-        } => {
-            let rect = row_rect(ui, ROW_H);
-            let left = if label.is_empty() {
-                rect.left()
-            } else {
-                label_cell(ui, rect, *label_width, label);
-                rect.left() + label_width + GAP
-            };
-            let w = if *width <= 0.0 {
-                (rect.right() - left).max(60.0)
-            } else {
-                width.min(rect.right() - left)
-            };
-            text_input(
-                ui,
-                egui::Rect::from_min_size(egui::pos2(left, rect.top()), Vec2::new(w, ROW_H)),
-                *id,
-                value,
-                hint,
-            );
+        x = text_pair_cell(ui, rect, x, cell);
+    }
+}
+
+/// 显式竖向间距。
+fn gap_ui(ui: &mut egui::Ui, row: &VideoRow) {
+    let VideoRow::Gap { height } = row else {
+        return;
+    };
+    ui.add_space(*height);
+}
+
+/// 只读文本行。
+fn label_ui(ui: &mut egui::Ui, row: &VideoRow) {
+    let VideoRow::Label { text, size, muted } = row else {
+        return;
+    };
+    ui.add(
+        egui::Label::new(RichText::new(text).size(*size).color(if *muted {
+            theme::text_muted()
+        } else {
+            theme::text()
+        }))
+        .wrap(),
+    );
+}
+
+/// 一行按钮。
+fn buttons_ui(ui: &mut egui::Ui, ctx: &egui::Context, row: &VideoRow) {
+    let VideoRow::Buttons {
+        buttons: row_buttons,
+    } = row
+    else {
+        return;
+    };
+    let rect = row_rect(ui, BUTTON_H);
+    let mut x = rect.left();
+    for button_def in row_buttons {
+        let w = if button_def.width > 0.0 {
+            button_def.width
+        } else {
+            text_width(ui, &button_def.label, 14.0) + 24.0
+        };
+        if button(ui, egui::pos2(x, rect.top()), w, BUTTON_H, button_def).clicked() {
+            push_action(ctx, VideoExportAction::Button { id: button_def.id });
         }
-        VideoRow::TextButton {
-            label,
-            label_width,
-            value,
-            hint,
-            width,
-            text_id,
-            button: tail_button,
-        } => {
-            let rect = row_rect(ui, ROW_H);
-            let left = if label.is_empty() {
-                rect.left()
-            } else {
-                label_cell(ui, rect, *label_width, label);
-                rect.left() + label_width + GAP
-            };
-            let button_w = if tail_button.width > 0.0 {
-                tail_button.width
-            } else {
-                text_width(ui, &tail_button.label, 14.0) + 24.0
-            };
-            let button_x = rect.right() - button_w;
-            let w = if *width <= 0.0 {
-                (button_x - GAP - left).max(60.0)
-            } else {
-                width.min((button_x - GAP - left).max(60.0))
-            };
-            text_input(
-                ui,
-                egui::Rect::from_min_size(egui::pos2(left, rect.top()), Vec2::new(w, ROW_H)),
-                *text_id,
-                value,
-                hint,
-            );
-            if button(
-                ui,
-                egui::pos2(button_x, rect.top()),
-                button_w,
-                ROW_H,
-                tail_button,
-            )
-            .clicked()
-            {
-                push_action(&ctx, VideoExportAction::Button { id: tail_button.id });
-            }
-        }
-        VideoRow::TextArea {
-            label,
-            value,
-            hint,
-            height,
-            id,
-        } => {
-            if !label.is_empty() {
-                let rect = row_rect(ui, 18.0);
-                label_cell(ui, rect, full, label);
-            }
-            text_area(ui, *height, *id, value, hint);
-        }
-        VideoRow::TextPair {
-            left,
-            right,
-            separator,
-        } => {
-            let rect = row_rect(ui, ROW_H);
-            let mut x = rect.left();
-            for (index, cell) in [left, right].iter().enumerate() {
-                if index == 1 {
-                    if separator.is_empty() {
-                        x += GAP;
-                    } else {
-                        let w = text_width(ui, separator, 14.0) + GAP;
-                        ui.painter().text(
-                            egui::pos2(x, rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            separator,
-                            FontId::proportional(14.0),
-                            theme::text(),
-                        );
-                        x += w;
-                    }
-                }
-                x = text_pair_cell(ui, rect, x, cell);
-            }
-        }
-        VideoRow::Gap { height } => {
-            ui.add_space(*height);
-        }
-        VideoRow::Label { text, size, muted } => {
-            ui.add(
-                egui::Label::new(RichText::new(text).size(*size).color(if *muted {
-                    theme::text_muted()
-                } else {
-                    theme::text()
-                }))
-                .wrap(),
-            );
-        }
-        VideoRow::Buttons {
-            buttons: row_buttons,
-        } => {
-            let rect = row_rect(ui, BUTTON_H);
-            let mut x = rect.left();
-            for button_def in row_buttons {
-                let w = if button_def.width > 0.0 {
-                    button_def.width
-                } else {
-                    text_width(ui, &button_def.label, 14.0) + 24.0
-                };
-                if button(ui, egui::pos2(x, rect.top()), w, BUTTON_H, button_def).clicked() {
-                    push_action(&ctx, VideoExportAction::Button { id: button_def.id });
-                }
-                x += w + GAP;
-            }
-        }
+        x += w + GAP;
     }
 }
