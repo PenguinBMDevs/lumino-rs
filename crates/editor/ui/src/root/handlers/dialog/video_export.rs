@@ -25,11 +25,69 @@ impl DialogHandler {
     ) -> Option<Message> {
         use VideoExportAction as V;
         match action {
+            V::OpenPanel | V::ClosePanel => self.video_export_panel(root, action),
+            V::StartExport => self.video_export_start(root),
+            V::CancelExport | V::ForceFinish | V::DismissOverlay => {
+                self.video_export_overlay(root, action)
+            }
+            V::ContainerChanged(_)
+            | V::CodecChanged(_)
+            | V::BackendChanged(_)
+            | V::QualityChanged(_)
+            | V::WidthChanged(_)
+            | V::HeightChanged(_)
+            | V::RenderModeChanged(_)
+            | V::MidiConsoleBackendChanged(_)
+            | V::WaterfallSpeedChanged(_)
+            | V::FpsChanged(_)
+            | V::OutputPathChanged(_)
+            | V::MidiPathChanged(_) => self.video_export_basic(root, action),
+            V::MiditrailViewModeChanged(_)
+            | V::MiditrailNormalSpeedChanged(_)
+            | V::MiditrailTopSpeedChanged(_)
+            | V::MiditrailZFarChanged(_)
+            | V::Miditrail3DNotesChanged(_) => self.video_export_miditrail(root, action),
+            V::CounterTextChanged(_)
+            | V::CounterAlignmentChanged(_)
+            | V::CounterFontSizeChanged(_)
+            | V::CounterFontModeChanged(_)
+            | V::CounterFontFamilyChanged(_)
+            | V::CounterFontPathChanged(_)
+            | V::CounterBrowseFont
+            | V::CounterUseCommasChanged(_)
+            | V::CounterPaddingZeroesChanged(_)
+            | V::CounterSaveCsvChanged(_)
+            | V::CounterCsvPathChanged(_)
+            | V::CounterCsvFormatChanged(_)
+            | V::CounterPadChanged { .. }
+            | V::CounterResetPadding
+            | V::CounterLoadTemplate(_)
+            | V::CounterResetText
+            | V::CounterBrowseCsv => self.video_export_counter(root, action),
+            V::DataCurveNumberChanged { .. }
+            | V::DataCurveBoolChanged { .. }
+            | V::DataCurveTextChanged { .. }
+            | V::DataCurveFontSizeChanged(_)
+            | V::DataCurveFontModeChanged(_)
+            | V::DataCurveBrowseFont => self.video_export_data_curve(root, action),
+            V::BrowseOutput | V::BrowseMidi => self.video_export_browse(root, action),
+            V::UpdateProgress { .. }
+            | V::ExportCompleted
+            | V::ExportFailed(_)
+            | V::UpdatePreviewFrame { .. } => self.video_export_progress(root, action),
+        }
+        None
+    }
+
+    /// 打开 / 关闭视频导出面板。
+    fn video_export_panel(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::OpenPanel => {
                 // CPU 洋葱皮后端：视频导出逐帧渲染依赖 GPU 表面纹理，入口即拒绝。
                 // 拦截必须在写 `video_export_visible`/`route` 之前（否则面板会先亮起来）。
                 if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
-                    return None;
+                    return;
                 }
                 root.sidebar.video_export_visible = true;
                 root.sidebar.route = crate::sidebar::Route::VideoExport;
@@ -41,72 +99,82 @@ impl DialogHandler {
                 // 这里防的是未来/时序绕过（例如切后端时面板恰好还没关）。
                 root.exit_rendering_panel();
             }
-            V::StartExport => {
-                // CPU 洋葱皮后端：不置 `Exporting` 状态、不发导出事件（面板/对话框同源）。
-                // 主窗口 Root 的 `hires.backend` 与运行时真源一致；独立视频导出对话框
-                // 的 Root 取 UiConfig（可能滞后），最终兜底在 Runner 的
-                // `handle_start_video_export` 入口。
-                if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
-                    return None;
-                }
-                // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
-                // （code -22）退出，而帧生成线程已经白跑一轮。入口拦截并明确提示；
-                // 不置 Exporting 状态（否则面板会显示一个注定失败的进度覆盖层）。
-                if root
-                    .state
-                    .video_export_dialog
-                    .basic
-                    .output_path
-                    .trim()
-                    .is_empty()
-                {
-                    root.toast
-                        .push(ToastLevel::Warning, tr!("请先选择视频输出路径"));
-                    return None;
-                }
-                // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；
-                // 否则若指定了 MIDI 路径，进入流式读取模式。
-                let document = root
-                    .editor
-                    .editor_state
-                    .data
-                    .document
-                    .as_ref()
-                    .map(|doc| std::sync::Arc::new(doc.clone()));
-                let midi_source = {
-                    let st = &root.state.video_export_dialog;
-                    if document.is_some() {
-                        tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
-                        tr!("内存模式").to_string()
-                    } else if !st.basic.midi_path.is_empty() {
-                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.basic.midi_path);
-                        tr!("流式读取").to_string()
-                    } else {
-                        tracing::warn!("视频导出未配置 MIDI 数据源");
-                        tr!("未配置").to_string()
-                    }
-                };
+            _ => {}
+        }
+    }
 
-                // 设置导出中状态
-                root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Exporting;
-                // 清掉上一次导出的尾帧，避免新导出首帧到达前显示陈旧画面。
-                root.state.video_export_dialog.basic.preview_frame = None;
-                root.state.video_export_dialog.basic.progress = 0.0;
-                root.state.video_export_dialog.basic.status_message =
-                    trf!("正在初始化... [{source}]", source = midi_source);
-                root.state.video_export_dialog.basic.current_frame = 0;
-                root.state.video_export_dialog.basic.total_frames = 0;
-                root.state.video_export_dialog.basic.render_fps = 0.0;
-
-                let st = &root.state.video_export_dialog;
-                let video_config = build_video_config(
-                    st,
-                    root.editor.editor_state.view.ppq,
-                    root.editor.editor_state.view.visible_key_count,
-                );
-                let ev = crate::event::window::Event::start_video_export(video_config, document);
-                crate::event::emit(crate::event::Event::Window(ev));
+    /// 开始导出：入口守卫 + 数据源判定 + 状态初始化 + 配置下发。
+    fn video_export_start(&self, root: &mut Root) {
+        // CPU 洋葱皮后端：不置 `Exporting` 状态、不发导出事件（面板/对话框同源）。
+        // 主窗口 Root 的 `hires.backend` 与运行时真源一致；独立视频导出对话框
+        // 的 Root 取 UiConfig（可能滞后），最终兜底在 Runner 的
+        // `handle_start_video_export` 入口。
+        if root.cpu_entry_blocked(tr!("CPU 洋葱皮后端不支持视频导出")) {
+            return;
+        }
+        // 输出路径是硬性前提：空串会让 ffmpeg 以 `Error opening output file .`
+        // （code -22）退出，而帧生成线程已经白跑一轮。入口拦截并明确提示；
+        // 不置 Exporting 状态（否则面板会显示一个注定失败的进度覆盖层）。
+        if root
+            .state
+            .video_export_dialog
+            .basic
+            .output_path
+            .trim()
+            .is_empty()
+        {
+            root.toast
+                .push(ToastLevel::Warning, tr!("请先选择视频输出路径"));
+            return;
+        }
+        // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；
+        // 否则若指定了 MIDI 路径，进入流式读取模式。
+        let document = root
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map(|doc| std::sync::Arc::new(doc.clone()));
+        let midi_source = {
+            let st = &root.state.video_export_dialog;
+            if document.is_some() {
+                tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
+                tr!("内存模式").to_string()
+            } else if !st.basic.midi_path.is_empty() {
+                tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.basic.midi_path);
+                tr!("流式读取").to_string()
+            } else {
+                tracing::warn!("视频导出未配置 MIDI 数据源");
+                tr!("未配置").to_string()
             }
+        };
+
+        // 设置导出中状态
+        root.state.video_export_dialog.basic.overlay = VideoExportOverlayState::Exporting;
+        // 清掉上一次导出的尾帧，避免新导出首帧到达前显示陈旧画面。
+        root.state.video_export_dialog.basic.preview_frame = None;
+        root.state.video_export_dialog.basic.progress = 0.0;
+        root.state.video_export_dialog.basic.status_message =
+            trf!("正在初始化... [{source}]", source = midi_source);
+        root.state.video_export_dialog.basic.current_frame = 0;
+        root.state.video_export_dialog.basic.total_frames = 0;
+        root.state.video_export_dialog.basic.render_fps = 0.0;
+
+        let st = &root.state.video_export_dialog;
+        let video_config = build_video_config(
+            st,
+            root.editor.editor_state.view.ppq,
+            root.editor.editor_state.view.visible_key_count,
+        );
+        let ev = crate::event::window::Event::start_video_export(video_config, document);
+        crate::event::emit(crate::event::Event::Window(ev));
+    }
+
+    /// 取消 / 强制完成 / 关闭进度覆盖层。
+    fn video_export_overlay(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::CancelExport => {
                 reset_video_export_overlay(root);
                 // 通知 Runner 取消导出（关闭对话框 → 设置取消标志 → 后台线程退出）
@@ -125,6 +193,14 @@ impl DialogHandler {
             V::DismissOverlay => {
                 reset_video_export_overlay(root);
             }
+            _ => {}
+        }
+    }
+
+    /// 基础参数：容器 / 编码 / 分辨率 / 帧率 / 路径。
+    fn video_export_basic(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::ContainerChanged(v) => {
                 root.state.video_export_dialog.basic.container = v;
             }
@@ -156,6 +232,23 @@ impl DialogHandler {
             V::WaterfallSpeedChanged(v) => {
                 root.state.video_export_dialog.basic.waterfall_speed = v;
             }
+            V::FpsChanged(v) => {
+                root.state.video_export_dialog.basic.fps = v;
+            }
+            V::OutputPathChanged(v) => {
+                root.state.video_export_dialog.basic.output_path = v;
+            }
+            V::MidiPathChanged(v) => {
+                root.state.video_export_dialog.basic.midi_path = v;
+            }
+            _ => {}
+        }
+    }
+
+    /// Miditrail 视图参数。
+    fn video_export_miditrail(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::MiditrailViewModeChanged(v) => {
                 // 仅接受 Normal/Top，非预期值回退 Normal（防两套设置污染）。
                 root.state.video_export_dialog.miditrail.view_mode = match v.as_str() {
@@ -175,6 +268,14 @@ impl DialogHandler {
             V::Miditrail3DNotesChanged(v) => {
                 root.state.video_export_dialog.miditrail.notes_3d = v;
             }
+            _ => {}
+        }
+    }
+
+    /// 计数器：文本 / 字体 / CSV / 补零模板。
+    fn video_export_counter(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::CounterTextChanged(text) => {
                 let st = &mut root.state.video_export_dialog;
                 st.counter.text = text;
@@ -262,6 +363,14 @@ impl DialogHandler {
                         .save_file()
                 });
             }
+            _ => {}
+        }
+    }
+
+    /// 数据曲线：数值 / 开关 / 文本 / 字体。
+    fn video_export_data_curve(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::DataCurveNumberChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
                 match field.as_str() {
@@ -313,12 +422,14 @@ impl DialogHandler {
                         .pick_file()
                 });
             }
-            V::FpsChanged(v) => {
-                root.state.video_export_dialog.basic.fps = v;
-            }
-            V::OutputPathChanged(v) => {
-                root.state.video_export_dialog.basic.output_path = v;
-            }
+            _ => {}
+        }
+    }
+
+    /// 文件选择：输出视频 / MIDI 源。
+    fn video_export_browse(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::BrowseOutput => {
                 let st = &root.state.video_export_dialog;
                 let container = st.basic.container.clone();
@@ -331,9 +442,6 @@ impl DialogHandler {
                         .save_file()
                 });
             }
-            V::MidiPathChanged(v) => {
-                root.state.video_export_dialog.basic.midi_path = v;
-            }
             V::BrowseMidi => {
                 root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
                     lumino_platform::dialog::FileDialog::new()
@@ -344,6 +452,14 @@ impl DialogHandler {
                         .pick_file()
                 });
             }
+            _ => {}
+        }
+    }
+
+    /// 进度 / 完成 / 失败 / 预览帧。
+    fn video_export_progress(&self, root: &mut Root, action: VideoExportAction) {
+        use VideoExportAction as V;
+        match action {
             V::UpdateProgress {
                 message,
                 progress,
@@ -367,7 +483,7 @@ impl DialogHandler {
             V::UpdatePreviewFrame { .. } => {
                 // 由 Host 直接处理，此处不需要
             }
+            _ => {}
         }
-        None
     }
 }
