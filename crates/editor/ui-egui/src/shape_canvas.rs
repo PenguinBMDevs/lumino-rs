@@ -183,13 +183,35 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
         return;
     }
     let painter = ui.painter().with_clip_rect(rect);
+    paint_background(&painter, rect, model);
+    paint_primitives(&painter, rect, model);
+
+    // 画布输入（先注册，工具栏按钮后注册以便压在画布之上）。
+    let response = ui.interact(
+        rect,
+        egui::Id::unique("lumino.shape-canvas"),
+        egui::Sense::click_and_drag(),
+    );
+
+    paint_toolbar(ui, rect, model);
+    update_cursor(ui, &response, rect, model);
+    let shift = ui.ctx().input(|i| i.modifiers.shift);
+    handle_pointer(ui, &response, rect, shift);
+    handle_hover_input(ui, &response);
+}
+
+/// 画布底色与工具栏底色。
+fn paint_background(painter: &egui::Painter, rect: egui::Rect, model: &ShapeCanvasModel) {
     painter.rect_filled(rect, 0, model.bg);
     painter.rect_filled(
         egui::Rect::from_min_size(rect.min, egui::vec2(model.toolbar_width, rect.height())),
         0,
         model.toolbar_bg,
     );
+}
 
+/// 绘制全部图元。
+fn paint_primitives(painter: &egui::Painter, rect: egui::Rect, model: &ShapeCanvasModel) {
     // 图元（顺序与 上一代 一致：网格 → 面积 → 描边 → 锚点 → 文本）。
     for line in &model.lines {
         painter.line_segment(
@@ -249,14 +271,10 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
             text.color,
         );
     }
+}
 
-    // 画布输入（先注册，工具栏按钮后注册以便压在画布之上）。
-    let response = ui.interact(
-        rect,
-        egui::Id::unique("lumino.shape-canvas"),
-        egui::Sense::click_and_drag(),
-    );
-
+/// 工具栏按钮绘制与点击回传。
+fn paint_toolbar(ui: &mut egui::Ui, rect: egui::Rect, model: &ShapeCanvasModel) {
     // 工具栏按钮（点击回传下标）。
     for button in &model.buttons {
         let button_rect = egui::Rect::from_min_max(
@@ -294,7 +312,15 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
             );
         }
     }
+}
 
+/// 画布悬停光标：工具栏区用默认光标，其余用十字。
+fn update_cursor(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    rect: egui::Rect,
+    model: &ShapeCanvasModel,
+) {
     if response.hovered() {
         ui.ctx().set_cursor_icon(
             if model.toolbar_width > 0.0
@@ -309,8 +335,11 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
             },
         );
     }
+}
+
+/// 主键与中键的按下 / 拖动 / 松开，按原注册顺序逐条上报。
+fn handle_pointer(ui: &egui::Ui, response: &egui::Response, rect: egui::Rect, shift: bool) {
     let to_local = |pos: Pos2| pos - rect.min.to_vec2();
-    let shift = ui.ctx().input(|i| i.modifiers.shift);
 
     if response.drag_started_by(egui::PointerButton::Primary)
         && let Some(origin) = response.interact_pointer_pos()
@@ -371,6 +400,10 @@ pub fn show(ui: &mut egui::Ui, model: &ShapeCanvasModel) {
     if response.drag_stopped_by(egui::PointerButton::Middle) {
         push_action(ui.ctx(), ShapeCanvasAction::MiddleRelease);
     }
+}
+
+/// 悬停时的滚轮缩放与快捷键（顺序：滚轮 → Delete → Undo → Redo）。
+fn handle_hover_input(ui: &egui::Ui, response: &egui::Response) {
     if response.hovered() {
         let dy = ui.ctx().input(|i| i.smooth_scroll_delta.y);
         if dy.abs() > 0.0 {
