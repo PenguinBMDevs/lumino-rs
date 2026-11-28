@@ -45,13 +45,31 @@ pub(super) fn build_material_project_from_selection(
     doc: &MidiDocument,
     selected: &EditorNotes,
 ) -> lumino_export::LuminoProject {
-    use lumino_midi_loader::{CompactEvent, EventKind};
-    use lumino_project::{LmtrackData, TrackMeta, TrackVisibilitySer};
-
     let mut project = lumino_export::LuminoProject::new("Material");
     project.metadata.audio.division = doc.division;
 
     // ── 素材时间范围：第一个音符开始 → 最后一个音符结束 ──
+    let (offset, total_ticks) = material_tick_range(selected);
+    project.metadata.audio.total_ticks = total_ticks;
+
+    apply_material_global_data(&mut project, doc, offset);
+
+    let track_slots = material_track_layout(&mut project, doc, selected);
+
+    apply_material_control_events(&mut project, doc, offset, &track_slots);
+
+    // 每轨构建 CompactEvent（精确 round，无 f32→u32 截断）
+    let total_notes = append_material_tracks(&mut project, doc, selected, offset, &track_slots);
+
+    project.metadata.audio.total_notes = total_notes;
+    project.metadata.audio.track_count = selected.len() as u16;
+    project
+}
+
+/// 素材时间范围：第一个音符开始 → 最后一个音符结束。
+///
+/// 返回 `(offset, total_ticks)`；片段前的空白不进入素材，长度由音符内容决定。
+fn material_tick_range(selected: &EditorNotes) -> (u32, u32) {
     let mut min_start = f32::INFINITY;
     let mut max_end = f32::NEG_INFINITY;
     for (_, notes) in selected {
@@ -64,8 +82,15 @@ pub(super) fn build_material_project_from_selection(
     }
     let offset = min_start as u32;
     let total_ticks = (max_end as u32).saturating_sub(offset).max(1);
-    project.metadata.audio.total_ticks = total_ticks;
+    (offset, total_ticks)
+}
 
+/// 全局数据装配：按 `offset` 平移时间轴后写入工程。
+fn apply_material_global_data(
+    project: &mut lumino_export::LuminoProject,
+    doc: &MidiDocument,
+    offset: u32,
+) {
     // 全局数据：整体平移时间轴（片段前的拍号/调号/歌词/SysEx/标记丢弃，
     // 片段前的 tempo 收敛到 0 保留）。
     // 速度源直接取 document.tempo_changes（单一权威源，2026-10-20 审计 §三）：
@@ -106,7 +131,14 @@ pub(super) fn build_material_project_from_selection(
         .filter(|e| e.0 >= offset)
         .map(|e| (e.0 - offset, e.1, e.2.clone()))
         .collect();
+}
 
+/// 素材槽位与轨道名：返回「源文档轨索引 → 素材槽位」映射。
+fn material_track_layout(
+    project: &mut lumino_export::LuminoProject,
+    doc: &MidiDocument,
+    selected: &EditorNotes,
+) -> std::collections::HashMap<usize, u16> {
     // 素材内部音轨编号：源文档轨索引 → 0..n-1 连续槽位（见函数文档「音轨编号压缩」）。
     // 迭代顺序沿用选区解析结果（走带按文档轨升序、卷帘单轨），保证落盘顺序稳定。
     let track_slots: std::collections::HashMap<usize, u16> = selected
@@ -120,7 +152,16 @@ pub(super) fn build_material_project_from_selection(
         .iter()
         .map(|(doc_track, _)| doc.track_name(*doc_track).map(str::to_owned))
         .collect();
+    track_slots
+}
 
+/// 控制事件装配：仅保留选中轨道且位于素材范围内的 CC/PC/弯音，轨号换算到素材槽位。
+fn apply_material_control_events(
+    project: &mut lumino_export::LuminoProject,
+    doc: &MidiDocument,
+    offset: u32,
+    track_slots: &std::collections::HashMap<usize, u16>,
+) {
     // 控制事件：仅保留选中轨道、且位于素材时间范围内的自动化数据；
     // 音轨号同步换算到素材槽位（否则 CC/PC/弯音会挂到空轨或越界）。
     for ev in &doc.control_events {
@@ -159,6 +200,18 @@ pub(super) fn build_material_project_from_selection(
             _ => {}
         }
     }
+}
+
+/// 每轨构建音符事件并加入工程，返回加入的音符总数。
+fn append_material_tracks(
+    project: &mut lumino_export::LuminoProject,
+    doc: &MidiDocument,
+    selected: &EditorNotes,
+    offset: u32,
+    track_slots: &std::collections::HashMap<usize, u16>,
+) -> u64 {
+    use lumino_midi_loader::{CompactEvent, EventKind};
+    use lumino_project::{LmtrackData, TrackMeta, TrackVisibilitySer};
 
     // 每轨构建 CompactEvent（精确 round，无 f32→u32 截断）
     let mut total_notes: u64 = 0;
@@ -228,10 +281,7 @@ pub(super) fn build_material_project_from_selection(
         project.add_track(track_data);
         total_notes += notes.len() as u64;
     }
-
-    project.metadata.audio.total_notes = total_notes;
-    project.metadata.audio.track_count = selected.len() as u16;
-    project
+    total_notes
 }
 
 #[cfg(test)]

@@ -146,7 +146,20 @@ impl<D> ReconnectSession<D> {
         // 取出现状推进（专用哨兵态占位——绝不用真实状态，避免迁移臂遗漏赋值时
         // 占位值泄漏成"合法"状态；见 match 后的不变量断言）
         let state = std::mem::replace(&mut self.state, ReconnectState::Transitioning);
-        let finished = match state {
+        let finished = self.advance(state, ops);
+
+        // 蓝军不变量：任何正常迁移臂都必须重新赋值 self.state，不得停留在占位态。
+        // debug_assert 在 debug 构建加速发现；release 下由上面的 Transitioning 兜底兜住。
+        debug_assert!(
+            !matches!(self.state, ReconnectState::Transitioning),
+            "重连状态机迁移臂遗漏 self.state 赋值（占位态泄漏）"
+        );
+        finished
+    }
+
+    /// 按取出的现状推进一个迁移臂；返回 `true` = 已进入终态。
+    fn advance(&mut self, state: ReconnectState, ops: &mut impl ReconnectOps<D>) -> bool {
+        match state {
             ReconnectState::StopRenderThread { deadline } => {
                 if Instant::now() > deadline {
                     tracing::warn!(
@@ -159,38 +172,7 @@ impl<D> ReconnectSession<D> {
                 false
             }
             ReconnectState::RecreateDevice { attempt } => {
-                self.attempt = attempt;
-                if self.worker.is_none() {
-                    // 本帧发起（异步；S1：不阻塞 UI）
-                    self.worker = Some(ops.spawn_device_recreate());
-                    self.state = ReconnectState::RecreateDevice { attempt };
-                    return false;
-                }
-                match self.worker.as_ref().map(|rx| rx.try_recv()) {
-                    Some(Ok(Ok((epoch, gpu)))) => {
-                        self.worker = None;
-                        self.pending = Some((epoch, gpu));
-                        self.state = ReconnectState::RebuildInfra;
-                        false
-                    }
-                    Some(Ok(Err(e))) => {
-                        self.worker = None;
-                        self.pipeline_attempt_failed(ops, e)
-                    }
-                    Some(Err(mpsc::TryRecvError::Empty)) => {
-                        // 仍在重建：保持等待（下帧再收割）
-                        self.state = ReconnectState::RecreateDevice { attempt };
-                        false
-                    }
-                    Some(Err(mpsc::TryRecvError::Disconnected)) => {
-                        self.worker = None;
-                        self.pipeline_attempt_failed(ops, "重建 worker 异常退出".to_string())
-                    }
-                    None => {
-                        self.state = ReconnectState::RecreateDevice { attempt };
-                        false
-                    }
-                }
+                self.harvest_device_recreate(ops, attempt)
             }
             ReconnectState::RebuildInfra => {
                 let Some((epoch, gpu)) = self.pending.take() else {
@@ -243,15 +225,43 @@ impl<D> ReconnectSession<D> {
                 };
                 true
             }
-        };
+        }
+    }
 
-        // 蓝军不变量：任何正常迁移臂都必须重新赋值 self.state，不得停留在占位态。
-        // debug_assert 在 debug 构建加速发现；release 下由上面的 Transitioning 兜底兜住。
-        debug_assert!(
-            !matches!(self.state, ReconnectState::Transitioning),
-            "重连状态机迁移臂遗漏 self.state 赋值（占位态泄漏）"
-        );
-        finished
+    /// 设备重建阶段：首帧发起异步 worker，后续帧非阻塞收割结果。
+    fn harvest_device_recreate(&mut self, ops: &mut impl ReconnectOps<D>, attempt: u8) -> bool {
+        self.attempt = attempt;
+        if self.worker.is_none() {
+            // 本帧发起（异步；S1：不阻塞 UI）
+            self.worker = Some(ops.spawn_device_recreate());
+            self.state = ReconnectState::RecreateDevice { attempt };
+            return false;
+        }
+        match self.worker.as_ref().map(|rx| rx.try_recv()) {
+            Some(Ok(Ok((epoch, gpu)))) => {
+                self.worker = None;
+                self.pending = Some((epoch, gpu));
+                self.state = ReconnectState::RebuildInfra;
+                false
+            }
+            Some(Ok(Err(e))) => {
+                self.worker = None;
+                self.pipeline_attempt_failed(ops, e)
+            }
+            Some(Err(mpsc::TryRecvError::Empty)) => {
+                // 仍在重建：保持等待（下帧再收割）
+                self.state = ReconnectState::RecreateDevice { attempt };
+                false
+            }
+            Some(Err(mpsc::TryRecvError::Disconnected)) => {
+                self.worker = None;
+                self.pipeline_attempt_failed(ops, "重建 worker 异常退出".to_string())
+            }
+            None => {
+                self.state = ReconnectState::RecreateDevice { attempt };
+                false
+            }
+        }
     }
 
     /// 整轮流水线失败：预算内退避重试，耗尽进 Failed（`on_failed` 保证先自动保存）。

@@ -157,22 +157,8 @@ impl CollaborationService {
                 Self::handle_collaboration_event(event);
             });
 
-            let result: Result<(), String> = if let Some(code) = invite_code {
-                tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
-                client
-                    .join_room_and_connect(code)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .map(|_| ())
-            } else {
-                let name = room_name.unwrap_or_else(|| messages::DEFAULT_ROOM_NAME.to_string());
-                tracing::info!("协作: 正在创建房间: {} ...", name);
-                client
-                    .create_room_and_connect(name)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .map(|_| ())
-            };
+            let result: Result<(), String> =
+                Self::connect_and_handshake(&mut client, invite_code, room_name).await;
 
             match result {
                 Ok(()) => {
@@ -204,30 +190,61 @@ impl CollaborationService {
                     }
                     let _ = stop_rx.await;
                 }
-                Err(e) => {
-                    tracing::error!("协作: 连接失败: {}", e);
-                    // 只有仍是当前连接时才广播失败并归零；过期失败静默丢弃。
-                    let current = match slot_arc.lock() {
-                        Ok(mut slot) => {
-                            if slot.is_current_connecting(token) {
-                                *slot = ClientSlot::Idle;
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        Err(_) => false,
-                    };
-                    if current {
-                        lumino_ui::event::emit(lumino_ui::event::Event::window(
-                            lumino_ui::event::window::Event::collaboration_connect_failed(e),
-                        ));
-                    }
-                }
+                Err(e) => Self::report_connect_failure(&slot_arc, token, e),
             }
         });
 
         Ok(())
+    }
+
+    /// 加入或创建房间并等待握手完成（`connect` 后台任务的连接阶段）。
+    async fn connect_and_handshake(
+        client: &mut CollaborationClient,
+        invite_code: Option<String>,
+        room_name: Option<String>,
+    ) -> Result<(), String> {
+        if let Some(code) = invite_code {
+            tracing::info!("协作: 正在加入房间 (邀请码: {})...", code);
+            client
+                .join_room_and_connect(code)
+                .await
+                .map_err(|e| e.to_string())
+                .map(|_| ())
+        } else {
+            let name = room_name.unwrap_or_else(|| messages::DEFAULT_ROOM_NAME.to_string());
+            tracing::info!("协作: 正在创建房间: {} ...", name);
+            client
+                .create_room_and_connect(name)
+                .await
+                .map_err(|e| e.to_string())
+                .map(|_| ())
+        }
+    }
+
+    /// 广播连接失败并归零槽位；token 已被取代时静默丢弃（不复活旧连接）。
+    fn report_connect_failure(
+        slot: &Mutex<ClientSlot<CollaborationClient>>,
+        token: u64,
+        error: String,
+    ) {
+        tracing::error!("协作: 连接失败: {}", error);
+        // 只有仍是当前连接时才广播失败并归零；过期失败静默丢弃。
+        let current = match slot.lock() {
+            Ok(mut slot) => {
+                if slot.is_current_connecting(token) {
+                    *slot = ClientSlot::Idle;
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        };
+        if current {
+            lumino_ui::event::emit(lumino_ui::event::Event::window(
+                lumino_ui::event::window::Event::collaboration_connect_failed(error),
+            ));
+        }
     }
 
     /// 异步断开（供 connect 内部使用）
@@ -250,123 +267,165 @@ impl CollaborationService {
             CollaborationEvent::Authenticated {
                 user_id,
                 invite_code,
-            } => {
-                tracing::info!(
-                    "协作: 认证成功! 用户ID: {}, 邀请码: {}",
-                    user_id,
-                    invite_code
-                );
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_authenticated(
-                        user_id,
-                        invite_code,
-                    ),
-                ));
-            }
-            CollaborationEvent::RoomCreated { room } => {
-                tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_room_created(
-                        room.name,
-                        room.invite_code,
-                        room.project_name.clone(),
-                        room.project_hash.clone(),
-                    ),
-                ));
-            }
-            CollaborationEvent::RoomJoined { room, users } => {
-                tracing::info!(
-                    "协作: 加入房间成功! 房间: {}, 用户数: {}",
-                    room.name,
-                    users.len()
-                );
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_room_joined(
-                        room.name,
-                        room.invite_code,
-                        users.len(),
-                        room.project_name.clone(),
-                        room.project_hash.clone(),
-                    ),
-                ));
-            }
+            } => Self::emit_authenticated(user_id, invite_code),
+            CollaborationEvent::RoomCreated { room } => Self::emit_room_created(room),
+            CollaborationEvent::RoomJoined { room, users } => Self::emit_room_joined(room, users),
             CollaborationEvent::Selection { user_id, selection } => {
-                tracing::debug!("协作: 收到远端选择更新 - 用户: {}", user_id);
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_selection(
-                        user_id,
-                        selection.to_string(),
-                        String::new(),
-                    ),
-                ));
+                Self::emit_remote_selection(user_id, selection)
             }
-            CollaborationEvent::Disconnected => {
-                tracing::info!("协作: 连接断开");
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_disconnected(),
-                ));
-            }
-            CollaborationEvent::UserLeft { user_id } => {
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_user_left(user_id),
-                ));
-            }
+            CollaborationEvent::Disconnected => Self::emit_disconnected(),
+            CollaborationEvent::UserLeft { user_id } => Self::emit_user_left(user_id),
             CollaborationEvent::MouseUpdate {
                 user_id,
                 position,
                 color,
                 username,
-            } => {
-                tracing::debug!(
-                    "协作事件 - 鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
-                    user_id,
-                    position.x,
-                    position.y,
-                    color,
-                    username
-                );
-                lumino_ui::event::emit(lumino_ui::event::Event::window(
-                    lumino_ui::event::window::Event::collaboration_mouse_update(
-                        user_id, position.x, position.y, color, username,
-                    ),
-                ));
-            }
+            } => Self::emit_mouse_update(user_id, position, color, username),
             CollaborationEvent::NoteBatch { user_id, operation } => {
-                if let Ok(json) = serde_json::to_string(&operation) {
-                    lumino_ui::event::emit(lumino_ui::event::Event::window(
-                        lumino_ui::event::window::Event::collaboration_note_update(user_id, json),
-                    ));
-                }
+                Self::emit_note_batch(user_id, operation)
             }
             CollaborationEvent::ProjectUpdate { user_id, update } => {
-                if let Ok(json) = serde_json::to_string(&update) {
-                    lumino_ui::event::emit(lumino_ui::event::Event::window(
-                        lumino_ui::event::window::Event::collaboration_project_update(
-                            user_id, json,
-                        ),
-                    ));
-                }
+                Self::emit_project_update(user_id, update)
             }
-            CollaborationEvent::Error { message } => {
-                tracing::error!("协作错误: {}", message);
-                // 踢人 / 房间解散等错误必须弹出独立对话框提示，不能只写日志。
-                // 在独立线程弹出原生对话框，避免阻塞协作网络线程。
-                let _msg = message.clone();
-                std::thread::spawn(move || {
-                    #[cfg(not(test))]
-                    {
-                        use lumino_core::tr;
-
-                        let _ = lumino_platform::dialog::MessageDialog::new()
-                            .set_title(tr!("协作通知"))
-                            .set_description(&_msg)
-                            .set_level(lumino_platform::dialog::MessageLevel::Warning)
-                            .show();
-                    }
-                });
-            }
+            CollaborationEvent::Error { message } => Self::show_error_dialog(message),
             _ => {}
         }
+    }
+
+    /// 认证成功：记录日志并广播给 UI。
+    fn emit_authenticated(user_id: String, invite_code: String) {
+        tracing::info!(
+            "协作: 认证成功! 用户ID: {}, 邀请码: {}",
+            user_id,
+            invite_code
+        );
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_authenticated(user_id, invite_code),
+        ));
+    }
+
+    /// 房间创建成功：记录日志并广播房间信息。
+    fn emit_room_created(room: lumino_collaboration::types::RoomInfo) {
+        tracing::info!("协作: 房间创建成功! 邀请码: {}", room.invite_code);
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_room_created(
+                room.name,
+                room.invite_code,
+                room.project_name.clone(),
+                room.project_hash.clone(),
+            ),
+        ));
+    }
+
+    /// 加入房间成功：记录日志并广播房间与用户数。
+    fn emit_room_joined(
+        room: lumino_collaboration::types::RoomInfo,
+        users: Vec<lumino_collaboration::types::UserInfo>,
+    ) {
+        tracing::info!(
+            "协作: 加入房间成功! 房间: {}, 用户数: {}",
+            room.name,
+            users.len()
+        );
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_room_joined(
+                room.name,
+                room.invite_code,
+                users.len(),
+                room.project_name.clone(),
+                room.project_hash.clone(),
+            ),
+        ));
+    }
+
+    /// 远端选择更新：快照为 JSON 字符串后广播。
+    fn emit_remote_selection(user_id: String, selection: serde_json::Value) {
+        tracing::debug!("协作: 收到远端选择更新 - 用户: {}", user_id);
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_selection(
+                user_id,
+                selection.to_string(),
+                String::new(),
+            ),
+        ));
+    }
+
+    /// 连接断开：记录日志并广播断开事件。
+    fn emit_disconnected() {
+        tracing::info!("协作: 连接断开");
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_disconnected(),
+        ));
+    }
+
+    /// 用户离开：广播离开事件。
+    fn emit_user_left(user_id: String) {
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_user_left(user_id),
+        ));
+    }
+
+    /// 远端鼠标更新：记录调试日志并广播坐标。
+    fn emit_mouse_update(
+        user_id: String,
+        position: lumino_collaboration::types::MousePosition,
+        color: String,
+        username: String,
+    ) {
+        tracing::debug!(
+            "协作事件 - 鼠标更新：user_id={}, x={}, y={}, color={}, username={}",
+            user_id,
+            position.x,
+            position.y,
+            color,
+            username
+        );
+        lumino_ui::event::emit(lumino_ui::event::Event::window(
+            lumino_ui::event::window::Event::collaboration_mouse_update(
+                user_id, position.x, position.y, color, username,
+            ),
+        ));
+    }
+
+    /// 音符批量操作：序列化成功后广播。
+    fn emit_note_batch(
+        user_id: String,
+        operation: lumino_collaboration::types::NoteBatchOperation,
+    ) {
+        if let Ok(json) = serde_json::to_string(&operation) {
+            lumino_ui::event::emit(lumino_ui::event::Event::window(
+                lumino_ui::event::window::Event::collaboration_note_update(user_id, json),
+            ));
+        }
+    }
+
+    /// 工程更新：序列化成功后广播。
+    fn emit_project_update(user_id: String, update: lumino_collaboration::types::ProjectUpdate) {
+        if let Ok(json) = serde_json::to_string(&update) {
+            lumino_ui::event::emit(lumino_ui::event::Event::window(
+                lumino_ui::event::window::Event::collaboration_project_update(user_id, json),
+            ));
+        }
+    }
+
+    /// 协作错误：记录日志并在独立线程弹出原生对话框。
+    fn show_error_dialog(message: String) {
+        tracing::error!("协作错误: {}", message);
+        // 踢人 / 房间解散等错误必须弹出独立对话框提示，不能只写日志。
+        // 在独立线程弹出原生对话框，避免阻塞协作网络线程。
+        let _msg = message.clone();
+        std::thread::spawn(move || {
+            #[cfg(not(test))]
+            {
+                use lumino_core::tr;
+
+                let _ = lumino_platform::dialog::MessageDialog::new()
+                    .set_title(tr!("协作通知"))
+                    .set_description(&_msg)
+                    .set_level(lumino_platform::dialog::MessageLevel::Warning)
+                    .show();
+            }
+        });
     }
 
     /// 发送鼠标位置（同步 API）

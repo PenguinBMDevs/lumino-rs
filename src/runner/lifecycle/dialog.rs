@@ -101,6 +101,64 @@ impl RunnerInner {
             return false;
         }
 
+        let (dialog_result, should_close, dialog_type) = self.drive_dialog(window_id, event);
+
+        // 如果应该关闭，关闭对话框
+        if should_close {
+            self.window_state.dialog_manager.close_dialog(window_id);
+            // 混音台窗口被 X 关闭 / 被 Runner 请求关闭：主窗口镜像同步落回 false，
+            // 否则路由栏灯条会一直亮着，下一帧 `sync_mixer_dialog` 还会把它再开回来。
+            if dialog_type == Some(DialogType::Mixer) {
+                self.window_state.window.ui_mut().set_mixer_open(false);
+                // 允许用户关掉后立刻再点开：不复位会让 `sync_mixer_dialog` 误以为
+                // 本轮请求已发出而拒绝重建窗口。
+                self.mixer_open_requested = false;
+            }
+        }
+
+        // 保存确认对话框被窗口 X 关闭（未点击任何按钮）→ 视为「取消」关闭操作，
+        // 清空挂起的关闭动作，避免后续关闭请求被忽略。
+        if dialog_result.is_none() && should_close && dialog_type == Some(DialogType::SaveConfirm) {
+            tracing::debug!("保存确认对话框被 X 关闭，视为取消");
+            self.handle_save_confirm_result(SaveConfirmAction::Cancel);
+        }
+
+        // DEBT-12：自动保存恢复对话框被 X 关闭 → 不做决定、不改名，文件保留。
+        if dialog_result.is_none()
+            && should_close
+            && dialog_type == Some(DialogType::AutosaveRecover)
+        {
+            self.dismiss_autosave_prompt();
+        }
+
+        // DRAW-045：素材删除确认被 X 关闭 → 与「取消」同义，清除主窗口待确认态
+        // （否则待确认下标会残留，下一次删除会被配对校验拒绝）。
+        if dialog_result.is_none()
+            && should_close
+            && dialog_type == Some(DialogType::MaterialDelete)
+        {
+            tracing::debug!("素材删除确认被窗口 X 关闭，视为取消");
+            self.window_state.window.ui_mut().cancel_material_delete();
+        }
+
+        // 处理对话框返回的结果
+        if let Some(result) = dialog_result {
+            tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
+            self.process_dialog_result(dialog_type, result);
+        }
+
+        true
+    }
+
+    /// 驱动一次对话框窗口：消费窗口事件、检查关闭、必要时重绘并再次检查结果。
+    ///
+    /// 返回 `(对话框结果, 是否应该关闭, 对话框类型)`；关闭处理、被 X 关闭的清理与
+    /// 结果分发由调用方统一完成。
+    fn drive_dialog(
+        &mut self,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) -> (Option<DialogResult>, bool, Option<DialogType>) {
         let mut dialog_result = None;
         let mut should_close = false;
         // 记录对话框类型（用于块外判断保存确认对话框被 X 关闭的情况）
@@ -163,51 +221,7 @@ impl RunnerInner {
             }
         }
 
-        // 如果应该关闭，关闭对话框
-        if should_close {
-            self.window_state.dialog_manager.close_dialog(window_id);
-            // 混音台窗口被 X 关闭 / 被 Runner 请求关闭：主窗口镜像同步落回 false，
-            // 否则路由栏灯条会一直亮着，下一帧 `sync_mixer_dialog` 还会把它再开回来。
-            if dialog_type == Some(DialogType::Mixer) {
-                self.window_state.window.ui_mut().set_mixer_open(false);
-                // 允许用户关掉后立刻再点开：不复位会让 `sync_mixer_dialog` 误以为
-                // 本轮请求已发出而拒绝重建窗口。
-                self.mixer_open_requested = false;
-            }
-        }
-
-        // 保存确认对话框被窗口 X 关闭（未点击任何按钮）→ 视为「取消」关闭操作，
-        // 清空挂起的关闭动作，避免后续关闭请求被忽略。
-        if dialog_result.is_none() && should_close && dialog_type == Some(DialogType::SaveConfirm) {
-            tracing::debug!("保存确认对话框被 X 关闭，视为取消");
-            self.handle_save_confirm_result(SaveConfirmAction::Cancel);
-        }
-
-        // DEBT-12：自动保存恢复对话框被 X 关闭 → 不做决定、不改名，文件保留。
-        if dialog_result.is_none()
-            && should_close
-            && dialog_type == Some(DialogType::AutosaveRecover)
-        {
-            self.dismiss_autosave_prompt();
-        }
-
-        // DRAW-045：素材删除确认被 X 关闭 → 与「取消」同义，清除主窗口待确认态
-        // （否则待确认下标会残留，下一次删除会被配对校验拒绝）。
-        if dialog_result.is_none()
-            && should_close
-            && dialog_type == Some(DialogType::MaterialDelete)
-        {
-            tracing::debug!("素材删除确认被窗口 X 关闭，视为取消");
-            self.window_state.window.ui_mut().cancel_material_delete();
-        }
-
-        // 处理对话框返回的结果
-        if let Some(result) = dialog_result {
-            tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
-            self.process_dialog_result(dialog_type, result);
-        }
-
-        true
+        (dialog_result, should_close, dialog_type)
     }
 
     /// 处理对话框结果
@@ -221,27 +235,8 @@ impl RunnerInner {
                     .ui_mut()
                     .apply_material_delete(*index);
             }
-            DialogResult::TempoMaxBpm { bpm } => {
-                tracing::info!("应用自定义 Tempo BPM 上限: {bpm}");
-                // 设置窗口是编辑中的权威副本：打开时先写回它，避免关闭设置时
-                // 用旧面板覆盖刚确认的值；主窗口同步一份以即时刷新 Tempo 面板。
-                if let Some(id) = self
-                    .window_state
-                    .dialog_manager
-                    .first_dialog_id_of_type(DialogType::Settings)
-                    && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
-                    && let Some(ui) = dialog.ui_mut()
-                {
-                    ui.apply_tempo_max_bpm(*bpm);
-                }
-                self.window_state.window.ui_mut().apply_tempo_max_bpm(*bpm);
-            }
-            DialogResult::Cancel => {
-                tracing::info!("对话框: 取消");
-                if dialog_type == Some(DialogType::MaterialDelete) {
-                    self.window_state.window.ui_mut().cancel_material_delete();
-                }
-            }
+            DialogResult::TempoMaxBpm { bpm } => self.apply_tempo_max_bpm_result(bpm),
+            DialogResult::Cancel => self.apply_dialog_cancel(dialog_type),
             DialogResult::SaveConfirm(choice) => {
                 // 保存确认对话框：保存 / 关闭（放弃）/ 取消 三选一
                 // 交由 RunnerInner 继续挂起的关闭动作或清空挂起状态。
@@ -251,13 +246,7 @@ impl RunnerInner {
                 // DEBT-12：恢复 / 不恢复（文件改名）由 Runner 的恢复状态机执行。
                 self.resolve_autosave_prompt(*action);
             }
-            DialogResult::LoadConfirm => {
-                if let Some(path) = self.file_state.pending_load_path.take() {
-                    self.load_midi_file(path);
-                } else {
-                    tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
-                }
-            }
+            DialogResult::LoadConfirm => self.apply_load_confirm(),
             DialogResult::ProjectSettings {
                 title,
                 tempo,
@@ -308,34 +297,79 @@ impl RunnerInner {
                     .midi
                     .apply_port_soundfonts_deferred(map.clone());
                 // 工程设置对话框可能仍开着：同步快照，避免摘要停留在旧值。
-                if let Some(id) = self
-                    .window_state
-                    .dialog_manager
-                    .first_dialog_id_of_type(DialogType::ProjectSettings)
-                    && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
-                {
-                    if let Some(ui) = dialog.ui_mut() {
-                        ui.apply_project_port_soundfonts(map);
-                    }
-                    dialog.request_redraw();
-                }
+                self.sync_project_settings_port_soundfonts(map);
             }
-            _ => {
-                let is_permanent_delete =
-                    matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });
-                let main_ui = self.window_state.window.ui_mut();
-                crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, result);
-                // 永久删除音轨缓存后对话框保持开启：重新扫描缓存目录，下一帧
-                // try_fill_recover_track_entries 会把新列表注入对话框，刷新已删除条目。
-                if is_permanent_delete {
-                    let entries = self.scan_recover_track_entries();
-                    tracing::info!(
-                        "找回删除音轨：永久删除后重新扫描，剩余缓存 {} 个",
-                        entries.len()
-                    );
-                    self.pending_recover_track_entries = Some(entries);
-                }
+            _ => self.apply_fallback_dialog_result(result),
+        }
+    }
+
+    /// 应用自定义 Tempo BPM 上限：先写回仍打开的设置窗口，再同步主窗口。
+    fn apply_tempo_max_bpm_result(&mut self, bpm: &f64) {
+        tracing::info!("应用自定义 Tempo BPM 上限: {bpm}");
+        // 设置窗口是编辑中的权威副本：打开时先写回它，避免关闭设置时
+        // 用旧面板覆盖刚确认的值；主窗口同步一份以即时刷新 Tempo 面板。
+        if let Some(id) = self
+            .window_state
+            .dialog_manager
+            .first_dialog_id_of_type(DialogType::Settings)
+            && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+            && let Some(ui) = dialog.ui_mut()
+        {
+            ui.apply_tempo_max_bpm(*bpm);
+        }
+        self.window_state.window.ui_mut().apply_tempo_max_bpm(*bpm);
+    }
+
+    /// 对话框「取消」结果：素材删除确认还需清除主窗口的待确认态。
+    fn apply_dialog_cancel(&mut self, dialog_type: Option<DialogType>) {
+        tracing::info!("对话框: 取消");
+        if dialog_type == Some(DialogType::MaterialDelete) {
+            self.window_state.window.ui_mut().cancel_material_delete();
+        }
+    }
+
+    /// 确认加载：消费挂起的加载路径并加载文件。
+    fn apply_load_confirm(&mut self) {
+        if let Some(path) = self.file_state.pending_load_path.take() {
+            self.load_midi_file(path);
+        } else {
+            tracing::warn!("LoadConfirm: 没有 pending 的加载路径");
+        }
+    }
+
+    /// 工程设置对话框仍打开时，把端口音色库快照同步过去，避免摘要停在旧值。
+    fn sync_project_settings_port_soundfonts(
+        &mut self,
+        map: lumino_midi_model::multi_port::PortSoundfontMap,
+    ) {
+        if let Some(id) = self
+            .window_state
+            .dialog_manager
+            .first_dialog_id_of_type(DialogType::ProjectSettings)
+            && let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(id)
+        {
+            if let Some(ui) = dialog.ui_mut() {
+                ui.apply_project_port_soundfonts(map);
             }
+            dialog.request_redraw();
+        }
+    }
+
+    /// 其余对话框结果交给主窗口的消息处理入口；永久删除音轨缓存后重新扫描列表。
+    fn apply_fallback_dialog_result(&mut self, result: DialogResult) {
+        let is_permanent_delete =
+            matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });
+        let main_ui = self.window_state.window.ui_mut();
+        crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, result);
+        // 永久删除音轨缓存后对话框保持开启：重新扫描缓存目录，下一帧
+        // try_fill_recover_track_entries 会把新列表注入对话框，刷新已删除条目。
+        if is_permanent_delete {
+            let entries = self.scan_recover_track_entries();
+            tracing::info!(
+                "找回删除音轨：永久删除后重新扫描，剩余缓存 {} 个",
+                entries.len()
+            );
+            self.pending_recover_track_entries = Some(entries);
         }
     }
 }

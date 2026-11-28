@@ -40,51 +40,130 @@ pub(super) struct TemplateContext<'a> {
     pub duration_secs: f64,
 }
 
+/// 模板替换四个阶段共用的一次性标量（音符数 / 时长 / 小节 / 帧）。
+///
+/// 字段数为 14：它是纯中间值 DTO，四个替换阶段读同一份结果，
+/// 避免各阶段重复求解小节数与帧数。
+struct TemplateScalars {
+    /// 全曲音符总数
+    total_notes: u64,
+    /// 剩余音符数
+    remaining: u64,
+    /// 当前 BPM
+    bpm: f64,
+    /// 当前拍号分子
+    tsn: u8,
+    /// 当前拍号分母
+    tsd: u8,
+    /// 全曲总 tick
+    total_ticks: u32,
+    /// 当前已走时长（秒）
+    time_secs: f64,
+    /// 剩余时长（秒）
+    rem_secs: f64,
+    /// 全曲小节总数
+    total_bars: u64,
+    /// 当前小节（不超过总小节）
+    max_bar: u64,
+    /// 全曲总帧数
+    total_frames: u64,
+    /// 当前帧号
+    curr_frames: u64,
+    /// 剩余帧数
+    rem_frames: u64,
+    /// 平均每秒音符数
+    avg_nps: f64,
+}
+
+impl TemplateScalars {
+    /// 一次性求解模板替换所需的全部标量。
+    fn compute(ctx: &TemplateContext<'_>) -> Self {
+        let st = ctx.stats;
+        let doc = ctx.document;
+        let tick = ctx.tick;
+        let ppq = ctx.ppq;
+        let fps = ctx.fps;
+        let duration = ctx.duration_secs;
+
+        let total_notes = doc.notes.iter().map(|t| t.len() as u64).sum::<u64>();
+        let remaining = total_notes.saturating_sub(st.note_count);
+
+        let bpm = current_bpm(&doc.tempo_changes, tick);
+        let (tsn, tsd) = current_time_signature(&doc.time_signatures, tick);
+
+        let total_ticks = doc.total_ticks;
+        let time_secs = ticks_to_seconds(tick as u64, ppq, &doc.tempo_changes);
+        let rem_secs = (duration - time_secs).max(0.0);
+
+        // 小节数（按当前拍号计算每小节 tick 数）
+        let bar_divide = {
+            let beat_ticks = ppq as f64 * 4.0 / tsd as f64;
+            beat_ticks * tsn as f64
+        };
+        let bar_divide = if bar_divide > 0.0 { bar_divide } else { 1.0 };
+        let curr_bar = (tick as f64 / bar_divide).floor() as u64 + 1;
+        let total_bars = (total_ticks as f64 / bar_divide).floor() as u64;
+        let max_bar = if curr_bar > total_bars {
+            total_bars
+        } else {
+            curr_bar
+        };
+
+        let total_frames = (duration * fps as f64).ceil() as u64;
+        let curr_frames = st.frames;
+        let rem_frames = total_frames.saturating_sub(curr_frames);
+
+        let avg_nps = if duration > 0.0 {
+            total_notes as f64 / duration
+        } else {
+            0.0
+        };
+
+        Self {
+            total_notes,
+            remaining,
+            bpm,
+            tsn,
+            tsd,
+            total_ticks,
+            time_secs,
+            rem_secs,
+            total_bars,
+            max_bar,
+            total_frames,
+            curr_frames,
+            rem_frames,
+            avg_nps,
+        }
+    }
+}
+
 /// 执行模板占位符替换（用于画面文本与 CSV 行）。
 pub(super) fn render_template(ctx: &TemplateContext<'_>) -> String {
     let cfg = ctx.config;
+    let scalars = TemplateScalars::compute(ctx);
+
+    let mut out = cfg.text.clone();
+    out = replace_count_placeholders(out, ctx, &scalars);
+    out = replace_time_placeholders(out, ctx, &scalars);
+    out = replace_bar_placeholders(out, ctx, &scalars);
+    out = replace_progress_placeholders(out, ctx, &scalars);
+    out
+}
+
+/// 替换头部与计数占位符（`{bpm}` 至 `{mplph}`）。
+fn replace_count_placeholders(
+    mut out: String,
+    ctx: &TemplateContext<'_>,
+    scalars: &TemplateScalars,
+) -> String {
+    let cfg = ctx.config;
     let st = ctx.stats;
-    let doc = ctx.document;
-    let tick = ctx.tick;
-    let ppq = ctx.ppq;
-    let fps = ctx.fps;
-    let duration = ctx.duration_secs;
+    let bpm = scalars.bpm;
+    let total_notes = scalars.total_notes;
+    let remaining = scalars.remaining;
     let use_comma = use_comma(cfg.separator);
     let zeroes = cfg.padding_zeroes;
-
-    let total_notes = doc.notes.iter().map(|t| t.len() as u64).sum::<u64>();
-    let remaining = total_notes.saturating_sub(st.note_count);
-
-    let bpm = current_bpm(&doc.tempo_changes, tick);
-    let (tsn, tsd) = current_time_signature(&doc.time_signatures, tick);
-
-    let total_ticks = doc.total_ticks;
-    let time_secs = ticks_to_seconds(tick as u64, ppq, &doc.tempo_changes);
-    let rem_secs = (duration - time_secs).max(0.0);
-
-    // 小节数（按当前拍号计算每小节 tick 数）
-    let bar_divide = {
-        let beat_ticks = ppq as f64 * 4.0 / tsd as f64;
-        beat_ticks * tsn as f64
-    };
-    let bar_divide = if bar_divide > 0.0 { bar_divide } else { 1.0 };
-    let curr_bar = (tick as f64 / bar_divide).floor() as u64 + 1;
-    let total_bars = (total_ticks as f64 / bar_divide).floor() as u64;
-    let max_bar = if curr_bar > total_bars {
-        total_bars
-    } else {
-        curr_bar
-    };
-
-    let total_frames = (duration * fps as f64).ceil() as u64;
-    let curr_frames = st.frames;
-    let rem_frames = total_frames.saturating_sub(curr_frames);
-
-    let avg_nps = if duration > 0.0 {
-        total_notes as f64 / duration
-    } else {
-        0.0
-    };
 
     let bpm_str = format_float(bpm, cfg.bpm_int_pad, cfg.bpm_dec_pad, use_comma, zeroes);
     let nc = format_int(st.note_count, cfg.note_count_pad, use_comma, zeroes);
@@ -94,6 +173,76 @@ pub(super) fn render_template(ctx: &TemplateContext<'_>) -> String {
     let mnps = format_int(st.max_nps, cfg.nps_pad, use_comma, zeroes);
     let plph = format_int(st.polyphony, cfg.polyphony_pad, use_comma, zeroes);
     let mplph = format_int(st.max_polyphony, cfg.polyphony_pad, use_comma, zeroes);
+
+    for (key, val) in [
+        ("{bpm}", bpm_str.as_str()),
+        ("{nc}", nc.as_str()),
+        ("{nr}", nr.as_str()),
+        ("{tn}", tn.as_str()),
+        ("{nps}", nps.as_str()),
+        ("{mnps}", mnps.as_str()),
+        ("{plph}", plph.as_str()),
+        ("{mplph}", mplph.as_str()),
+    ] {
+        out = out.replace(key, val);
+    }
+    out
+}
+
+/// 替换时间占位符（`{currsec}` 至 `{rfrtime}`）。
+fn replace_time_placeholders(
+    mut out: String,
+    ctx: &TemplateContext<'_>,
+    scalars: &TemplateScalars,
+) -> String {
+    let duration = ctx.duration_secs;
+    let fps = ctx.fps;
+    let time_secs = scalars.time_secs;
+    let rem_secs = scalars.rem_secs;
+    let total_frames = scalars.total_frames;
+    let curr_frames = scalars.curr_frames;
+    let rem_frames = scalars.rem_frames;
+
+    let currsec = format!("{time_secs:.1}");
+    let totalsec = format!("{duration:.1}");
+    let remsec = format!("{rem_secs:.1}");
+    let cfrtime = format!("{};{}", fmt_mmss(time_secs), curr_frames % fps as u64);
+    let tfrtime = format!("{};{}", fmt_mmss(duration), total_frames % fps as u64);
+    let rfrtime = format!("{};{}", fmt_mmss(rem_secs), rem_frames % fps as u64);
+
+    for (key, val) in [
+        ("{currsec}", currsec.as_str()),
+        ("{currtime}", fmt_mmss(time_secs).as_str()),
+        ("{cmiltime}", fmt_mmss_fff(time_secs).as_str()),
+        ("{cfrtime}", cfrtime.as_str()),
+        ("{totalsec}", totalsec.as_str()),
+        ("{totaltime}", fmt_mmss(duration).as_str()),
+        ("{tmiltime}", fmt_mmss_fff(duration).as_str()),
+        ("{tfrtime}", tfrtime.as_str()),
+        ("{remsec}", remsec.as_str()),
+        ("{remtime}", fmt_mmss(rem_secs).as_str()),
+        ("{rmiltime}", fmt_mmss_fff(rem_secs).as_str()),
+        ("{rfrtime}", rfrtime.as_str()),
+    ] {
+        out = out.replace(key, val);
+    }
+    out
+}
+
+/// 替换 tick 与小节占位符（`{currticks}` 至 `{rembars}`）。
+fn replace_bar_placeholders(
+    mut out: String,
+    ctx: &TemplateContext<'_>,
+    scalars: &TemplateScalars,
+) -> String {
+    let cfg = ctx.config;
+    let tick = ctx.tick;
+    let total_ticks = scalars.total_ticks;
+    let max_bar = scalars.max_bar;
+    let total_bars = scalars.total_bars;
+    let use_comma = use_comma(cfg.separator);
+    let zeroes = cfg.padding_zeroes;
+
     let ticks = format_int(tick as u64, cfg.ticks_pad, use_comma, zeroes);
     let tticks = format_int(total_ticks as u64, cfg.ticks_pad, use_comma, zeroes);
     let rticks = format_int(
@@ -110,49 +259,53 @@ pub(super) fn render_template(ctx: &TemplateContext<'_>) -> String {
         use_comma,
         zeroes,
     );
-    let frames = format_int(curr_frames, cfg.frames_pad, use_comma, zeroes);
-    let tframes = format_int(total_frames, cfg.frames_pad, use_comma, zeroes);
-    let rframes = format_int(rem_frames, cfg.frames_pad, use_comma, zeroes);
 
-    let currsec = format!("{time_secs:.1}");
-    let totalsec = format!("{duration:.1}");
-    let remsec = format!("{rem_secs:.1}");
-    let avgnps = format!("{avg_nps:.2}");
-    let notep = format_percent(st.note_count as f64, total_notes as f64);
-    let tickp = format_percent(tick as f64, total_ticks as f64);
-    let timep = format_percent(time_secs, duration);
-    let cfrtime = format!("{};{}", fmt_mmss(time_secs), curr_frames % fps as u64);
-    let tfrtime = format!("{};{}", fmt_mmss(duration), total_frames % fps as u64);
-    let rfrtime = format!("{};{}", fmt_mmss(rem_secs), rem_frames % fps as u64);
-
-    let mut out = cfg.text.clone();
     for (key, val) in [
-        ("{bpm}", bpm_str.as_str()),
-        ("{nc}", nc.as_str()),
-        ("{nr}", nr.as_str()),
-        ("{tn}", tn.as_str()),
-        ("{nps}", nps.as_str()),
-        ("{mnps}", mnps.as_str()),
-        ("{plph}", plph.as_str()),
-        ("{mplph}", mplph.as_str()),
-        ("{currsec}", currsec.as_str()),
-        ("{currtime}", fmt_mmss(time_secs).as_str()),
-        ("{cmiltime}", fmt_mmss_fff(time_secs).as_str()),
-        ("{cfrtime}", cfrtime.as_str()),
-        ("{totalsec}", totalsec.as_str()),
-        ("{totaltime}", fmt_mmss(duration).as_str()),
-        ("{tmiltime}", fmt_mmss_fff(duration).as_str()),
-        ("{tfrtime}", tfrtime.as_str()),
-        ("{remsec}", remsec.as_str()),
-        ("{remtime}", fmt_mmss(rem_secs).as_str()),
-        ("{rmiltime}", fmt_mmss_fff(rem_secs).as_str()),
-        ("{rfrtime}", rfrtime.as_str()),
         ("{currticks}", ticks.as_str()),
         ("{totalticks}", tticks.as_str()),
         ("{remticks}", rticks.as_str()),
         ("{currbars}", bars.as_str()),
         ("{totalbars}", tbars.as_str()),
         ("{rembars}", rbars.as_str()),
+    ] {
+        out = out.replace(key, val);
+    }
+    out
+}
+
+/// 替换分辨率 / 拍号 / 平均值 / 帧数与进度占位符（`{ppq}` 至 `{timep}`）。
+fn replace_progress_placeholders(
+    mut out: String,
+    ctx: &TemplateContext<'_>,
+    scalars: &TemplateScalars,
+) -> String {
+    let cfg = ctx.config;
+    let st = ctx.stats;
+    let tick = ctx.tick;
+    let ppq = ctx.ppq;
+    let duration = ctx.duration_secs;
+    let total_notes = scalars.total_notes;
+    let tsn = scalars.tsn;
+    let tsd = scalars.tsd;
+    let total_ticks = scalars.total_ticks;
+    let time_secs = scalars.time_secs;
+    let avg_nps = scalars.avg_nps;
+    let total_frames = scalars.total_frames;
+    let curr_frames = scalars.curr_frames;
+    let rem_frames = scalars.rem_frames;
+    let use_comma = use_comma(cfg.separator);
+    let zeroes = cfg.padding_zeroes;
+
+    let frames = format_int(curr_frames, cfg.frames_pad, use_comma, zeroes);
+    let tframes = format_int(total_frames, cfg.frames_pad, use_comma, zeroes);
+    let rframes = format_int(rem_frames, cfg.frames_pad, use_comma, zeroes);
+
+    let avgnps = format!("{avg_nps:.2}");
+    let notep = format_percent(st.note_count as f64, total_notes as f64);
+    let tickp = format_percent(tick as f64, total_ticks as f64);
+    let timep = format_percent(time_secs, duration);
+
+    for (key, val) in [
         ("{ppq}", ppq.to_string().as_str()),
         ("{tsn}", tsn.to_string().as_str()),
         ("{tsd}", tsd.to_string().as_str()),

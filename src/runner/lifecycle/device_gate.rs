@@ -58,58 +58,9 @@ impl Runner {
         // macOS（Metal）的适配器指纹恒定（driver / driver_info 为空串），只有时间兜底才能让
         // 系统 / 驱动大版本升级后重新检测；旧配置缺 gpu_last_check_time、系统时钟异常、
         // 调试开关强制过期 → 一律按 miss 处理（宁可多检一次，不漏检）。
-        let within_ttl = if device_check_policy::debug_expire_cache_requested() {
-            tracing::warn!("LUMINO_DEBUG_STALE_GPU_CACHE 已设置：强制按缓存过期处理，执行全量检测");
-            false
-        } else if device_check_policy::cache_within_ttl(cached_time, storage::now_unix_secs()) {
-            true
-        } else {
-            tracing::info!(
-                "GPU 检测缓存已过期或缺失（上次检测时间戳 {:?}，TTL {} 天），执行全量检测",
-                cached_time,
-                device_check_policy::GPU_CHECK_CACHE_TTL_DAYS
-            );
-            false
-        };
+        let within_ttl = within_gpu_cache_ttl(cached_time);
 
-        // 指纹缓存命中（TTL 内 + 上次通过 + 适配器指纹仍在）：廉价探测后直接放行。
-        // 调试强制失败时不走缓存，保证 LUMINO_FORCE_DEVICE_CHECK_FAIL 可复现；
-        // TTL 过期时不执行廉价探测，直接落回全量检测。
-        // 廉价探测也走独立线程 + 超时（UI-008 / #37）：主线程绝不允许直接探测。
-        // 超时/异常由 `unwrap_or_default()` 折算为空指纹列表 → cache miss → 全量检测；
-        // 探测开始/完成/超时日志由 `probe_adapter_fingerprints_with_timeout` 统一打印。
-        let cache_hit = device_check_policy::cache_hit(
-            within_ttl,
-            device_check::debug_force_fail_requested(),
-            cached_passed,
-            cached_fp.as_deref(),
-            || {
-                crate::device_probe::probe_fingerprints_with_timeout(device_check::PROBE_TIMEOUT)
-                    .unwrap_or_default()
-            },
-        );
-
-        let report = if cache_hit {
-            tracing::info!(
-                "GPU 适配器指纹未变化，跳过完整试画检测（缓存命中，上次检测时间戳 {:?}）",
-                cached_time
-            );
-            GpuCheckReport {
-                passed: true,
-                failure: None,
-                required_backend: device_check::required_backend_name(),
-                adapters: Vec::new(),
-                fallback_adapters: Vec::new(),
-                fingerprint: cached_fp.clone(),
-                duration_ms: 0,
-            }
-        } else {
-            let fallback = fallback_diagnostics(policy);
-            tracing::info!(
-                "GPU 适配器指纹缓存未命中，执行全量兼容性检测（回退后端诊断收集策略: {fallback:?}）"
-            );
-            crate::device_probe::run_check_with_timeout(device_check::DEFAULT_TIMEOUT, fallback)
-        };
+        let report = gpu_check_report(within_ttl, cached_time, &cached_fp, cached_passed, policy);
 
         let fingerprint = report.fingerprint.clone();
         let passed = report.passed;
@@ -133,18 +84,7 @@ impl Runner {
 
         // 抑制弹窗：静默继续（写日志 + 状态栏提示）
         if !policy.show_warning {
-            tracing::warn!(
-                "GPU 兼容性检测失败（已抑制弹窗，静默继续）: {}",
-                report.detail().replace('\n', " | ")
-            );
-            self.pending_status_hint = Some(trf!(
-                "未检测到 {backend} 支持，运行可能不稳定（可在设置中查看详情）",
-                backend = device_check::required_backend_name()
-            ));
-            if let Err(e) = storage.persist_gpu_check_cache(fingerprint.as_deref(), passed) {
-                tracing::warn!("写入 GPU 检测缓存失败: {e}");
-            }
-            self.pending_storage = Some(storage);
+            self.handle_silent_gpu_failure(storage, &report, &fingerprint, passed);
             return DeviceGate::Proceed;
         }
 
@@ -171,6 +111,28 @@ impl Runner {
                 }
             }
         }
+    }
+
+    /// 抑制弹窗的失败路径：写日志 + 状态栏提示，回写检测缓存后继续启动。
+    fn handle_silent_gpu_failure(
+        &mut self,
+        mut storage: storage::Storage,
+        report: &GpuCheckReport,
+        fingerprint: &Option<String>,
+        passed: bool,
+    ) {
+        tracing::warn!(
+            "GPU 兼容性检测失败（已抑制弹窗，静默继续）: {}",
+            report.detail().replace('\n', " | ")
+        );
+        self.pending_status_hint = Some(trf!(
+            "未检测到 {backend} 支持，运行可能不稳定（可在设置中查看详情）",
+            backend = device_check::required_backend_name()
+        ));
+        if let Err(e) = storage.persist_gpu_check_cache(fingerprint.as_deref(), passed) {
+            tracing::warn!("写入 GPU 检测缓存失败: {e}");
+        }
+        self.pending_storage = Some(storage);
     }
 
     /// 处理警告窗阶段的用户选择（主窗口尚未初始化时由 `about_to_wait` 调用）
@@ -247,6 +209,73 @@ impl Runner {
         if let Some(this) = self.inner.as_mut() {
             this.startup_auto_connect();
         }
+    }
+}
+
+/// 缓存时效判定：上次完整检测的时间戳必须仍在 TTL 内。
+///
+/// 调试开关 / 旧配置缺时间戳 / 系统时钟异常一律按过期处理（宁可多检一次，不漏检）。
+fn within_gpu_cache_ttl(cached_time: Option<u64>) -> bool {
+    if device_check_policy::debug_expire_cache_requested() {
+        tracing::warn!("LUMINO_DEBUG_STALE_GPU_CACHE 已设置：强制按缓存过期处理，执行全量检测");
+        false
+    } else if device_check_policy::cache_within_ttl(cached_time, storage::now_unix_secs()) {
+        true
+    } else {
+        tracing::info!(
+            "GPU 检测缓存已过期或缺失（上次检测时间戳 {:?}，TTL {} 天），执行全量检测",
+            cached_time,
+            device_check_policy::GPU_CHECK_CACHE_TTL_DAYS
+        );
+        false
+    }
+}
+
+/// 依据缓存时效与指纹命中决定「缓存通过」还是「全量检测」，返回检测报告。
+fn gpu_check_report(
+    within_ttl: bool,
+    cached_time: Option<u64>,
+    cached_fp: &Option<String>,
+    cached_passed: Option<bool>,
+    policy: device_check_policy::StartupCheckPolicy,
+) -> GpuCheckReport {
+    // 指纹缓存命中（TTL 内 + 上次通过 + 适配器指纹仍在）：廉价探测后直接放行。
+    // 调试强制失败时不走缓存，保证 LUMINO_FORCE_DEVICE_CHECK_FAIL 可复现；
+    // TTL 过期时不执行廉价探测，直接落回全量检测。
+    // 廉价探测也走独立线程 + 超时（UI-008 / #37）：主线程绝不允许直接探测。
+    // 超时/异常由 `unwrap_or_default()` 折算为空指纹列表 → cache miss → 全量检测；
+    // 探测开始/完成/超时日志由 `probe_adapter_fingerprints_with_timeout` 统一打印。
+    let cache_hit = device_check_policy::cache_hit(
+        within_ttl,
+        device_check::debug_force_fail_requested(),
+        cached_passed,
+        cached_fp.as_deref(),
+        || {
+            crate::device_probe::probe_fingerprints_with_timeout(device_check::PROBE_TIMEOUT)
+                .unwrap_or_default()
+        },
+    );
+
+    if cache_hit {
+        tracing::info!(
+            "GPU 适配器指纹未变化，跳过完整试画检测（缓存命中，上次检测时间戳 {:?}）",
+            cached_time
+        );
+        GpuCheckReport {
+            passed: true,
+            failure: None,
+            required_backend: device_check::required_backend_name(),
+            adapters: Vec::new(),
+            fallback_adapters: Vec::new(),
+            fingerprint: cached_fp.clone(),
+            duration_ms: 0,
+        }
+    } else {
+        let fallback = fallback_diagnostics(policy);
+        tracing::info!(
+            "GPU 适配器指纹缓存未命中，执行全量兼容性检测（回退后端诊断收集策略: {fallback:?}）"
+        );
+        crate::device_probe::run_check_with_timeout(device_check::DEFAULT_TIMEOUT, fallback)
     }
 }
 

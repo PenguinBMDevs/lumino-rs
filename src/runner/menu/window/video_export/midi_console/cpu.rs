@@ -179,6 +179,19 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
     let cell_h = frame_height as f32 / ROWS as f32;
 
     // 2) 栅格化（参照本仓 ui-editor 的 ab_glyph 用法：glyph_id + outline_glyph）
+    rasterize_grid(frame, fw, fh, &grid, cell_w, cell_h);
+
+    // 3) 复古终端 CRT 后处理：静态扫描线 + 随 tick 移动的高亮扫描带（动态发光）
+    crate::profiling::tracy_zone!("app.mc.crt", {
+        apply_crt_effect(frame, fw, fh, tick);
+    });
+}
+
+/// 栅格化字符网格：逐 cell 先填背景，再用覆盖率缓存合成前景字形；
+/// 字体不可用时降级为前景色块填充（保证仍有可见输出）。
+fn rasterize_grid(frame: &mut [u8], fw: usize, fh: usize, grid: &[Cell], cell_w: f32, cell_h: f32) {
+    let gw = COLS as usize;
+    let gh = ROWS as usize;
     crate::profiling::tracy_zone!("app.mc.raster", {
         if let Some(font) = load_monospace_font() {
             let scale = PxScale {
@@ -238,25 +251,34 @@ pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
             }
         } else {
             // 降级：无字体时把非空格当作前景色块填充（保证仍有可见输出）
-            for r in 0..gh {
-                for c in 0..gw {
-                    let cell = grid[r * gw + c];
-                    let col = if cell.ch == ' ' { cell.bg } else { cell.fg };
-                    fill_rect(
-                        frame,
-                        (fw, fh),
-                        (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
-                        col,
-                    );
-                }
-            }
+            rasterize_fallback(frame, fw, fh, grid, cell_w, cell_h);
         }
     });
+}
 
-    // 3) 复古终端 CRT 后处理：静态扫描线 + 随 tick 移动的高亮扫描带（动态发光）
-    crate::profiling::tracy_zone!("app.mc.crt", {
-        apply_crt_effect(frame, fw, fh, tick);
-    });
+/// 无字体降级路径：逐 cell 用前景 / 背景色块填充（像素仍可见）。
+fn rasterize_fallback(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    grid: &[Cell],
+    cell_w: f32,
+    cell_h: f32,
+) {
+    let gw = COLS as usize;
+    let gh = ROWS as usize;
+    for r in 0..gh {
+        for c in 0..gw {
+            let cell = grid[r * gw + c];
+            let col = if cell.ch == ' ' { cell.bg } else { cell.fg };
+            fill_rect(
+                frame,
+                (fw, fh),
+                (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
+                col,
+            );
+        }
+    }
 }
 
 /// 打包 BGRA 像素（alpha 恒 255，与导出编码器消费顺序一致）。

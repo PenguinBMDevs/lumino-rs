@@ -299,6 +299,79 @@ impl Runner {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) -> Result<RunnerInner, InitError> {
+        let storage = self.init_storage(event_loop)?;
+
+        Self::apply_ui_language(&storage);
+
+        // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
+        let saving = Arc::new(AtomicBool::new(false));
+        let cloud_saving = Arc::new(AtomicBool::new(false));
+
+        let (window_state, midi) =
+            Self::init_window_state(event_loop, storage, &saving, &cloud_saving)?;
+
+        let collaboration_status = CollaborationStatus::Disconnected;
+
+        // 创建新的处理器和服务
+        let file_handler = FileHandler::new();
+        let midi_handler = MidiHandler::new();
+        let file_service = FileService::new(Arc::clone(&window_state.progress_cb));
+        let collaboration_service = CollaborationService::new();
+
+        event_loop.set_control_flow(ControlFlow::Wait);
+
+        #[cfg(target_os = "macos")]
+        Self::init_macos_menu(window_state.storage.config.get());
+
+        let midi_state = MidiState {
+            midi,
+            current_midi: None,
+            current_midi_source: None,
+            midi_handler,
+            cloud_source: None,
+            timing_report: lumino_midi_loader::LoadTimingReport::default(),
+        };
+        let file_state = FileState {
+            file_handler,
+            file_service,
+            pending_load_path: None,
+            pending_open_path: None,
+        };
+        let collab_state = CollabState {
+            collaboration_status,
+            collaboration_service,
+            last_collab_sync: None,
+            server_host: "localhost".to_string(),
+            server_port: 3000,
+            last_sent_mouse: None,
+        };
+        let test_state = TestState {
+            test_mode_state: None,
+            log_memory_usage: self.log_memory_usage,
+            last_memory_log: None,
+        };
+
+        let mut runner = Self::assemble_inner(
+            window_state,
+            midi_state,
+            file_state,
+            collab_state,
+            test_state,
+            (saving, cloud_saving),
+        )?;
+
+        // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
+        runner.setup_playback_output();
+
+        Ok(runner)
+    }
+
+    /// 初始化存储：优先复用设备检查阶段预载的 Storage，接上文件日志，并迁移
+    /// `ui_state` 的几何单位（REF-001 G-2，迁移逻辑见 `inner::window`）。
+    fn init_storage(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) -> Result<storage::Storage, InitError> {
         // 设备检查门控可能已提前只读加载 Storage（含旧配置归一化），优先复用
         let mut storage = match self.pending_storage.take() {
             Some(storage) => storage,
@@ -316,8 +389,12 @@ impl Runner {
         // REF-001 G-2：ui_state 几何字段一次性迁移为逻辑像素（迁移逻辑见 `inner::window`）
         window::migrate_ui_state_units(&mut storage, event_loop);
 
+        Ok(storage)
+    }
+
+    /// UI-018：按配置落一次进程级界面语言，并记录生效语言与来源。
+    fn apply_ui_language(storage: &storage::Storage) {
         let config = storage.config.get();
-        let ui_state = storage.ui_state.get();
 
         // UI-018：界面语言在配置加载时已解析（环境变量 > 用户固定 > 系统显示语言），
         // 这里记录**生效语言与来源**。刻意放在文件日志启动之后——配置层打印时
@@ -331,18 +408,28 @@ impl Runner {
         // 文案目录（`lumino_core::i18n`）走进程级当前语言：启动即按配置落一次，
         // 之后由设置面板的 `LanguagePreferenceChanged` 事件同步（见 root/handlers/settings.rs）。
         lumino_core::i18n::set_current_language(config.ui.language);
+    }
 
-        // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
-        let saving = Arc::new(AtomicBool::new(false));
-        let cloud_saving = Arc::new(AtomicBool::new(false));
+    /// 创建主窗口及其运行期依赖：进度、云传输进度、MIDI 与对话框管理器。
+    ///
+    /// 创建顺序不得调整：MIDI 输入 API 要接在建好的窗口上，
+    /// `WindowState` 也只在全部依赖就绪后才组装。
+    fn init_window_state(
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        storage: storage::Storage,
+        saving: &Arc<AtomicBool>,
+        cloud_saving: &Arc<AtomicBool>,
+    ) -> Result<(WindowState, MidiManager), InitError> {
+        let config = storage.config.get();
+        let ui_state = storage.ui_state.get();
 
         // 创建主窗口管理器
         let mut window = WindowManager::new(
             event_loop,
             ui_state,
             &config.ui,
-            Arc::clone(&saving),
-            Arc::clone(&cloud_saving),
+            Arc::clone(saving),
+            Arc::clone(cloud_saving),
         )
         .map_err(|e| InitError::Window(e.to_string()))?;
 
@@ -368,65 +455,53 @@ impl Runner {
         // 创建对话框管理器
         let dialog_manager = DialogManager::new();
 
-        let collaboration_status = CollaborationStatus::Disconnected;
+        let window_state = WindowState {
+            window,
+            storage,
+            dialog_manager,
+            progress,
+            cloud_progress,
+            cloud_progress_tx,
+            progress_cb,
+            needs_window_restart: false,
+            export_progress_rx: None,
+            video_preview_rx: None,
+            video_export_cancel: Arc::new(AtomicBool::new(false)),
+            video_export_tdr_cancel: Arc::new(AtomicBool::new(false)),
+            video_export_running: Arc::new(AtomicBool::new(false)),
+            audio_export_control: None,
+        };
 
-        // 创建新的处理器和服务
-        let file_handler = FileHandler::new();
-        let midi_handler = MidiHandler::new();
-        let file_service = FileService::new(Arc::clone(&progress_cb));
-        let collaboration_service = CollaborationService::new();
+        Ok((window_state, midi))
+    }
 
-        event_loop.set_control_flow(ControlFlow::Wait);
-
-        #[cfg(target_os = "macos")]
+    /// 启动时构建 macOS 原生菜单（NSMenu 由系统绘制，不经 egui）。
+    #[cfg(target_os = "macos")]
+    fn init_macos_menu(config: &lumino_core::storage::config::Config) {
         if let Err(e) = crate::platform::macos::init(config.ui.language, &config.ui.recent_files) {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
+    }
 
-        let mut runner = RunnerInner {
-            window_state: WindowState {
-                window,
-                storage,
-                dialog_manager,
-                progress,
-                cloud_progress,
-                cloud_progress_tx,
-                progress_cb,
-                needs_window_restart: false,
-                export_progress_rx: None,
-                video_preview_rx: None,
-                video_export_cancel: Arc::new(AtomicBool::new(false)),
-                video_export_tdr_cancel: Arc::new(AtomicBool::new(false)),
-                video_export_running: Arc::new(AtomicBool::new(false)),
-                audio_export_control: None,
-            },
-            midi_state: MidiState {
-                midi,
-                current_midi: None,
-                current_midi_source: None,
-                midi_handler,
-                cloud_source: None,
-                timing_report: lumino_midi_loader::LoadTimingReport::default(),
-            },
-            file_state: FileState {
-                file_handler,
-                file_service,
-                pending_load_path: None,
-                pending_open_path: None,
-            },
-            collab_state: CollabState {
-                collaboration_status,
-                collaboration_service,
-                last_collab_sync: None,
-                server_host: "localhost".to_string(),
-                server_port: 3000,
-                last_sent_mouse: None,
-            },
-            test_state: TestState {
-                test_mode_state: None,
-                log_memory_usage: self.log_memory_usage,
-                last_memory_log: None,
-            },
+    /// 装配 `RunnerInner`：领域状态已就绪，这里补齐会话、云、自动保存与 GPU 字段。
+    ///
+    /// `save` 是 `(saving, cloud_saving)` 两个保存进行中标志——它们同时被
+    /// `WindowManager`（关闭拦截）与本结构（保存任务）共享，成对传递以守参数上限。
+    fn assemble_inner(
+        window_state: WindowState,
+        midi_state: MidiState,
+        file_state: FileState,
+        collab_state: CollabState,
+        test_state: TestState,
+        save: (Arc<AtomicBool>, Arc<AtomicBool>),
+    ) -> Result<RunnerInner, InitError> {
+        let (saving, cloud_saving) = save;
+        Ok(RunnerInner {
+            window_state,
+            midi_state,
+            file_state,
+            collab_state,
+            test_state,
             session_tracker: SessionTracker::new(),
             pending_recover_track_entries: None,
             // 云存储管理器：配置与 config.json 同目录（cloud.json）
@@ -463,12 +538,7 @@ impl Runner {
             autosave_main_trusted: Arc::new(AtomicBool::new(false)),
             pending_drawer_return: None,
             mixer_open_requested: false,
-        };
-
-        // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
-        runner.setup_playback_output();
-
-        Ok(runner)
+        })
     }
 }
 

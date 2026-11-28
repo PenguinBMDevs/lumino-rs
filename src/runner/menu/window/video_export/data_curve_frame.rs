@@ -143,6 +143,28 @@ impl DataCurveRenderer {
     }
 }
 
+/// 单帧绘制的几何参数（像素尺寸 + 纵轴映射），供网格 / 刻度 / 折线三个阶段共用。
+///
+/// 私有中间值 DTO（7 字段）：三个阶段读同一套尺寸与缩放比例，
+/// 避免各自重算纵轴映射。
+#[derive(Debug, Clone, Copy)]
+struct DataCurveGeometry {
+    /// 帧宽（原始 u32，字体绘制的接口参数）
+    frame_width: u32,
+    /// 帧宽（像素，像素运算）
+    fw: usize,
+    /// 帧高（像素，像素运算）
+    fh: usize,
+    /// 纵轴下界（含 padding）
+    graph_min: f64,
+    /// 纵轴跨度（不小于 1e-9）
+    graph_sub: f64,
+    /// 主刻度幂间距
+    line_pow: f64,
+    /// 纵轴像素比例（主刻度与折线共用）
+    y_scale: f64,
+}
+
 /// 绘制一帧数据曲线（BGRA 像素，in-place 修改）。
 ///
 /// 流程（对应原版 `renderSingleFrame`）：清背景 → 网格细分线 → 主刻度线+文字 → 折线。
@@ -165,8 +187,38 @@ pub fn render_data_curve_frame(
     }
 
     let (fw, fh) = (frame_width as usize, frame_height as usize);
-    let len = renderer.window.len();
 
+    let (graph_min, graph_sub) = update_zoom_bounds(renderer, config);
+
+    let line_pow = 10.0f64.powf(graph_sub.log10().floor());
+    // 纵轴像素比例（主刻度与折线共用；子网格块内另有同名局部变量）
+    let y_scale = fh as f64 / graph_sub;
+    let geo = DataCurveGeometry {
+        frame_width,
+        fw,
+        fh,
+        graph_min,
+        graph_sub,
+        line_pow,
+        y_scale,
+    };
+
+    draw_sub_grid(frame, geo, config);
+    draw_ticks_and_text(frame, geo, renderer, config);
+    draw_polyline(frame, geo, renderer, config);
+
+    DataCurveFrameOutput {
+        value: renderer.current_value(),
+        min: renderer.min_zoom,
+        max: renderer.max_zoom,
+    }
+}
+
+/// 单次遍历求窗口 min/max 并做缩放 EMA 平滑，返回 `(纵轴下界, 纵轴跨度)`。
+fn update_zoom_bounds(
+    renderer: &mut DataCurveRenderer,
+    config: &DataCurveRenderConfig,
+) -> (f64, f64) {
     // 单次遍历求窗口 min/max（原版对 Lua 表 unpack 两次）
     let (mut min_val, mut max_val) = (f64::INFINITY, f64::NEG_INFINITY);
     for &v in &renderer.window {
@@ -188,9 +240,20 @@ pub fn render_data_curve_frame(
     let graph_min = renderer.min_zoom - (1.0 + sub * config.padding_mul as f64);
     let graph_max = renderer.max_zoom + (1.0 + sub * config.padding_mul as f64);
     let graph_sub = (graph_max - graph_min).max(1e-9);
+    (graph_min, graph_sub)
+}
 
-    // ── 水平网格线（10 的幂间距；细分线透明度随缩放比例渐变） ──
-    let line_pow = 10.0f64.powf(graph_sub.log10().floor());
+// ── 水平网格线（10 的幂间距；细分线透明度随缩放比例渐变） ──
+fn draw_sub_grid(frame: &mut [u8], geo: DataCurveGeometry, config: &DataCurveRenderConfig) {
+    let DataCurveGeometry {
+        fw,
+        fh,
+        graph_min,
+        graph_sub,
+        line_pow,
+        ..
+    } = geo;
+    // 与主刻度阶段同一色值：由 config.bar_color 就地换算（纯函数）
     let bar_bgra = rgba_to_bgra(config.bar_color);
     crate::profiling::tracy_zone!("app.dc.grid", {
         if config.show_bars {
@@ -214,11 +277,26 @@ pub fn render_data_curve_frame(
             }
         }
     });
+}
 
-    // 纵轴像素比例（主刻度与折线共用；子网格块内另有同名局部变量）
-    let y_scale = fh as f64 / graph_sub;
-
-    // ── 主刻度线 + 刻度文字 ──
+// ── 主刻度线 + 刻度文字 ──
+fn draw_ticks_and_text(
+    frame: &mut [u8],
+    geo: DataCurveGeometry,
+    renderer: &mut DataCurveRenderer,
+    config: &DataCurveRenderConfig,
+) {
+    let DataCurveGeometry {
+        frame_width,
+        fw,
+        fh,
+        graph_min,
+        line_pow,
+        y_scale,
+        ..
+    } = geo;
+    // 与网格阶段同一色值：由 config.bar_color 就地换算（纯函数）
+    let bar_bgra = rgba_to_bgra(config.bar_color);
     crate::profiling::tracy_zone!("app.dc.ticks_text", {
         let font_height = renderer.font.line_height();
         let base = (graph_min / line_pow).floor() * line_pow;
@@ -269,8 +347,23 @@ pub fn render_data_curve_frame(
             }
         }
     });
+}
 
-    // ── 折线 ──
+// ── 折线 ──
+fn draw_polyline(
+    frame: &mut [u8],
+    geo: DataCurveGeometry,
+    renderer: &mut DataCurveRenderer,
+    config: &DataCurveRenderConfig,
+) {
+    let DataCurveGeometry {
+        fw,
+        fh,
+        graph_min,
+        y_scale,
+        ..
+    } = geo;
+    let len = renderer.window.len();
     crate::profiling::tracy_zone!("app.dc.line", {
         let points: Vec<f64> = if config.graph_smoothness > 0 {
             let contig = renderer.window.make_contiguous();
@@ -302,12 +395,6 @@ pub fn render_data_curve_frame(
             prev = Some((px, py));
         }
     });
-
-    DataCurveFrameOutput {
-        value: renderer.current_value(),
-        min: renderer.min_zoom,
-        max: renderer.max_zoom,
-    }
 }
 
 #[cfg(test)]

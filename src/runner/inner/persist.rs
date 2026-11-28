@@ -67,12 +67,52 @@ impl RunnerInner {
         let language_changed = new.display.language_preference
             != old.effective_language_preference()
             || new.display.language != old.language;
+        // 洋葱皮后端与其余字段的变更判据拆到 `other_settings_changed`，判据顺序不变。
+        let other_changed =
+            Self::other_settings_changed(new, old, language_changed, persist_onion_backend);
+        if theme_changed
+            || synth_changed
+            || xsynth_changed
+            || audio_engine_changed
+            || titlebar_changed
+            || font_changed
+            || lgs_changed
+            || winmm_changed
+            || audio_output_changed
+            || other_changed
+        {
+            Some(ConfigDiff {
+                synth_changed,
+                xsynth_changed,
+                audio_engine_changed,
+                titlebar_changed,
+                font_changed,
+                lgs_changed,
+                winmm_changed,
+                audio_output_changed,
+                language_changed,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// 其余编辑 / 显示 / 兼容 / 自动保存项是否有变更（`config_diff` 中 `other_changed` 的判据）。
+    ///
+    /// `language_changed` 由调用侧算好传入：语言判据还要比较归一化后的偏好，
+    /// 不属于单纯的字段比对；洋葱皮后端则要叠加「允许落盘」守卫。
+    fn other_settings_changed(
+        new: &lumino_ui::settings::SettingsPanel,
+        old: &lumino_core::storage::config::UiConfig,
+        language_changed: bool,
+        persist_onion_backend: bool,
+    ) -> bool {
         // 洋葱皮后端：只有「允许落盘」时后端差异才算变更。
         // 否则锁定态下（面板值 vs 旧配置不同、但运行时保持不变）会每帧都被判成
         // 「有变更」→ 每帧 `patch` + 写盘，白白打爆磁盘。
         let onion_backend_changed =
             persist_onion_backend && new.onion_skin.backend != old.onion_skin_backend;
-        let other_changed = language_changed
+        language_changed
             || onion_backend_changed
             || new.editing.selection_box_mode != old.selection_box_mode
             || new.midi.velocity_filter_threshold != old.velocity_filter_threshold
@@ -102,32 +142,7 @@ impl RunnerInner {
             || new.compat.warning_suppressed != old.gpu_warning_suppressed.unwrap_or(false)
             || new.editing.autosave_enabled != old.autosave_enabled
             || parse_autosave_interval_mins(&new.editing.autosave_interval_mins)
-                .is_some_and(|v| v != old.autosave_interval_mins);
-        if theme_changed
-            || synth_changed
-            || xsynth_changed
-            || audio_engine_changed
-            || titlebar_changed
-            || font_changed
-            || lgs_changed
-            || winmm_changed
-            || audio_output_changed
-            || other_changed
-        {
-            Some(ConfigDiff {
-                synth_changed,
-                xsynth_changed,
-                audio_engine_changed,
-                titlebar_changed,
-                font_changed,
-                lgs_changed,
-                winmm_changed,
-                audio_output_changed,
-                language_changed,
-            })
-        } else {
-            None
-        }
+                .is_some_and(|v| v != old.autosave_interval_mins)
     }
 
     fn auto_scroll_mode_changed(
