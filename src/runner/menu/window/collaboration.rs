@@ -7,6 +7,7 @@ use crate::runner::RunnerInner;
 use lumino_collaboration::http::HttpClient;
 use lumino_core::{tr, trf};
 use lumino_export;
+use lumino_midi_loader::loader::ProgressCallback;
 use lumino_project::project::load::load_project_from_bytes;
 use lumino_ui::event::window::collaboration::Event;
 use lumino_ui::state::root_state::CollaborationViewState;
@@ -27,6 +28,7 @@ impl RunnerInner {
             .set_collab_sync_enabled(enabled);
     }
 
+    /// 按事件种类分发协作事件：case 顺序与原实现逐项一致，且对枚举保持编译期穷尽。
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
         use lumino_ui::event::window::collaboration::Event::*;
         match window_event {
@@ -36,294 +38,377 @@ impl RunnerInner {
                 username,
                 password,
                 invite_code,
-            } => {
-                tracing::info!("请求连接协作服务器: {host}:{port}");
-                self.handle_collaboration_connect(
-                    host,
-                    port,
-                    username,
-                    password,
-                    None,
-                    invite_code,
-                );
-            }
-            CreateRoom { name } => {
-                tracing::info!("请求创建协作房间: {name}");
-                self.handle_collaboration_create_room(name);
-            }
-            JoinRoom { invite_code } => {
-                tracing::info!("请求加入协作房间: {invite_code}");
-                self.handle_collaboration_join_room(invite_code);
-            }
-            Disconnect => {
-                tracing::info!("请求断开协作连接");
-                self.handle_collaboration_disconnect();
-            }
+            } => self.on_connect(host, port, username, password, invite_code),
+            CreateRoom { name } => self.on_create_room(name),
+            JoinRoom { invite_code } => self.on_join_room(invite_code),
+            Disconnect => self.on_disconnect(),
             Authenticated {
                 user_id,
                 invite_code,
-            } => {
-                tracing::info!("协作认证成功: user={user_id}, invite={invite_code}");
-                // 连接已建立（含自动重连后的再次认证）：开启编辑协作同步
-                self.set_editor_collab_sync(true);
-                // 认证成功：保持连接中（即将进入房间）
-                self.set_main_collab_view_state(CollaborationViewState::Connecting, None, None);
-            }
+            } => self.on_authenticated(user_id, invite_code),
             RoomCreated {
                 room_name,
                 invite_code,
                 project_name,
                 project_hash: _,
-            } => {
-                tracing::info!("协作房间创建成功: {room_name}, invite={invite_code}");
-                self.set_editor_collab_sync(true);
-                self.set_main_collab_view_state(
-                    CollaborationViewState::InRoom,
-                    Some(invite_code.clone()),
-                    Some(room_name.clone()),
-                );
-
-                // host 路径：上传当前工程到房间。
-                // 关键修复：在 UI 线程仅 Clone 可 Send 的 MidiDocument（tempo 已在
-                // document 内，无需另拷），真正的序列化与上传搬到后台线程，
-                // 避免大工程卡死主线程、进度条晚出。
-                let code = invite_code.clone();
-                let host = self.collab_state.server_host.clone();
-                let port = self.collab_state.server_port;
-                let name = if project_name.is_empty() {
-                    room_name.clone()
-                } else {
-                    project_name
-                };
-                let doc = {
-                    let ui = self.window_state.window.ui();
-                    ui.root().editor.editor_state.data.document.clone()
-                };
-                let progress_cb = Arc::clone(&self.window_state.progress_cb);
-                // 先弹进度对话框，立即给用户反馈（此时尚未开始序列化）
-                progress_cb(&trf!("正在准备协作工程 {name}…", name = name), 0.0);
-                tokio::spawn(async move {
-                    let name_p = name.clone();
-                    let name_for_progress = name.clone();
-                    let cb_for_stream = Arc::clone(&progress_cb);
-                    let on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>> =
-                        Some(Arc::new(move |sent, total| {
-                            let p = if total > 0 {
-                                sent as f64 / total as f64
-                            } else {
-                                0.0
-                            };
-                            cb_for_stream(
-                                &trf!(
-                                    "正在上传协作工程 {name}（{pct}%）",
-                                    name = name_for_progress,
-                                    pct = format!("{:.0}", p * 100.0)
-                                ),
-                                p,
-                            );
-                        }));
-                    // 后台线程完成重活：序列化工程为 .lmpj 字节（doc 为 Option，需解包后传入）
-                    let bytes = match doc {
-                        Some(doc_inner) => match tokio::task::spawn_blocking(move || {
-                            room_project::serialize(&doc_inner)
-                        })
-                        .await
-                        {
-                            Ok(b) => b,
-                            Err(e) => {
-                                progress_cb(&trf!("生成协作工程失败：{e}", e = e), 1.0);
-                                return;
-                            }
-                        },
-                        None => None,
-                    };
-                    let Some(bytes) = bytes else {
-                        progress_cb(tr!("无工程可上传或生成失败"), 1.0);
-                        return;
-                    };
-                    let hash = room_project::hash_bytes(&bytes);
-                    // 进度切到「上传中」，进入带百分比的流式上传
-                    progress_cb(&trf!("正在上传协作工程 {name}…", name = name_p), 0.0);
-                    let client = HttpClient::new(&host, port);
-                    match client
-                        .upload_room_project(&code, &name_p, &hash, bytes, on_progress)
-                        .await
-                    {
-                        Ok(_) => {
-                            progress_cb(tr!("协作工程上传完成"), 1.0);
-                            tracing::info!("协作: 已上传房间工程 (hash={hash})")
-                        }
-                        Err(e) => {
-                            progress_cb(&trf!("协作工程上传失败：{e}", e = e), 1.0);
-                            tracing::warn!("协作: 上传房间工程失败: {e}")
-                        }
-                    }
-                });
-            }
+            } => self.on_room_created(room_name, invite_code, project_name),
             RoomJoined {
                 room_name,
                 invite_code,
                 user_count,
                 project_name: _,
                 project_hash,
-            } => {
-                tracing::info!(
-                    "已加入协作房间: {room_name}, invite={invite_code}, 用户数={user_count}"
-                );
-                self.set_editor_collab_sync(true);
-                self.set_main_collab_view_state(
-                    CollaborationViewState::InRoom,
-                    Some(invite_code.clone()),
-                    Some(room_name.clone()),
-                );
-
-                // joiner 路径：比对工程哈希，不一致则下载并打开 host 工程。
-                // 关键修复：本地工程哈希比对也搬到后台线程（原 current_project_hash 在主线程同步
-                // 序列化大工程会卡死 UI），并弹出进度对话框避免「接收时未响应」的观感。
-                if project_hash.is_empty() {
-                    tracing::warn!("协作: 房间无工程哈希，跳过下载");
-                    return;
-                }
-                let doc = {
-                    let ui = self.window_state.window.ui();
-                    ui.root().editor.editor_state.data.document.clone()
-                };
-                let progress_cb = Arc::clone(&self.window_state.progress_cb);
-                progress_cb(
-                    &trf!("正在同步协作工程 {invite_code}…", invite_code = invite_code),
-                    0.0,
-                );
-                let code = invite_code.clone();
-                let host = self.collab_state.server_host.clone();
-                let port = self.collab_state.server_port;
-                tokio::spawn(async move {
-                    // 后台计算本地工程哈希，与房间哈希比对（避免主线程序列化卡顿）
-                    // 与 host 上传用的是同一个 `room_project::serialize`（逐字节确定），
-                    // 因此内容一致时 hash 必然一致。
-                    let local_hash = match doc {
-                        Some(doc_inner) => tokio::task::spawn_blocking(move || {
-                            room_project::serialize(&doc_inner)
-                                .map(|b| room_project::hash_bytes(&b))
-                        })
-                        .await
-                        .ok()
-                        .flatten(),
-                        None => None,
-                    };
-                    if let Some(local) = local_hash
-                        && local == project_hash
-                    {
-                        progress_cb(tr!("本地工程已是最新"), 1.0);
-                        tracing::info!("协作: 本地工程与房间一致，跳过下载");
-                        return;
-                    }
-
-                    let client = HttpClient::new(&host, port);
-                    progress_cb(&trf!("正在下载协作工程 {code}…", code = code), 0.0);
-                    match client.download_room_project(&code).await {
-                        Ok(bytes) => {
-                            let load = tokio::task::spawn_blocking(move || {
-                                let project =
-                                    load_project_from_bytes(&bytes).map_err(|e| e.to_string())?;
-                                lumino_export::project_to_parsed_midi(
-                                    &project,
-                                    Path::new("collab_room_project.lmpj"),
-                                )
-                                .map_err(|e| e.to_string())
-                            });
-                            match load.await {
-                                Ok(Ok(parsed)) => {
-                                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
-                                        lumino_ui::event::menu::file::Event::MidiParsed(
-                                            std::sync::Arc::new(parsed),
-                                        ),
-                                    ));
-                                    progress_cb(tr!("协作工程已加载"), 1.0);
-                                    tracing::info!("协作: 已加载房间工程");
-                                }
-                                Ok(Err(e)) => {
-                                    progress_cb(&trf!("解析下载工程失败：{e}", e = e), 1.0);
-                                    tracing::warn!("协作: 解析下载工程失败: {e}")
-                                }
-                                Err(e) => {
-                                    progress_cb(&trf!("加载工程任务失败：{e}", e = e), 1.0);
-                                    tracing::warn!("协作: 加载工程任务失败: {e}")
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            progress_cb(&trf!("下载房间工程失败：{e}", e = e), 1.0);
-                            tracing::warn!("协作: 下载房间工程失败: {e}")
-                        }
-                    }
-                });
-            }
-            Disconnected => {
-                tracing::info!("协作连接已断开");
-                // 断开：关闭编辑协作同步，恢复本地零对账开销
-                self.set_editor_collab_sync(false);
-                // 回到可连接态，允许重试
-                self.set_main_collab_view_state(CollaborationViewState::Connect, None, None);
-            }
-            ConnectFailed { reason } => {
-                tracing::error!("协作连接失败: {reason}");
-                // 连接失败：关闭编辑协作同步
-                self.set_editor_collab_sync(false);
-                // 回到可连接态并展示原因，允许重试
-                self.set_main_collab_view_state(
-                    CollaborationViewState::Connect,
-                    None,
-                    Some(reason),
-                );
-            }
-            UserLeft { user_id } => {
-                // 从主窗口与协作对话框移除远端光标
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .remove_remote_cursor(user_id.clone());
-                self.window_state
-                    .dialog_manager
-                    .forward_collaboration_user_left(user_id);
-            }
+            } => self.on_room_joined(room_name, invite_code, user_count, project_hash),
+            Disconnected => self.on_disconnected(),
+            ConnectFailed { reason } => self.on_connect_failed(reason),
+            UserLeft { user_id } => self.on_user_left(user_id),
             MouseUpdate {
                 user_id,
                 x,
                 y,
                 color,
                 username,
-            } => {
-                tracing::trace!("协作鼠标更新: user={user_id}, ({x:.0},{y:.0})");
-                // 更新主窗口远端光标（编辑器画布渲染）
-                self.window_state.window.ui_mut().update_remote_cursor(
-                    user_id.clone(),
-                    x,
-                    y,
-                    color.clone(),
-                    username.clone(),
-                );
-                // 同步到协作对话框（对话框亦展示远端光标）
-                self.window_state
-                    .dialog_manager
-                    .forward_collaboration_cursor(user_id, x, y, color, username);
-            }
-            NoteUpdate { user_id, operation } => {
-                self.handle_remote_note_update(user_id, operation);
-            }
-            ProjectUpdate { user_id, update } => {
-                self.handle_remote_project_update(user_id, update);
-            }
+            } => self.on_mouse_update(user_id, x, y, color, username),
+            NoteUpdate { user_id, operation } => self.on_note_update(user_id, operation),
+            ProjectUpdate { user_id, update } => self.on_project_update(user_id, update),
             Selection {
                 user_id,
                 selection,
                 color,
-            } => {
-                tracing::debug!("协作: 应用远端选择高亮 - 用户: {user_id}");
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .apply_remote_selection(user_id, selection, color);
+            } => self.on_selection(user_id, selection, color),
+        }
+    }
+
+    /// 请求连接协作服务器
+    fn on_connect(
+        &mut self,
+        host: String,
+        port: u16,
+        username: String,
+        password: String,
+        invite_code: Option<String>,
+    ) {
+        tracing::info!("请求连接协作服务器: {host}:{port}");
+        self.handle_collaboration_connect(host, port, username, password, None, invite_code);
+    }
+
+    /// 请求创建协作房间
+    fn on_create_room(&mut self, name: String) {
+        tracing::info!("请求创建协作房间: {name}");
+        self.handle_collaboration_create_room(name);
+    }
+
+    /// 请求加入协作房间
+    fn on_join_room(&mut self, invite_code: String) {
+        tracing::info!("请求加入协作房间: {invite_code}");
+        self.handle_collaboration_join_room(invite_code);
+    }
+
+    /// 请求断开协作连接
+    fn on_disconnect(&mut self) {
+        tracing::info!("请求断开协作连接");
+        self.handle_collaboration_disconnect();
+    }
+
+    /// 认证成功：回到连接中态，等待进入房间
+    fn on_authenticated(&mut self, user_id: String, invite_code: String) {
+        tracing::info!("协作认证成功: user={user_id}, invite={invite_code}");
+        // 连接已建立（含自动重连后的再次认证）：开启编辑协作同步
+        self.set_editor_collab_sync(true);
+        // 认证成功：保持连接中（即将进入房间）
+        self.set_main_collab_view_state(CollaborationViewState::Connecting, None, None);
+    }
+
+    /// host 路径：进入房间态并在后台上传当前工程
+    fn on_room_created(&mut self, room_name: String, invite_code: String, project_name: String) {
+        tracing::info!("协作房间创建成功: {room_name}, invite={invite_code}");
+        self.set_editor_collab_sync(true);
+        self.set_main_collab_view_state(
+            CollaborationViewState::InRoom,
+            Some(invite_code.clone()),
+            Some(room_name.clone()),
+        );
+
+        // host 路径：上传当前工程到房间。
+        // 关键修复：在 UI 线程仅 Clone 可 Send 的 MidiDocument（tempo 已在
+        // document 内，无需另拷），真正的序列化与上传搬到后台线程，
+        // 避免大工程卡死主线程、进度条晚出。
+        let code = invite_code.clone();
+        let host = self.collab_state.server_host.clone();
+        let port = self.collab_state.server_port;
+        let name = if project_name.is_empty() {
+            room_name.clone()
+        } else {
+            project_name
+        };
+        let doc = {
+            let ui = self.window_state.window.ui();
+            ui.root().editor.editor_state.data.document.clone()
+        };
+        let progress_cb = Arc::clone(&self.window_state.progress_cb);
+        // 先弹进度对话框，立即给用户反馈（此时尚未开始序列化）
+        progress_cb(&trf!("正在准备协作工程 {name}…", name = name), 0.0);
+        tokio::spawn(upload_room_project(
+            code,
+            host,
+            port,
+            name,
+            doc,
+            progress_cb,
+        ));
+    }
+
+    /// joiner 路径：进入房间态并在后台比对/下载 host 工程
+    fn on_room_joined(
+        &mut self,
+        room_name: String,
+        invite_code: String,
+        user_count: usize,
+        project_hash: String,
+    ) {
+        tracing::info!("已加入协作房间: {room_name}, invite={invite_code}, 用户数={user_count}");
+        self.set_editor_collab_sync(true);
+        self.set_main_collab_view_state(
+            CollaborationViewState::InRoom,
+            Some(invite_code.clone()),
+            Some(room_name.clone()),
+        );
+
+        // joiner 路径：比对工程哈希，不一致则下载并打开 host 工程。
+        // 关键修复：本地工程哈希比对也搬到后台线程（原 current_project_hash 在主线程同步
+        // 序列化大工程会卡死 UI），并弹出进度对话框避免「接收时未响应」的观感。
+        if project_hash.is_empty() {
+            tracing::warn!("协作: 房间无工程哈希，跳过下载");
+            return;
+        }
+        let doc = {
+            let ui = self.window_state.window.ui();
+            ui.root().editor.editor_state.data.document.clone()
+        };
+        let progress_cb = Arc::clone(&self.window_state.progress_cb);
+        progress_cb(
+            &trf!("正在同步协作工程 {invite_code}…", invite_code = invite_code),
+            0.0,
+        );
+        let code = invite_code.clone();
+        let host = self.collab_state.server_host.clone();
+        let port = self.collab_state.server_port;
+        tokio::spawn(sync_room_project(
+            code,
+            host,
+            port,
+            doc,
+            project_hash,
+            progress_cb,
+        ));
+    }
+
+    /// 连接断开：恢复本地零对账开销与可重试态
+    fn on_disconnected(&mut self) {
+        tracing::info!("协作连接已断开");
+        // 断开：关闭编辑协作同步，恢复本地零对账开销
+        self.set_editor_collab_sync(false);
+        // 回到可连接态，允许重试
+        self.set_main_collab_view_state(CollaborationViewState::Connect, None, None);
+    }
+
+    /// 连接失败：恢复可重试态并展示原因
+    fn on_connect_failed(&mut self, reason: String) {
+        tracing::error!("协作连接失败: {reason}");
+        // 连接失败：关闭编辑协作同步
+        self.set_editor_collab_sync(false);
+        // 回到可连接态并展示原因，允许重试
+        self.set_main_collab_view_state(CollaborationViewState::Connect, None, Some(reason));
+    }
+
+    /// 远端用户离开：主窗口与对话框同时移除其光标
+    fn on_user_left(&mut self, user_id: String) {
+        // 从主窗口与协作对话框移除远端光标
+        self.window_state
+            .window
+            .ui_mut()
+            .remove_remote_cursor(user_id.clone());
+        self.window_state
+            .dialog_manager
+            .forward_collaboration_user_left(user_id);
+    }
+
+    /// 远端鼠标更新：先更新主窗口，再同步到对话框
+    fn on_mouse_update(
+        &mut self,
+        user_id: String,
+        x: f32,
+        y: f32,
+        color: String,
+        username: String,
+    ) {
+        tracing::trace!("协作鼠标更新: user={user_id}, ({x:.0},{y:.0})");
+        // 更新主窗口远端光标（编辑器画布渲染）
+        self.window_state.window.ui_mut().update_remote_cursor(
+            user_id.clone(),
+            x,
+            y,
+            color.clone(),
+            username.clone(),
+        );
+        // 同步到协作对话框（对话框亦展示远端光标）
+        self.window_state
+            .dialog_manager
+            .forward_collaboration_cursor(user_id, x, y, color, username);
+    }
+
+    /// 远端音符更新委托给专用处理器
+    fn on_note_update(&mut self, user_id: String, operation: String) {
+        self.handle_remote_note_update(user_id, operation);
+    }
+
+    /// 远端工程更新委托给专用处理器
+    fn on_project_update(&mut self, user_id: String, update: String) {
+        self.handle_remote_project_update(user_id, update);
+    }
+
+    /// 应用远端选择高亮
+    fn on_selection(&mut self, user_id: String, selection: String, color: String) {
+        tracing::debug!("协作: 应用远端选择高亮 - 用户: {user_id}");
+        self.window_state
+            .window
+            .ui_mut()
+            .apply_remote_selection(user_id, selection, color);
+    }
+}
+
+/// 后台上传房间工程：序列化 → 计算指纹 → 流式上传（纯数据任务，不触碰 UI）
+///
+/// 所有捕获量按值传入，等价于原 `async move` 闭包；进度回调顺序与文案保持不变。
+async fn upload_room_project(
+    code: String,
+    host: String,
+    port: u16,
+    name: String,
+    doc: Option<lumino_midi_loader::MidiDocument>,
+    progress_cb: ProgressCallback,
+) {
+    let name_p = name.clone();
+    let name_for_progress = name.clone();
+    let cb_for_stream = Arc::clone(&progress_cb);
+    let on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>> =
+        Some(Arc::new(move |sent, total| {
+            let p = if total > 0 {
+                sent as f64 / total as f64
+            } else {
+                0.0
+            };
+            cb_for_stream(
+                &trf!(
+                    "正在上传协作工程 {name}（{pct}%）",
+                    name = name_for_progress,
+                    pct = format!("{:.0}", p * 100.0)
+                ),
+                p,
+            );
+        }));
+    // 后台线程完成重活：序列化工程为 .lmpj 字节（doc 为 Option，需解包后传入）
+    let bytes = match doc {
+        Some(doc_inner) => {
+            match tokio::task::spawn_blocking(move || room_project::serialize(&doc_inner)).await {
+                Ok(b) => b,
+                Err(e) => {
+                    progress_cb(&trf!("生成协作工程失败：{e}", e = e), 1.0);
+                    return;
+                }
             }
+        }
+        None => None,
+    };
+    let Some(bytes) = bytes else {
+        progress_cb(tr!("无工程可上传或生成失败"), 1.0);
+        return;
+    };
+    let hash = room_project::hash_bytes(&bytes);
+    // 进度切到「上传中」，进入带百分比的流式上传
+    progress_cb(&trf!("正在上传协作工程 {name}…", name = name_p), 0.0);
+    let client = HttpClient::new(&host, port);
+    match client
+        .upload_room_project(&code, &name_p, &hash, bytes, on_progress)
+        .await
+    {
+        Ok(_) => {
+            progress_cb(tr!("协作工程上传完成"), 1.0);
+            tracing::info!("协作: 已上传房间工程 (hash={hash})")
+        }
+        Err(e) => {
+            progress_cb(&trf!("协作工程上传失败：{e}", e = e), 1.0);
+            tracing::warn!("协作: 上传房间工程失败: {e}")
+        }
+    }
+}
+
+/// 后台同步房间工程：本地哈希比对，不一致则下载并加载（纯数据任务，不触碰 UI）
+///
+/// 所有捕获量按值传入，等价于原 `async move` 闭包；早退分支与原 `return` 时机一致。
+async fn sync_room_project(
+    code: String,
+    host: String,
+    port: u16,
+    doc: Option<lumino_midi_loader::MidiDocument>,
+    project_hash: String,
+    progress_cb: ProgressCallback,
+) {
+    // 后台计算本地工程哈希，与房间哈希比对（避免主线程序列化卡顿）
+    // 与 host 上传用的是同一个 `room_project::serialize`（逐字节确定），
+    // 因此内容一致时 hash 必然一致。
+    let local_hash = match doc {
+        Some(doc_inner) => tokio::task::spawn_blocking(move || {
+            room_project::serialize(&doc_inner).map(|b| room_project::hash_bytes(&b))
+        })
+        .await
+        .ok()
+        .flatten(),
+        None => None,
+    };
+    if let Some(local) = local_hash
+        && local == project_hash
+    {
+        progress_cb(tr!("本地工程已是最新"), 1.0);
+        tracing::info!("协作: 本地工程与房间一致，跳过下载");
+        return;
+    }
+
+    let client = HttpClient::new(&host, port);
+    progress_cb(&trf!("正在下载协作工程 {code}…", code = code), 0.0);
+    match client.download_room_project(&code).await {
+        Ok(bytes) => {
+            let load = tokio::task::spawn_blocking(move || {
+                let project = load_project_from_bytes(&bytes).map_err(|e| e.to_string())?;
+                lumino_export::project_to_parsed_midi(
+                    &project,
+                    Path::new("collab_room_project.lmpj"),
+                )
+                .map_err(|e| e.to_string())
+            });
+            match load.await {
+                Ok(Ok(parsed)) => {
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
+                            parsed,
+                        )),
+                    ));
+                    progress_cb(tr!("协作工程已加载"), 1.0);
+                    tracing::info!("协作: 已加载房间工程");
+                }
+                Ok(Err(e)) => {
+                    progress_cb(&trf!("解析下载工程失败：{e}", e = e), 1.0);
+                    tracing::warn!("协作: 解析下载工程失败: {e}")
+                }
+                Err(e) => {
+                    progress_cb(&trf!("加载工程任务失败：{e}", e = e), 1.0);
+                    tracing::warn!("协作: 加载工程任务失败: {e}")
+                }
+            }
+        }
+        Err(e) => {
+            progress_cb(&trf!("下载房间工程失败：{e}", e = e), 1.0);
+            tracing::warn!("协作: 下载房间工程失败: {e}")
         }
     }
 }
