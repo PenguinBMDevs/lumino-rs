@@ -134,6 +134,21 @@ fn build_parts(project: &LuminoProject) -> Result<Vec<Part>> {
         parts.push(Part::new(path, data.encode()?, true));
     }
 
+    push_event_parts(project, &mut parts)?;
+    push_text_parts(project, &mut parts)?;
+
+    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程保存后字节不变）
+    if let Some(encoded) = encode_shapes(project)? {
+        parts.push(Part::new(folder::FolderPaths::SHAPES_FILE, encoded, true));
+    }
+
+    Ok(parts)
+}
+
+/// 追加时序 / 控制 / 触后事件表部件（LMTM · LMSG · LMCT · LMAT）
+///
+/// 只负责往清单尾部追加，顺序与 [`push_text_parts`] 的调用先后共同构成归档文件表顺序。
+fn push_event_parts(project: &LuminoProject, parts: &mut Vec<Part>) -> Result<()> {
     // tempo（专用格式 LMTM）
     let tempo_data = LmtempData {
         tempo_changes: project.tempo_changes.clone(),
@@ -179,6 +194,13 @@ fn build_parts(project: &LuminoProject) -> Result<Vec<Part>> {
         true,
     ));
 
+    Ok(())
+}
+
+/// 追加文本 / 系统专属 / 音轨名部件（LMTX · LMMT · LMSY · LMNM）
+///
+/// 与 [`push_event_parts`] 分开只为让清单可读；两者合起来仍是同一份历史顺序。
+fn push_text_parts(project: &LuminoProject, parts: &mut Vec<Part>) -> Result<()> {
     // text events（专用格式 LMTX）
     let txt_data = LmtxtData {
         lyrics: project.lyrics.clone(),
@@ -227,12 +249,7 @@ fn build_parts(project: &LuminoProject) -> Result<Vec<Part>> {
         true,
     ));
 
-    // 形状（专用格式 LMSH；空形状不写部件 ⇒ 老工程保存后字节不变）
-    if let Some(encoded) = encode_shapes(project)? {
-        parts.push(Part::new(folder::FolderPaths::SHAPES_FILE, encoded, true));
-    }
-
-    Ok(parts)
+    Ok(())
 }
 
 /// 归档文件列表（`build_parts` 的容器投影）。

@@ -200,6 +200,75 @@ pub fn generate_waterfall_tiles(
     buffer
 }
 
+/// 渲染单个 time_group 的合并像素缓冲，返回该时间组的 tick 区间与像素。
+///
+/// 缓冲由本函数新分配并初始化为全零，避免调用方再声明一份尺寸计算；
+/// 尺寸取自共享上下文里的贴图宽度与 key 数量，与整合组贴图保持一致。
+fn render_time_group_pixels(
+    time_group: u32,
+    ticks_per_group: u32,
+    track_groups: u32,
+    notes: &[Vec<WaterfallNote>],
+    tile_ctx: &TileGenContext<'_>,
+) -> (u32, u32, Vec<u8>) {
+    let tick_start = time_group * ticks_per_group;
+    let tick_end = tick_start + ticks_per_group;
+
+    let buf_size = (tile_ctx.width * tile_ctx.key_count as u32) as usize * 4;
+    let mut merged_pixels = vec![0u8; buf_size];
+
+    for track_group in 0..track_groups {
+        // 直接写入 merged_pixels，不创建中间 WaterfallGroupTile，省去一次完整贴图分配
+        generate_one_time_group_tile_into(
+            track_group,
+            time_group,
+            tick_start,
+            tick_end,
+            notes,
+            tile_ctx,
+            &mut merged_pixels,
+        );
+    }
+    (tick_start, tick_end, merged_pixels)
+}
+
+/// 按 time_group 粒度上报流式生成进度（原子计数，无锁）。
+fn report_time_group_progress(
+    completed: &AtomicUsize,
+    progress_cb: &Option<TextureWaterfallProgressCallback>,
+    time_groups: u32,
+) {
+    let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+    if let Some(cb) = progress_cb {
+        let pct = done as f32 / time_groups as f32;
+        cb(
+            &trf!(
+                "贴图瀑布流 time_group {done}/{total}",
+                done = done,
+                total = time_groups
+            ),
+            pct,
+        );
+    }
+}
+
+/// 收尾流式生成：等待缓存落盘，再上报完成进度与完成日志。
+fn finish_streaming_generation(
+    cache_tx: std::sync::mpsc::SyncSender<CacheWriteJob>,
+    cache_handle: std::thread::JoinHandle<()>,
+    progress_cb: &Option<TextureWaterfallProgressCallback>,
+    time_groups: u32,
+) {
+    // 关闭缓存发送端，等待后台线程把剩余缓存落盘
+    join_cache_thread(cache_tx, cache_handle);
+
+    if let Some(cb) = progress_cb {
+        cb(tr!("贴图瀑布流流式生成完成"), 1.0);
+    }
+
+    info!("贴图瀑布流流式生成完成：{} 个 time_group", time_groups);
+}
+
 /// 流式生成全曲贴图瀑布流（单 tile 流式回调模型）
 ///
 /// 模型：按 time_group 串行推进，每个 track_group 的整合组贴图一生成完毕
@@ -262,24 +331,8 @@ pub fn generate_waterfall_tiles_streaming<F>(
         // 大分配前主动检查内存，接近上限时提前 panic，避免 OOM 把系统拖死
         MemoryMonitor::global().check();
 
-        let tick_start = time_group * ticks_per_group;
-        let tick_end = tick_start + ticks_per_group;
-
-        let buf_size = (width * ctx.key_count as u32) as usize * 4;
-        let mut merged_pixels = vec![0u8; buf_size];
-
-        for track_group in 0..track_groups {
-            // 直接写入 merged_pixels，不创建中间 WaterfallGroupTile，省去一次完整贴图分配
-            generate_one_time_group_tile_into(
-                track_group,
-                time_group,
-                tick_start,
-                tick_end,
-                notes,
-                &tile_ctx,
-                &mut merged_pixels,
-            );
-        }
+        let (tick_start, tick_end, merged_pixels) =
+            render_time_group_pixels(time_group, ticks_per_group, track_groups, notes, &tile_ctx);
 
         let merged = WaterfallGroupTile {
             coord: WaterfallTileCoord::new(0, time_group),
@@ -293,28 +346,10 @@ pub fn generate_waterfall_tiles_streaming<F>(
         time_group_cb(time_group, merged);
 
         // 更新进度（按 time_group 粒度），原子计数替代 Mutex
-        let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-        if let Some(cb) = &progress_cb {
-            let pct = done as f32 / time_groups as f32;
-            cb(
-                &trf!(
-                    "贴图瀑布流 time_group {done}/{total}",
-                    done = done,
-                    total = time_groups
-                ),
-                pct,
-            );
-        }
+        report_time_group_progress(&completed, &progress_cb, time_groups);
     }
 
-    // 关闭缓存发送端，等待后台线程把剩余缓存落盘
-    join_cache_thread(cache_tx, cache_handle);
-
-    if let Some(cb) = &progress_cb {
-        cb(tr!("贴图瀑布流流式生成完成"), 1.0);
-    }
-
-    info!("贴图瀑布流流式生成完成：{} 个 time_group", time_groups);
+    finish_streaming_generation(cache_tx, cache_handle, &progress_cb, time_groups);
 }
 
 #[cfg(test)]

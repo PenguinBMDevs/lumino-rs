@@ -127,6 +127,18 @@ fn collect_track_events<'a>(
     events: &mut Vec<TrackEvent<'a>>,
     include_globals: bool,
 ) -> ExportResult<()> {
+    push_note_events(track_data, events);
+    push_tempo_events(track_data, events, include_globals)?;
+    push_channel_message_events(track_data, events);
+    push_global_meta_events(track_data, events, include_globals);
+    push_text_meta_events(track_data, events);
+    push_sys_ex_events(track_data, events);
+
+    Ok(())
+}
+
+/// 推送音符事件
+fn push_note_events<'a>(track_data: &'a MidiTrackData, events: &mut Vec<TrackEvent<'a>>) {
     // 音符事件
     for note in &track_data.notes {
         // 音符开启
@@ -154,7 +166,14 @@ fn collect_track_events<'a>(
             },
         });
     }
+}
 
+/// 推送速度事件（全局事件）
+fn push_tempo_events<'a>(
+    track_data: &'a MidiTrackData,
+    events: &mut Vec<TrackEvent<'a>>,
+    include_globals: bool,
+) -> ExportResult<()> {
     // 速度事件 (全局事件)
     if include_globals {
         for tempo in &track_data.tempos {
@@ -171,6 +190,14 @@ fn collect_track_events<'a>(
         }
     }
 
+    Ok(())
+}
+
+/// 推送通道消息事件（程序变更、控制变更、弯音、触后）
+fn push_channel_message_events<'a>(
+    track_data: &'a MidiTrackData,
+    events: &mut Vec<TrackEvent<'a>>,
+) {
     // 程序变更
     for pc in &track_data.program_changes {
         events.push(TrackEvent {
@@ -237,7 +264,14 @@ fn collect_track_events<'a>(
             },
         });
     }
+}
 
+/// 推送全局元事件（拍号、调号）
+fn push_global_meta_events<'a>(
+    track_data: &'a MidiTrackData,
+    events: &mut Vec<TrackEvent<'a>>,
+    include_globals: bool,
+) {
     // 拍号事件 (全局事件)
     if include_globals {
         for ts in &track_data.time_signatures {
@@ -265,7 +299,10 @@ fn collect_track_events<'a>(
             });
         }
     }
+}
 
+/// 推送文本类元事件（歌词、标记、文本）
+fn push_text_meta_events<'a>(track_data: &'a MidiTrackData, events: &mut Vec<TrackEvent<'a>>) {
     // 歌词事件
     for ly in &track_data.lyrics {
         events.push(TrackEvent {
@@ -299,7 +336,10 @@ fn collect_track_events<'a>(
             kind: TrackEventKind::Meta(kind),
         });
     }
+}
 
+/// 推送 SysEx 事件
+fn push_sys_ex_events<'a>(track_data: &'a MidiTrackData, events: &mut Vec<TrackEvent<'a>>) {
     // SysEx 事件
     for sx in &track_data.sys_ex {
         events.push(TrackEvent {
@@ -307,8 +347,6 @@ fn collect_track_events<'a>(
             kind: TrackEventKind::SysEx(&sx.bytes),
         });
     }
-
-    Ok(())
 }
 
 fn event_priority(kind: &TrackEventKind) -> u8 {

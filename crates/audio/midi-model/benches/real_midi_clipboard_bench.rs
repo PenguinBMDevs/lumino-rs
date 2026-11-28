@@ -78,6 +78,97 @@ fn min_ms(mut f: impl FnMut() -> f64, n: usize) -> f64 {
     m
 }
 
+/// JSON 旧路径复制：返回（均值 ms, 拼好的 JSON 串）。
+fn measure_json_copy(sel: &[(usize, NoteEvent)], origin: (u32, u8)) -> (f64, String) {
+    let copy_json_avg = avg_ms(|| copy_json(sel, origin.0, origin.1).1, 3);
+    let (json_str, _) = copy_json(sel, origin.0, origin.1);
+    (copy_json_avg, json_str)
+}
+
+/// JSON 旧路径粘贴：返回（均值 ms, 插入音符数）。
+fn measure_json_paste(text: &str, tracks: u16, div: u16) -> (f64, usize) {
+    let paste_json_avg = avg_ms(
+        || {
+            let mut d = MidiDocument::empty_with_tracks(tracks, div);
+            paste_json(&mut d, text).1
+        },
+        3,
+    );
+    let (ins_json, _) = {
+        let mut d = MidiDocument::empty_with_tracks(tracks, div);
+        paste_json(&mut d, text)
+    };
+    (paste_json_avg, ins_json)
+}
+
+/// 二进制路径复制：返回（均值 ms, 最优 ms, 载荷字节）。
+fn measure_bin_copy(sel: &[(usize, NoteEvent)], origin: (u32, u8)) -> (f64, f64, Vec<u8>) {
+    let copy_bin_avg = avg_ms(|| copy_bin(sel, origin.0, origin.1).1, 7);
+    let copy_bin_min = min_ms(|| copy_bin(sel, origin.0, origin.1).1, 7);
+    let (bin_bytes, _) = copy_bin(sel, origin.0, origin.1);
+    (copy_bin_avg, copy_bin_min, bin_bytes)
+}
+
+/// 二进制路径粘贴：返回（均值 ms, 最优 ms, 插入音符数）。
+fn measure_bin_paste(bytes: &[u8], tracks: u16, div: u16) -> (f64, f64, usize) {
+    let paste_bin_avg = avg_ms(
+        || {
+            let mut d = MidiDocument::empty_with_tracks(tracks, div);
+            paste_bin(&mut d, bytes).1
+        },
+        7,
+    );
+    let paste_bin_min = min_ms(
+        || {
+            let mut d = MidiDocument::empty_with_tracks(tracks, div);
+            paste_bin(&mut d, bytes).1
+        },
+        7,
+    );
+    let (ins_bin, _) = {
+        let mut d = MidiDocument::empty_with_tracks(tracks, div);
+        paste_bin(&mut d, bytes)
+    };
+    (paste_bin_avg, paste_bin_min, ins_bin)
+}
+
+/// 全文件 24M 音符二进制上下文（不跑 JSON，避免 3 分钟级耗时）。
+fn print_full_file_context(doc: &MidiDocument, total: usize, tracks: u16, div: u16) {
+    println!();
+    println!("── 全文件二进制上下文（{} 音符）──", total);
+    let t0 = Instant::now();
+    let all_bytes = encode_clipboard(
+        (0..doc.track_count()).flat_map(|t| {
+            doc.track_notes(t).iter().map(move |n| {
+                ClipRecord::new(
+                    n.start_tick,
+                    n.end_tick - n.start_tick,
+                    n.key,
+                    n.velocity,
+                    n.channel,
+                    t as u16,
+                )
+            })
+        }),
+        total,
+        div,
+        0,
+        0,
+        0,
+    );
+    let enc_all = t0.elapsed().as_nanos() as f64 / 1e6;
+    let mut doc_all = MidiDocument::empty_with_tracks(tracks, div);
+    let (ins_all, dec_all) = paste_bin(&mut doc_all, &all_bytes);
+    println!("{}", bar("二进制 encode", enc_all));
+    println!("{}", bar("二进制 decode", dec_all));
+    println!(
+        "全文件二进制复制+粘贴 合计 {:>9.2} ms | 载荷 {:>8.2} MB | 插入 {}",
+        enc_all + dec_all,
+        all_bytes.len() as f64 / (1024.0 * 1024.0),
+        ins_all
+    );
+}
+
 fn main() {
     println!("=== Lumino 真实 MIDI 复制/粘贴基准（JSON vs 二进制）===");
     let (doc, src) = load_doc();
@@ -103,44 +194,14 @@ fn main() {
     println!();
 
     // —— JSON 旧路径（1M 选区，复现「复制 2s / 粘贴 9s」）——
-    let copy_json_avg = avg_ms(|| copy_json(&sel, origin.0, origin.1).1, 3);
-    let (json_str, _) = copy_json(&sel, origin.0, origin.1);
+    let (copy_json_avg, json_str) = measure_json_copy(&sel, origin);
     let json_payload_mb = json_str.len() as f64 / (1024.0 * 1024.0);
-    let paste_json_avg = avg_ms(
-        || {
-            let mut d = MidiDocument::empty_with_tracks(tracks, div);
-            paste_json(&mut d, &json_str).1
-        },
-        3,
-    );
-    let (ins_json, _) = {
-        let mut d = MidiDocument::empty_with_tracks(tracks, div);
-        paste_json(&mut d, &json_str)
-    };
+    let (paste_json_avg, ins_json) = measure_json_paste(&json_str, tracks, div);
 
     // —— 二进制优化路径（1M 选区，目标 < 100ms）——
-    let copy_bin_avg = avg_ms(|| copy_bin(&sel, origin.0, origin.1).1, 7);
-    let copy_bin_min = min_ms(|| copy_bin(&sel, origin.0, origin.1).1, 7);
-    let (bin_bytes, _) = copy_bin(&sel, origin.0, origin.1);
+    let (copy_bin_avg, copy_bin_min, bin_bytes) = measure_bin_copy(&sel, origin);
     let bin_payload_mb = bin_bytes.len() as f64 / (1024.0 * 1024.0);
-    let paste_bin_avg = avg_ms(
-        || {
-            let mut d = MidiDocument::empty_with_tracks(tracks, div);
-            paste_bin(&mut d, &bin_bytes).1
-        },
-        7,
-    );
-    let paste_bin_min = min_ms(
-        || {
-            let mut d = MidiDocument::empty_with_tracks(tracks, div);
-            paste_bin(&mut d, &bin_bytes).1
-        },
-        7,
-    );
-    let (ins_bin, _) = {
-        let mut d = MidiDocument::empty_with_tracks(tracks, div);
-        paste_bin(&mut d, &bin_bytes)
-    };
+    let (paste_bin_avg, paste_bin_min, ins_bin) = measure_bin_paste(&bin_bytes, tracks, div);
 
     println!("（每组取多次运行平均；二进制附最优值）");
     println!("── 复制（序列化）──");
@@ -177,38 +238,6 @@ fn main() {
     );
 
     // —— 全文件 24M 二进制上下文（不跑 JSON，避免 3 分钟级耗时）——
-    println!();
-    println!("── 全文件二进制上下文（{} 音符）──", total);
-    let t0 = Instant::now();
-    let all_bytes = encode_clipboard(
-        (0..doc.track_count()).flat_map(|t| {
-            doc.track_notes(t).iter().map(move |n| {
-                ClipRecord::new(
-                    n.start_tick,
-                    n.end_tick - n.start_tick,
-                    n.key,
-                    n.velocity,
-                    n.channel,
-                    t as u16,
-                )
-            })
-        }),
-        total,
-        div,
-        0,
-        0,
-        0,
-    );
-    let enc_all = t0.elapsed().as_nanos() as f64 / 1e6;
-    let mut doc_all = MidiDocument::empty_with_tracks(tracks, div);
-    let (ins_all, dec_all) = paste_bin(&mut doc_all, &all_bytes);
-    println!("{}", bar("二进制 encode", enc_all));
-    println!("{}", bar("二进制 decode", dec_all));
-    println!(
-        "全文件二进制复制+粘贴 合计 {:>9.2} ms | 载荷 {:>8.2} MB | 插入 {}",
-        enc_all + dec_all,
-        all_bytes.len() as f64 / (1024.0 * 1024.0),
-        ins_all
-    );
+    print_full_file_context(&doc, total, tracks, div);
     println!("=== 完成 ===");
 }

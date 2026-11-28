@@ -6,6 +6,7 @@ use tracing::{debug, error, trace};
 
 use super::event::CollaborationEvent;
 use crate::client::{ClientState, ClientStateCell, EventCallback, ServerMessage};
+use crate::types::{MousePosition, UserId};
 
 /// 统一触发协作事件回调（消除各分支重复的 `if let Some(ref cb) = callback` 样板）。
 fn emit(callback: &Option<EventCallback>, event: CollaborationEvent) {
@@ -37,20 +38,7 @@ pub async fn handle_server_message(
             position,
             color,
         } => {
-            trace!(
-                "收到服务器 MouseUpdate: user_id={}, username={}, x={}, y={}, color={}",
-                user_id, username, position.x, position.y, color
-            );
-
-            emit(
-                &callback,
-                CollaborationEvent::MouseUpdate {
-                    user_id,
-                    position,
-                    color,
-                    username,
-                },
-            );
+            handle_mouse_update(user_id, username, position, color, &callback);
         }
 
         ServerMessage::NoteBatchUpdate { user_id, operation } => {
@@ -102,17 +90,50 @@ pub async fn handle_server_message(
         }
 
         ServerMessage::Error { error } => {
-            error!("服务器错误: {}", error);
-            emit(&callback, CollaborationEvent::Error { message: error });
+            report_server_error(error, &callback);
         }
 
         _ => {
-            // 24 行的 `type_name` 映射只是 serde tag 的第二份定义；未处理消息直接
-            // 记录原文片段，既省掉重复又便于排查新协议（截断避免大载荷刷日志）。
-            let preview: String = text.chars().take(200).collect();
-            debug!("收到未处理的服务器消息: {preview}");
+            log_unhandled(text);
         }
     }
 
     Ok(())
+}
+
+/// 处理鼠标更新：先记录 trace，再转发鼠标事件（字段序保持原样）。
+fn handle_mouse_update(
+    user_id: UserId,
+    username: String,
+    position: MousePosition,
+    color: String,
+    callback: &Option<EventCallback>,
+) {
+    trace!(
+        "收到服务器 MouseUpdate: user_id={}, username={}, x={}, y={}, color={}",
+        user_id, username, position.x, position.y, color
+    );
+
+    emit(
+        callback,
+        CollaborationEvent::MouseUpdate {
+            user_id,
+            position,
+            color,
+            username,
+        },
+    );
+}
+
+/// 记录并上报服务器错误。
+fn report_server_error(error: String, callback: &Option<EventCallback>) {
+    error!("服务器错误: {}", error);
+    emit(callback, CollaborationEvent::Error { message: error });
+}
+
+// 24 行的 `type_name` 映射只是 serde tag 的第二份定义；未处理消息直接
+// 记录原文片段，既省掉重复又便于排查新协议（截断避免大载荷刷日志）。
+fn log_unhandled(text: &str) {
+    let preview: String = text.chars().take(200).collect();
+    debug!("收到未处理的服务器消息: {preview}");
 }

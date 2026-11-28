@@ -15,153 +15,205 @@ pub fn compile(src: &str, vars: &[&str]) -> Result<Expr, ExprError> {
     if tokens.is_empty() {
         return Err(ExprError::Empty);
     }
-    let mut output = Vec::new();
-    let mut stack: Vec<Stack> = Vec::new();
-    let mut args: Vec<usize> = Vec::new();
-    let mut expect_operand = true;
-    let mut depth = 0usize;
-    let mut previous_was_function = false;
-    let mut last_was_lparen = false;
-    let mut last_was_comma = false;
+    let mut state = Shunt::new();
 
     for token in tokens {
+        state.step(token, vars)?;
+    }
+    state.finish()
+}
+
+/// 调度场（shunting-yard）的可变状态：后缀输出、运算符栈与“下一个 token 期待什么”
+struct Shunt {
+    output: Vec<Op>,
+    stack: Vec<Stack>,
+    args: Vec<usize>,
+    expect_operand: bool,
+    depth: usize,
+    previous_was_function: bool,
+    last_was_lparen: bool,
+    last_was_comma: bool,
+}
+
+impl Shunt {
+    /// 初始状态：还没有输出，期待操作数
+    fn new() -> Self {
+        Self {
+            output: Vec::new(),
+            stack: Vec::new(),
+            args: Vec::new(),
+            expect_operand: true,
+            depth: 0usize,
+            previous_was_function: false,
+            last_was_lparen: false,
+            last_was_comma: false,
+        }
+    }
+
+    /// 处理一个 token，推进一步
+    fn step(&mut self, token: Token, vars: &[&str]) -> Result<(), ExprError> {
         match token {
             Token::Num(value) => {
-                if !expect_operand {
+                if !self.expect_operand {
                     return Err(ExprError::Syntax("数字前缺少运算符".into()));
                 }
-                output.push(Op::Num(value));
-                expect_operand = false;
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = false;
+                self.output.push(Op::Num(value));
+                self.expect_operand = false;
+                self.previous_was_function = false;
+                self.last_was_lparen = false;
+                self.last_was_comma = false;
             }
             Token::Int(value) => {
-                if !expect_operand {
+                if !self.expect_operand {
                     return Err(ExprError::Syntax("数字前缺少运算符".into()));
                 }
-                output.push(Op::Int(value));
-                expect_operand = false;
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = false;
+                self.output.push(Op::Int(value));
+                self.expect_operand = false;
+                self.previous_was_function = false;
+                self.last_was_lparen = false;
+                self.last_was_comma = false;
             }
-            Token::Ident(name) => {
-                if !expect_operand {
-                    return Err(ExprError::Syntax("标识符前缺少运算符".into()));
-                }
-                if let Some(func) = Func::from_name(&name) {
-                    stack.push(Stack::Func(func));
-                    previous_was_function = true;
-                    continue;
-                }
-                let op = match name.as_str() {
-                    "pi" => Op::Num(std::f64::consts::PI),
-                    "e" => Op::Num(std::f64::consts::E),
-                    "x" => Op::Var("x".into()),
-                    other if vars.contains(&other) => Op::Var(other.into()),
-                    other => return Err(ExprError::UnknownName(other.into())),
-                };
-                output.push(op);
-                expect_operand = false;
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = false;
+            Token::Ident(name) => self.ident(name, vars)?,
+            Token::LParen => self.lparen()?,
+            Token::RParen => self.rparen()?,
+            Token::Comma => self.comma()?,
+            Token::Op(op) => self.op(op)?,
+        }
+        Ok(())
+    }
+
+    /// 标识符：函数压栈等括号，其余按常量/变量解析
+    fn ident(&mut self, name: String, vars: &[&str]) -> Result<(), ExprError> {
+        if !self.expect_operand {
+            return Err(ExprError::Syntax("标识符前缺少运算符".into()));
+        }
+        if let Some(func) = Func::from_name(&name) {
+            self.stack.push(Stack::Func(func));
+            self.previous_was_function = true;
+            return Ok(());
+        }
+        let op = match name.as_str() {
+            "pi" => Op::Num(std::f64::consts::PI),
+            "e" => Op::Num(std::f64::consts::E),
+            "x" => Op::Var("x".into()),
+            other if vars.contains(&other) => Op::Var(other.into()),
+            other => return Err(ExprError::UnknownName(other.into())),
+        };
+        self.output.push(op);
+        self.expect_operand = false;
+        self.previous_was_function = false;
+        self.last_was_lparen = false;
+        self.last_was_comma = false;
+        Ok(())
+    }
+
+    /// 左括号：累计嵌套深度、压栈，函数调用时开始记录参数个数
+    fn lparen(&mut self) -> Result<(), ExprError> {
+        self.depth += 1;
+        if self.depth > 64 {
+            return Err(ExprError::TooDeep);
+        }
+        self.stack.push(Stack::LParen);
+        if self.previous_was_function {
+            self.args.push(0);
+        }
+        self.expect_operand = true;
+        self.previous_was_function = false;
+        self.last_was_lparen = true;
+        self.last_was_comma = false;
+        Ok(())
+    }
+
+    /// 右括号：弹到左括号为止，函数标记存在时补一条调用指令
+    fn rparen(&mut self) -> Result<(), ExprError> {
+        self.depth = self.depth.saturating_sub(1);
+        while !matches!(self.stack.last(), Some(Stack::LParen)) {
+            let Some(item) = self.stack.pop() else {
+                return Err(ExprError::Syntax("括号不匹配".into()));
+            };
+            emit(&mut self.output, item)?;
+        }
+        self.stack.pop();
+        if matches!(self.stack.last(), Some(Stack::Func(_))) {
+            let Some(Stack::Func(func)) = self.stack.pop() else {
+                return Err(ExprError::Syntax("函数标记丢失".into()));
+            };
+            if self.last_was_comma {
+                return Err(ExprError::Syntax("函数参数列表以逗号结尾".into()));
             }
-            Token::LParen => {
-                depth += 1;
-                if depth > 64 {
-                    return Err(ExprError::TooDeep);
-                }
-                stack.push(Stack::LParen);
-                if previous_was_function {
-                    args.push(0);
-                }
-                expect_operand = true;
-                previous_was_function = false;
-                last_was_lparen = true;
-                last_was_comma = false;
+            let commas = self.args.pop().unwrap_or(0);
+            let count = if self.last_was_lparen { 0 } else { commas + 1 };
+            func.check_arity(count)?;
+            self.output.push(Op::Call(func, count));
+        }
+        self.expect_operand = false;
+        self.previous_was_function = false;
+        self.last_was_lparen = false;
+        self.last_was_comma = false;
+        Ok(())
+    }
+
+    /// 逗号：累加当前函数的参数个数，并弹到左括号为止
+    fn comma(&mut self) -> Result<(), ExprError> {
+        let Some(count) = self.args.last_mut() else {
+            return Err(ExprError::Syntax("逗号出现在函数外".into()));
+        };
+        *count += 1;
+        while !matches!(self.stack.last(), Some(Stack::LParen)) {
+            let Some(item) = self.stack.pop() else {
+                return Err(ExprError::Syntax("逗号出现在括号外".into()));
+            };
+            emit(&mut self.output, item)?;
+        }
+        self.expect_operand = true;
+        self.previous_was_function = false;
+        self.last_was_lparen = false;
+        self.last_was_comma = true;
+        Ok(())
+    }
+
+    /// 运算符：一元负/正先处理，否则按优先级弹出栈顶再压栈
+    fn op(&mut self, op: OpKind) -> Result<(), ExprError> {
+        if self.expect_operand {
+            if op == OpKind::Sub {
+                self.stack.push(Stack::Op(Op::Neg, 3));
+            } else if op != OpKind::Add {
+                return Err(ExprError::Syntax("缺少操作数".into()));
             }
-            Token::RParen => {
-                depth = depth.saturating_sub(1);
-                while !matches!(stack.last(), Some(Stack::LParen)) {
-                    let Some(item) = stack.pop() else {
-                        return Err(ExprError::Syntax("括号不匹配".into()));
+        } else {
+            let (prec, right_assoc) = precedence(op);
+            while let Some(Stack::Op(_, top_prec)) = self.stack.last() {
+                if *top_prec > prec || (*top_prec == prec && !right_assoc) {
+                    let Some(item) = self.stack.pop() else {
+                        break;
                     };
-                    emit(&mut output, item)?;
-                }
-                stack.pop();
-                if matches!(stack.last(), Some(Stack::Func(_))) {
-                    let Some(Stack::Func(func)) = stack.pop() else {
-                        return Err(ExprError::Syntax("函数标记丢失".into()));
-                    };
-                    if last_was_comma {
-                        return Err(ExprError::Syntax("函数参数列表以逗号结尾".into()));
-                    }
-                    let commas = args.pop().unwrap_or(0);
-                    let count = if last_was_lparen { 0 } else { commas + 1 };
-                    func.check_arity(count)?;
-                    output.push(Op::Call(func, count));
-                }
-                expect_operand = false;
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = false;
-            }
-            Token::Comma => {
-                let Some(count) = args.last_mut() else {
-                    return Err(ExprError::Syntax("逗号出现在函数外".into()));
-                };
-                *count += 1;
-                while !matches!(stack.last(), Some(Stack::LParen)) {
-                    let Some(item) = stack.pop() else {
-                        return Err(ExprError::Syntax("逗号出现在括号外".into()));
-                    };
-                    emit(&mut output, item)?;
-                }
-                expect_operand = true;
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = true;
-            }
-            Token::Op(op) => {
-                if expect_operand {
-                    if op == OpKind::Sub {
-                        stack.push(Stack::Op(Op::Neg, 3));
-                    } else if op != OpKind::Add {
-                        return Err(ExprError::Syntax("缺少操作数".into()));
-                    }
+                    emit(&mut self.output, item)?;
                 } else {
-                    let (prec, right_assoc) = precedence(op);
-                    while let Some(Stack::Op(_, top_prec)) = stack.last() {
-                        if *top_prec > prec || (*top_prec == prec && !right_assoc) {
-                            let Some(item) = stack.pop() else {
-                                break;
-                            };
-                            emit(&mut output, item)?;
-                        } else {
-                            break;
-                        }
-                    }
-                    stack.push(Stack::Op(op.into(), prec));
-                    expect_operand = true;
+                    break;
                 }
-                previous_was_function = false;
-                last_was_lparen = false;
-                last_was_comma = false;
             }
+            self.stack.push(Stack::Op(op.into(), prec));
+            self.expect_operand = true;
         }
+        self.previous_was_function = false;
+        self.last_was_lparen = false;
+        self.last_was_comma = false;
+        Ok(())
     }
-    if expect_operand {
-        return Err(ExprError::Syntax("公式以运算符结尾".into()));
-    }
-    while let Some(item) = stack.pop() {
-        if matches!(item, Stack::LParen) {
-            return Err(ExprError::Syntax("括号不匹配".into()));
+
+    /// 收尾：不能停在“等操作数”，栈里也不能剩左括号
+    fn finish(mut self) -> Result<Expr, ExprError> {
+        if self.expect_operand {
+            return Err(ExprError::Syntax("公式以运算符结尾".into()));
         }
-        emit(&mut output, item)?;
+        while let Some(item) = self.stack.pop() {
+            if matches!(item, Stack::LParen) {
+                return Err(ExprError::Syntax("括号不匹配".into()));
+            }
+            emit(&mut self.output, item)?;
+        }
+        Ok(Expr { ops: self.output })
     }
-    Ok(Expr { ops: output })
 }
 
 #[derive(Debug, Clone, PartialEq)]
