@@ -84,63 +84,74 @@ pub fn apply(notes: &[ShapeNote], params: &StrumParams, ppq: f64) -> Vec<ShapeNo
         }
 
         for (rank, &index) in group.iter().enumerate() {
-            let original = notes[index];
             let delta = offsets[rank] + shift;
-            let original_end = original.tick as f64 + original.length.max(0.0) as f64;
-            let mut start = original.tick as f64 + delta;
-            let mut note_end = if params.preserve && !params.ahead {
-                original_end
-            } else {
-                original_end + delta
-            };
-            if start < 0.0 {
-                let correction = -start;
-                start = 0.0;
-                if !(params.preserve && !params.ahead) {
-                    note_end += correction;
-                }
-            }
-
-            if params.end && params.end_time != 0.0 {
-                let end_rank = if params.end_time < 0.0 {
-                    rank
-                } else {
-                    n - 1 - rank
-                };
-                let end_offset = steps(
-                    end_rank as i32,
-                    params.end_time.abs() as f64 * ppq,
-                    params.end_tension as f64,
-                    cap,
-                );
-                note_end = (note_end - end_offset).max(start + 1.0);
-            }
-            if note_end <= start + EPS {
-                out[index] = None;
-                continue;
-            }
-
-            let velocity_offset = steps(
-                rank as i32,
-                params.vel as f64,
-                params.vel_tension as f64,
-                127.0,
-            );
-            let velocity = (original.velocity as f64 + velocity_offset)
-                .round()
-                .clamp(1.0, 127.0) as u8;
-            out[index] = Some(ShapeNote {
-                track: original.track,
-                tick: start as f32,
-                key: original.key,
-                length: (note_end - start) as f32,
-                velocity,
-                channel: original.channel,
-            });
+            out[index] = strum_note(notes[index], rank, delta, n, params, ppq);
         }
     }
 
     out.into_iter().flatten().collect()
+}
+
+/// 计算组内第 `rank` 个音符错开后的位置与时长；`None` 表示时长被压到无效
+fn strum_note(
+    original: ShapeNote,
+    rank: usize,
+    delta: f64,
+    n: usize,
+    params: &StrumParams,
+    ppq: f64,
+) -> Option<ShapeNote> {
+    let cap = CAP_BEATS * ppq;
+    let original_end = original.tick as f64 + original.length.max(0.0) as f64;
+    let mut start = original.tick as f64 + delta;
+    let mut note_end = if params.preserve && !params.ahead {
+        original_end
+    } else {
+        original_end + delta
+    };
+    if start < 0.0 {
+        let correction = -start;
+        start = 0.0;
+        if !(params.preserve && !params.ahead) {
+            note_end += correction;
+        }
+    }
+
+    if params.end && params.end_time != 0.0 {
+        let end_rank = if params.end_time < 0.0 {
+            rank
+        } else {
+            n - 1 - rank
+        };
+        let end_offset = steps(
+            end_rank as i32,
+            params.end_time.abs() as f64 * ppq,
+            params.end_tension as f64,
+            cap,
+        );
+        note_end = (note_end - end_offset).max(start + 1.0);
+    }
+    if note_end <= start + EPS {
+        return None;
+    }
+
+    let velocity_offset = steps(
+        rank as i32,
+        params.vel as f64,
+        params.vel_tension as f64,
+        127.0,
+    );
+    let velocity = (original.velocity as f64 + velocity_offset)
+        .round()
+        .clamp(1.0, 127.0) as u8;
+    Some(ShapeNote {
+        track: original.track,
+        tick: start as f32,
+        key: original.key,
+        length: (note_end - start) as f32,
+        velocity,
+        channel: original.channel,
+    })
 }
 
 /// 指数级数第 `rank` 步的位移（已按 `cap` 封顶）

@@ -76,10 +76,20 @@ pub(super) fn grow_keys(
             return false;
         }
     }
-    let base_bin = pyramid
-        .levels
-        .first()
-        .map_or(1, |level| level.bin_ticks.max(1));
+    regrow_count_columns(pyramid, document, index, old_keys, new_keys);
+    regrow_coverage_columns(pyramid, document, index, old_keys, new_keys);
+    finalize_keys(pyramid, new_key_count);
+    true
+}
+
+/// 计数层扩列：搬移旧列、补扫高 key 轨，再按 2:1 重算新增列的上层计数。
+fn regrow_count_columns(
+    pyramid: &mut DensityPyramid,
+    document: &lumino_midi_model::MidiDocument,
+    index: &crate::index::TrackIndex,
+    old_keys: usize,
+    new_keys: usize,
+) {
     for level in &mut pyramid.levels {
         let mut cells = vec![0u16; level.bins.saturating_mul(new_keys)];
         for bin in 0..level.bins {
@@ -142,7 +152,20 @@ pub(super) fn grow_keys(
             }
         }
     }
+}
 
+/// 覆盖层扩列：搬移旧列、补扫高 key 轨，再按 2:1 重算新增列的上层单元。
+fn regrow_coverage_columns(
+    pyramid: &mut DensityPyramid,
+    document: &lumino_midi_model::MidiDocument,
+    index: &crate::index::TrackIndex,
+    old_keys: usize,
+    new_keys: usize,
+) {
+    let base_bin = pyramid
+        .levels
+        .first()
+        .map_or(1, |level| level.bin_ticks.max(1));
     if !pyramid.coverage.is_empty() {
         for level in 0..pyramid.coverage.len() {
             let current = &mut pyramid.coverage[level];
@@ -210,14 +233,16 @@ pub(super) fn grow_keys(
             }
         }
     }
+}
 
+/// 收尾：写入新 key 数，并按新列宽重算各层最大计数。
+fn finalize_keys(pyramid: &mut DensityPyramid, new_key_count: u16) {
     pyramid.key_count = new_key_count.max(1);
     for (level, max) in pyramid.max_counts.iter_mut().enumerate() {
         if let Some(level) = pyramid.levels.get(level) {
             *max = level.cells.iter().copied().max().unwrap_or(1).max(1);
         }
     }
-    true
 }
 
 fn coarsen(pyramid: &mut DensityPyramid) -> bool {

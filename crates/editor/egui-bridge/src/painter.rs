@@ -44,6 +44,12 @@ struct Draw {
     texture: TextureId,
 }
 
+/// `Locals` 的绑定布局、uniform 缓冲区与绑定组。
+type LocalsBinding = (wgpu::BindGroupLayout, wgpu::Buffer, wgpu::BindGroup);
+
+/// 本帧拍平后的顶点、索引与 draw 区间。
+type DrawData = (Vec<GpuVertex>, Vec<u32>, Vec<Draw>);
+
 /// 目标画面信息。
 #[derive(Debug, Clone, Copy)]
 pub struct Screen {
@@ -77,6 +83,31 @@ impl Painter {
             source: wgpu::ShaderSource::Wgsl(shader::EGUI_WGSL.into()),
         });
 
+        let (locals_layout, locals_buffer, locals_bind_group) = Self::create_locals(device);
+        let texture_layout = Self::create_texture_layout(device);
+        let sampler = Self::create_sampler(device);
+        // 管线依赖上面全部资源，按原有创建顺序放在最后。
+        let pipeline = Self::create_pipeline(
+            device,
+            &module,
+            &locals_layout,
+            &texture_layout,
+            target_format,
+        );
+
+        Self {
+            pipeline,
+            locals_buffer,
+            locals_bind_group,
+            texture_layout,
+            sampler,
+            textures: HashMap::new(),
+            external: HashMap::new(),
+        }
+    }
+
+    /// 创建 `Locals` 的绑定布局、uniform 缓冲区与绑定组。
+    fn create_locals(device: &wgpu::Device) -> LocalsBinding {
         let locals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("lumino_egui_bridge_locals_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -106,7 +137,12 @@ impl Painter {
             }],
         });
 
-        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        (locals_layout, locals_buffer, locals_bind_group)
+    }
+
+    /// 创建纹理与采样器的绑定布局。
+    fn create_texture_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("lumino_egui_bridge_texture_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -126,8 +162,12 @@ impl Painter {
                     count: None,
                 },
             ],
-        });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        })
+    }
+
+    /// 创建线性过滤、边缘钳制的采样器。
+    fn create_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+        device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("lumino_egui_bridge_sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -136,11 +176,20 @@ impl Painter {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
-        });
+        })
+    }
 
+    /// 按目标颜色格式选择片元入口并创建渲染管线。
+    fn create_pipeline(
+        device: &wgpu::Device,
+        module: &wgpu::ShaderModule,
+        locals_layout: &wgpu::BindGroupLayout,
+        texture_layout: &wgpu::BindGroupLayout,
+        target_format: wgpu::TextureFormat,
+    ) -> wgpu::RenderPipeline {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lumino_egui_bridge_pipeline_layout"),
-            bind_group_layouts: &[&locals_layout, &texture_layout],
+            bind_group_layouts: &[locals_layout, texture_layout],
             push_constant_ranges: &[],
         });
 
@@ -150,11 +199,11 @@ impl Painter {
             shader::FRAGMENT_GAMMA_ENTRY
         };
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("lumino_egui_bridge_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &module,
+                module,
                 entry_point: Some(shader::VERTEX_ENTRY),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[wgpu::VertexBufferLayout {
@@ -175,7 +224,7 @@ impl Painter {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &module,
+                module,
                 entry_point: Some(fragment_entry),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
@@ -198,17 +247,7 @@ impl Painter {
             }),
             multiview: None,
             cache: None,
-        });
-
-        Self {
-            pipeline,
-            locals_buffer,
-            locals_bind_group,
-            texture_layout,
-            sampler,
-            textures: HashMap::new(),
-            external: HashMap::new(),
-        }
+        })
     }
 
     /// 绘制一帧图元，返回实际提交的 draw 数。
@@ -239,6 +278,31 @@ impl Painter {
         };
         queue.write_buffer(&self.locals_buffer, 0, bytemuck::bytes_of(&locals));
 
+        let (vertices, indices, draws) = Self::build_draw_data(primitives);
+
+        if draws.is_empty() {
+            // 没有可画图元：独占路径仍需清屏。
+            if let Some(color) = clear {
+                Self::record_clear(encoder, target, color);
+            }
+            return 0;
+        }
+
+        let (vertex_buffer, index_buffer) =
+            Self::create_geometry_buffers(device, &vertices, &indices);
+
+        let mut pass = Self::begin_pass(encoder, target, clear);
+
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.locals_bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+        self.record_draws(&mut pass, &draws, screen, width, height)
+    }
+
+    /// 把 egui 图元拍平成顶点、索引与 draw 区间。
+    fn build_draw_data(primitives: &[ClippedPrimitive]) -> DrawData {
         let mut vertices: Vec<GpuVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let mut draws: Vec<Draw> = Vec::new();
@@ -272,40 +336,59 @@ impl Painter {
             });
         }
 
-        if draws.is_empty() {
-            // 没有可画图元：独占路径仍需清屏。
-            if let Some(color) = clear {
-                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("lumino_egui_bridge_clear"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: target,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(color),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-            }
-            return 0;
-        }
+        (vertices, indices, draws)
+    }
 
+    /// 只清屏：没有可画图元时独占路径仍需清屏。
+    fn record_clear(
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        color: wgpu::Color,
+    ) {
+        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("lumino_egui_bridge_clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(color),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+    }
+
+    /// 上传本帧的顶点与索引缓冲区。
+    fn create_geometry_buffers(
+        device: &wgpu::Device,
+        vertices: &[GpuVertex],
+        indices: &[u32],
+    ) -> (wgpu::Buffer, wgpu::Buffer) {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("lumino_egui_bridge_vertices"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("lumino_egui_bridge_indices"),
-            contents: bytemuck::cast_slice(&indices),
+            contents: bytemuck::cast_slice(indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        (vertex_buffer, index_buffer)
+    }
+
+    /// 开启本帧的渲染 pass。
+    fn begin_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        target: &'a wgpu::TextureView,
+        clear: Option<wgpu::Color>,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("lumino_egui_bridge_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
@@ -322,15 +405,20 @@ impl Painter {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
-        });
+        })
+    }
 
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.locals_bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
+    /// 逐 draw 解析裁剪与纹理，返回实际提交数。
+    fn record_draws(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        draws: &[Draw],
+        screen: Screen,
+        width: u32,
+        height: u32,
+    ) -> usize {
         let mut drawn = 0;
-        for draw in &draws {
+        for draw in draws {
             let Some(scissor) =
                 scissor_rect(draw.clip_rect, screen.pixels_per_point, [width, height])
             else {

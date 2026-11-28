@@ -25,7 +25,12 @@ use lumino_midi_model::MidiDocument;
 
 use super::CpuOnionRenderer;
 use crate::{
-    band::BandJob, camera::CanvasCamera, compose, frame::CpuFrame, index::TrackIndex,
+    band::{BandJob, BandStats},
+    buffer::BandBuffer,
+    camera::CanvasCamera,
+    compose,
+    frame::CpuFrame,
+    index::TrackIndex,
     slot::put_buffer,
 };
 
@@ -161,64 +166,18 @@ impl CpuOnionRenderer {
 
         let local_width = rect.width as usize;
         let local_height = rect.height as usize;
-        let local_len = local_width.saturating_mul(local_height);
-        if self.region_frame.len() != local_len {
-            self.region_frame = vec![0; local_len];
-        }
-        // band 缓冲本身会先清空，这里再填 0 一次保证每个局部像素都被覆盖写入
-        // （band 覆盖满局部宽度，任何残留都不可能存活，但显式清零更防未来改动）。
-        self.region_frame.fill(0);
+        self.prepare_region_frame(local_width, local_height);
 
-        let (key_min, key_max) = sub_camera.visible_key_range();
-        let bands = self.band_count.min(rect.width as usize).max(1);
-        let band_width = rect.width.div_ceil(bands as u32);
-        let muted: Arc<[bool]> = Arc::from(muted);
-        let mut ranges = Vec::with_capacity(bands);
-        let mut jobs = Vec::with_capacity(bands);
-        for band_index in 0..bands {
-            let x0 = band_index as u32 * band_width;
-            if x0 >= rect.width {
-                break;
-            }
-            let x1 = x0.saturating_add(band_width).min(rect.width);
-            let (tick_lo, tick_hi) = sub_camera.tick_range_for_x(x0 as f32, x1 as f32);
-            ranges.push((x0, x1));
-            jobs.push(BandJob {
-                x0,
-                x1,
-                camera: sub_camera,
-                tick_lo,
-                tick_hi,
-                key_min,
-                key_max,
-                current_track,
-                muted: Arc::clone(&muted),
-                style: Arc::clone(&self.style),
-                index: Arc::clone(&index),
-                document: Arc::clone(&document),
-                simd: self.simd,
-                early_coverage: true,
-            });
-        }
-
+        let (ranges, jobs) = self.build_region_jobs(
+            rect.width,
+            &sub_camera,
+            current_track,
+            muted,
+            &index,
+            &document,
+        );
         let results = self.run_band_jobs(jobs);
-        let mut visible = 0u64;
-        for (band_index, buffer, stats) in results {
-            if let Some(&(x0, x1)) = ranges.get(band_index) {
-                compose::compose_band(
-                    &mut self.region_frame,
-                    local_width,
-                    local_height,
-                    x0,
-                    x1,
-                    &buffer,
-                );
-            }
-            visible = visible.saturating_add(stats.visible_notes);
-            if let Some(slot) = self.slots.get(band_index) {
-                put_buffer(slot, buffer);
-            }
-        }
+        let visible = self.compose_region_bands(results, &ranges, local_width, local_height);
 
         compose::blit_region(
             &mut self.frame,
@@ -243,6 +202,92 @@ impl CpuOnionRenderer {
         );
         self.visible_notes = visible;
         &self.output
+    }
+
+    /// 准备区域局部合成帧：局部尺寸变化时重建，每次重绘前清零。
+    fn prepare_region_frame(&mut self, local_width: usize, local_height: usize) {
+        let local_len = local_width.saturating_mul(local_height);
+        if self.region_frame.len() != local_len {
+            self.region_frame = vec![0; local_len];
+        }
+        // band 缓冲本身会先清空，这里再填 0 一次保证每个局部像素都被覆盖写入
+        // （band 覆盖满局部宽度，任何残留都不可能存活，但显式清零更防未来改动）。
+        self.region_frame.fill(0);
+    }
+
+    /// 按 band 数切分 `[0, width)`（区域子相机坐标系）并构造渲染任务。
+    ///
+    /// 返回的 `ranges[i]` 是第 `i` 条 band 的 `[x0, x1)`，与 `jobs[i]` 一一对应，
+    /// 供合成阶段按 band 索引回填。
+    fn build_region_jobs(
+        &self,
+        width: u32,
+        camera: &CanvasCamera,
+        current_track: usize,
+        muted: &[bool],
+        index: &Arc<TrackIndex>,
+        document: &Arc<MidiDocument>,
+    ) -> (Vec<(u32, u32)>, Vec<BandJob>) {
+        let (key_min, key_max) = camera.visible_key_range();
+        let bands = self.band_count.min(width as usize).max(1);
+        let band_width = width.div_ceil(bands as u32);
+        let muted: Arc<[bool]> = Arc::from(muted);
+        let mut ranges = Vec::with_capacity(bands);
+        let mut jobs = Vec::with_capacity(bands);
+        for band_index in 0..bands {
+            let x0 = band_index as u32 * band_width;
+            if x0 >= width {
+                break;
+            }
+            let x1 = x0.saturating_add(band_width).min(width);
+            let (tick_lo, tick_hi) = camera.tick_range_for_x(x0 as f32, x1 as f32);
+            ranges.push((x0, x1));
+            jobs.push(BandJob {
+                x0,
+                x1,
+                camera: *camera,
+                tick_lo,
+                tick_hi,
+                key_min,
+                key_max,
+                current_track,
+                muted: Arc::clone(&muted),
+                style: Arc::clone(&self.style),
+                index: Arc::clone(index),
+                document: Arc::clone(document),
+                simd: self.simd,
+                early_coverage: true,
+            });
+        }
+        (ranges, jobs)
+    }
+
+    /// 把 band 结果合成进区域局部帧、回填缓冲；返回可见音符数。
+    fn compose_region_bands(
+        &mut self,
+        results: Vec<(usize, BandBuffer, BandStats)>,
+        ranges: &[(u32, u32)],
+        local_width: usize,
+        local_height: usize,
+    ) -> u64 {
+        let mut visible = 0u64;
+        for (band_index, buffer, stats) in results {
+            if let Some(&(x0, x1)) = ranges.get(band_index) {
+                compose::compose_band(
+                    &mut self.region_frame,
+                    local_width,
+                    local_height,
+                    x0,
+                    x1,
+                    &buffer,
+                );
+            }
+            visible = visible.saturating_add(stats.visible_notes);
+            if let Some(slot) = self.slots.get(band_index) {
+                put_buffer(slot, buffer);
+            }
+        }
+        visible
     }
 }
 

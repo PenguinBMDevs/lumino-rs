@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use lumino_core::shape::{BetweenParams, BetweenRole, ShapeModel, ShapeOp};
+use lumino_core::shape::{BetweenParams, BetweenRole, BetweenSet, ShapeModel, ShapeOp};
 
 pub mod blend;
 pub mod graph;
@@ -20,6 +20,24 @@ pub struct BetweenWarning {
     pub message: String,
 }
 
+/// 一个组的同步计划：首/末、组设置、手改 Key、锚点与（钳制后的）步数。
+struct GroupPlan {
+    /// 组 id
+    id: u64,
+    /// 首形状
+    first: ShapeModel,
+    /// 末形状
+    last: ShapeModel,
+    /// 组设置（仅 First 持有）
+    set: BetweenSet,
+    /// 手改后的 Key（含由 Step 降级的），按 at 升序
+    keys: Vec<ShapeModel>,
+    /// First / Key... / Last，按 at 升序
+    anchors: Vec<(f32, ShapeModel)>,
+    /// 钳制到 MOST_STEPS 后的步数
+    steps: u16,
+}
+
 /// 首/末变化后重算所有 Step
 ///
 /// 返回的 `Vec<ShapeModel>` 中，每个组按 `First, Step/Key..., Last` 排列；
@@ -30,6 +48,24 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
     let ids = shapes.iter().filter_map(group_id).collect::<BTreeSet<_>>();
     let mut warnings = Vec::new();
     for id in ids {
+        let Some(plan) = GroupPlan::prepare(shapes, id, &mut warnings) else {
+            continue;
+        };
+        let members = plan.build_members(shapes);
+        splice_members(shapes, id, members);
+    }
+    warnings
+}
+
+impl GroupPlan {
+    /// 收集该组的首/末、组设置、手改 Key 与锚点。
+    ///
+    /// 缺失首/末时解绑该组（移除其 Between 标记）并给出 warning，返回 `None`。
+    fn prepare(
+        shapes: &mut [ShapeModel],
+        id: u64,
+        warnings: &mut Vec<BetweenWarning>,
+    ) -> Option<Self> {
         let first = shapes
             .iter()
             .find(|shape| role_of(shape, id) == Some(BetweenRole::First))
@@ -50,7 +86,7 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
             warnings.push(BetweenWarning {
                 message: format!("Between 组 {id} 缺少 First/Last，已解绑"),
             });
-            continue;
+            return None;
         };
         let set = first
             .ops
@@ -69,41 +105,30 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
             });
         }
 
-        // 手改过的 Step 降级为 Key：保留几何，不参与重算。
-        let mut keys = Vec::new();
-        for shape in shapes
-            .iter_mut()
-            .filter(|shape| group_id(shape) == Some(id))
-        {
-            match role_of(shape, id) {
-                Some(BetweenRole::Step) if is_modified(shape) => {
-                    if let Some(ShapeOp::Between(params)) = shape
-                        .ops
-                        .iter_mut()
-                        .find(|op| matches!(op, ShapeOp::Between(p) if p.id == id))
-                    {
-                        params.role = BetweenRole::Key;
-                    }
-                    keys.push(shape.clone());
-                }
-                Some(BetweenRole::Key) => keys.push(shape.clone()),
-                _ => {}
-            }
-        }
-        keys.sort_by(|a, b| at_of(a, id).total_cmp(&at_of(b, id)));
+        let keys = demote_modified_steps(shapes, id);
+        let anchors = group_anchors(&first, &last, &keys, id);
+        Some(Self {
+            id,
+            first,
+            last,
+            set,
+            keys,
+            anchors,
+            steps,
+        })
+    }
 
-        // 锚点：First / Key... / Last，按 at 排序；Key 落在 0/1 时跳过。
-        let mut anchors: Vec<(f32, ShapeModel)> = Vec::with_capacity(keys.len() + 2);
-        anchors.push((0.0, first.clone()));
-        for key in &keys {
-            let at = at_of(key, id);
-            if at > 0.0 && at < 1.0 {
-                anchors.push((at, key.clone()));
-            }
-        }
-        anchors.push((1.0, last.clone()));
-        anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
-
+    /// 生成组内成员：Key 与重算的 Step，按 at 升序。
+    fn build_members(self, shapes: &[ShapeModel]) -> Vec<(f32, ShapeModel)> {
+        let Self {
+            id,
+            first,
+            last,
+            set,
+            keys,
+            anchors,
+            steps,
+        } = self;
         let base_id = shapes.iter().map(|shape| shape.id).max().unwrap_or(0) + 1;
         let mut generated: Vec<(f32, ShapeModel)> = Vec::with_capacity(steps as usize);
         for (offset, index) in (1..=steps).enumerate() {
@@ -149,26 +174,77 @@ pub fn sync_groups(shapes: &mut Vec<ShapeModel>) -> Vec<BetweenWarning> {
             .chain(generated)
             .collect();
         members.sort_by(|a, b| a.0.total_cmp(&b.0));
-
-        let original = std::mem::take(shapes);
-        let mut out = Vec::with_capacity(original.len() + members.len());
-        for shape in original {
-            if group_id(&shape) == Some(id) {
-                match role_of(&shape, id) {
-                    Some(BetweenRole::First) => {
-                        out.push(shape);
-                        out.extend(members.drain(..).map(|(_, model)| model));
-                    }
-                    Some(BetweenRole::Step) | Some(BetweenRole::Key) => {}
-                    _ => out.push(shape),
-                }
-            } else {
-                out.push(shape);
-            }
-        }
-        *shapes = out;
+        members
     }
-    warnings
+}
+
+// 手改过的 Step 降级为 Key：保留几何，不参与重算。
+//
+// 返回组内全部 Key（含刚降级的 Step），按 at 升序。
+fn demote_modified_steps(shapes: &mut [ShapeModel], id: u64) -> Vec<ShapeModel> {
+    let mut keys = Vec::new();
+    for shape in shapes
+        .iter_mut()
+        .filter(|shape| group_id(shape) == Some(id))
+    {
+        match role_of(shape, id) {
+            Some(BetweenRole::Step) if is_modified(shape) => {
+                if let Some(ShapeOp::Between(params)) = shape
+                    .ops
+                    .iter_mut()
+                    .find(|op| matches!(op, ShapeOp::Between(p) if p.id == id))
+                {
+                    params.role = BetweenRole::Key;
+                }
+                keys.push(shape.clone());
+            }
+            Some(BetweenRole::Key) => keys.push(shape.clone()),
+            _ => {}
+        }
+    }
+    keys.sort_by(|a, b| at_of(a, id).total_cmp(&at_of(b, id)));
+    keys
+}
+
+// 锚点：First / Key... / Last，按 at 排序；Key 落在 0/1 时跳过。
+fn group_anchors(
+    first: &ShapeModel,
+    last: &ShapeModel,
+    keys: &[ShapeModel],
+    id: u64,
+) -> Vec<(f32, ShapeModel)> {
+    let mut anchors: Vec<(f32, ShapeModel)> = Vec::with_capacity(keys.len() + 2);
+    anchors.push((0.0, first.clone()));
+    for key in keys {
+        let at = at_of(key, id);
+        if at > 0.0 && at < 1.0 {
+            anchors.push((at, key.clone()));
+        }
+    }
+    anchors.push((1.0, last.clone()));
+    anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    anchors
+}
+
+/// 按 `First, Step/Key..., Last` 重排该组：First 之后插入成员，原 Step/Key 丢弃。
+fn splice_members(shapes: &mut Vec<ShapeModel>, id: u64, mut members: Vec<(f32, ShapeModel)>) {
+    let original = std::mem::take(shapes);
+    let mut out = Vec::with_capacity(original.len() + members.len());
+    for shape in original {
+        if group_id(&shape) == Some(id) {
+            match role_of(&shape, id) {
+                Some(BetweenRole::First) => {
+                    out.push(shape);
+                    out.extend(members.drain(..).map(|(_, model)| model));
+                }
+                Some(BetweenRole::Step) | Some(BetweenRole::Key) => {}
+                _ => out.push(shape),
+            }
+        } else {
+            out.push(shape);
+        }
+    }
+    *shapes = out;
 }
 
 fn at_of(shape: &ShapeModel, id: u64) -> f32 {

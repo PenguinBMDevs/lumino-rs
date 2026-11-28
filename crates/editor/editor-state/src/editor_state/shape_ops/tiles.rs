@@ -47,33 +47,16 @@ pub fn tiled_spans(area: &[RowSpan], tile: &[RowSpan], params: &TilesParams) -> 
             if cell_x > max_tick {
                 break;
             }
+            let cell = CellGeometry {
+                x: cell_x,
+                y: cell_y,
+                w: cell_w,
+                h: cell_h,
+            };
             for span in tile {
-                if span.end <= span.start {
+                let Some((key, x0, x1)) = locate_span(span, params, &cell, row, col) else {
                     continue;
-                }
-                let local_start = span.start;
-                let local_end = span.end;
-                if local_start < 0.0 || local_end > cell_w {
-                    continue;
-                }
-                let (mut x0, mut x1) = (cell_x + local_start, cell_x + local_end);
-                let mirror_h = matches!(params.flip, TileFlip::H | TileFlip::Hv) && col % 2 == 1;
-                if mirror_h {
-                    let a = cell_x + (cell_w - local_end);
-                    let b = cell_x + (cell_w - local_start);
-                    x0 = a;
-                    x1 = b;
-                }
-                let mut key = cell_y + span.key as f32;
-                let mirror_v = matches!(params.flip, TileFlip::V | TileFlip::Hv) && row % 2 == 1;
-                if mirror_v {
-                    key = cell_y + (cell_h - span.key as f32 - 1.0);
-                }
-                let key = key.round();
-                if !(0.0..=255.0).contains(&key) {
-                    continue;
-                }
-                let key = key as u16;
+                };
                 if params.whole && !fully_inside(area, key, x0, x1) {
                     continue;
                 }
@@ -97,6 +80,62 @@ pub fn tiled_spans(area: &[RowSpan], tile: &[RowSpan], params: &TilesParams) -> 
             break;
         }
     }
+    sort_spans(&mut out);
+    out
+}
+
+/// 单个网格单元的几何：左上角与块尺寸（tick / key）
+struct CellGeometry {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+/// 把单块 span 投到网格 `(col, row)` 上；返回取整后的 key 与横向区间
+fn locate_span(
+    span: &RowSpan,
+    params: &TilesParams,
+    cell: &CellGeometry,
+    row: usize,
+    col: usize,
+) -> Option<(u16, f32, f32)> {
+    let CellGeometry {
+        x: cell_x,
+        y: cell_y,
+        w: cell_w,
+        h: cell_h,
+    } = *cell;
+    if span.end <= span.start {
+        return None;
+    }
+    let local_start = span.start;
+    let local_end = span.end;
+    if local_start < 0.0 || local_end > cell_w {
+        return None;
+    }
+    let (mut x0, mut x1) = (cell_x + local_start, cell_x + local_end);
+    let mirror_h = matches!(params.flip, TileFlip::H | TileFlip::Hv) && col % 2 == 1;
+    if mirror_h {
+        let a = cell_x + (cell_w - local_end);
+        let b = cell_x + (cell_w - local_start);
+        x0 = a;
+        x1 = b;
+    }
+    let mut key = cell_y + span.key as f32;
+    let mirror_v = matches!(params.flip, TileFlip::V | TileFlip::Hv) && row % 2 == 1;
+    if mirror_v {
+        key = cell_y + (cell_h - span.key as f32 - 1.0);
+    }
+    let key = key.round();
+    if !(0.0..=255.0).contains(&key) {
+        return None;
+    }
+    Some((key as u16, x0, x1))
+}
+
+/// 按 key、起点、终点排序并去重
+fn sort_spans(out: &mut Vec<ColouredSpan>) {
     out.sort_by(|a, b| {
         a.key
             .cmp(&b.key)
@@ -112,7 +151,6 @@ pub fn tiled_spans(area: &[RowSpan], tile: &[RowSpan], params: &TilesParams) -> 
             )
     });
     out.dedup();
-    out
 }
 
 fn colour_for(params: &TilesParams, row: usize, col: usize) -> u8 {

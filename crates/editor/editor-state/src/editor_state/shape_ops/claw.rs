@@ -154,6 +154,40 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
         .map(|note| (note.tick + note.length.max(0.0)) as f64)
         .fold(t0, f64::max);
 
+    let Some(mut working) = cut_pieces(notes, t0, period, k, sub) else {
+        return notes.to_vec();
+    };
+    if working.is_empty() {
+        return Vec::new();
+    }
+
+    warp_pieces(&mut working, params, t0, period, last_end);
+
+    let short_ticks = ppq / 24.0;
+    let mut out = Vec::with_capacity(working.len());
+    for item in working {
+        let length = item.end - item.start;
+        if length <= EPS {
+            continue;
+        }
+        let original = item.original.length.max(0.0) as f64;
+        if params.short && length < short_ticks && original >= short_ticks {
+            continue;
+        }
+        out.push(ShapeNote {
+            track: item.original.track,
+            tick: item.start as f32,
+            key: item.original.key,
+            length: length as f32,
+            velocity: item.original.velocity,
+            channel: item.original.channel,
+        });
+    }
+    out
+}
+
+/// 把音符压到不含丢弃片的区间上；`None` 表示没有任何可供丢弃的段
+fn cut_pieces(notes: &[ShapeNote], t0: f64, period: f64, k: f64, sub: f64) -> Option<Vec<Working>> {
     // 只对「有音符起点」的段制造丢弃片，避免空段带来无意义位移；
     // 用集合而不是「总段数」数组，避免长工程按 period 分配巨量内存。
     let mut segments = BTreeSet::new();
@@ -167,7 +201,7 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
         intervals.push((start, start + sub));
     }
     if intervals.is_empty() {
-        return notes.to_vec();
+        return None;
     }
     let mut prefix = Vec::with_capacity(intervals.len() + 1);
     prefix.push(0.0);
@@ -207,10 +241,11 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
             end: new_end,
         });
     }
-    if working.is_empty() {
-        return Vec::new();
-    }
+    Some(working)
+}
 
+/// `stretch` 拉回原总长，再按 `dist` 在段内弯曲，原地改写区间
+fn warp_pieces(working: &mut [Working], params: &ClawParams, t0: f64, period: f64, last_end: f64) {
     let mut scale = 1.0;
     if params.stretch {
         let original_span = last_end - t0;
@@ -218,7 +253,7 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
         let new_span = new_last - t0;
         if original_span > EPS && new_span > EPS {
             scale = original_span / new_span;
-            for item in &mut working {
+            for item in working.iter_mut() {
                 item.start = t0 + (item.start - t0) * scale;
                 item.end = t0 + (item.end - t0) * scale;
             }
@@ -229,7 +264,7 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
         let period_scaled = period * scale;
         if period_scaled > EPS {
             let power = 1.0 + params.dist as f64 / 100.0;
-            for item in &mut working {
+            for item in working.iter_mut() {
                 let segment = ((item.start - t0) / period_scaled).floor().max(0.0);
                 let segment_start = t0 + segment * period_scaled;
                 let warp = |time: f64| {
@@ -248,28 +283,6 @@ fn time_mode(notes: &[ShapeNote], params: &ClawParams, ppq: f64) -> Vec<ShapeNot
             }
         }
     }
-
-    let short_ticks = ppq / 24.0;
-    let mut out = Vec::with_capacity(working.len());
-    for item in working {
-        let length = item.end - item.start;
-        if length <= EPS {
-            continue;
-        }
-        let original = item.original.length.max(0.0) as f64;
-        if params.short && length < short_ticks && original >= short_ticks {
-            continue;
-        }
-        out.push(ShapeNote {
-            track: item.original.track,
-            tick: item.start as f32,
-            key: item.original.key,
-            length: length as f32,
-            velocity: item.original.velocity,
-            channel: item.original.channel,
-        });
-    }
-    out
 }
 
 #[cfg(test)]

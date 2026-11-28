@@ -49,6 +49,23 @@ fn fill_end(edge: f32) -> i32 {
     ((edge - 0.5).floor() + 1.0) as i32
 }
 
+/// 音符落到 band 上的像素几何与两条颜色；全部为裁剪后的整数像素。
+#[derive(Clone, Copy)]
+struct NoteRaster {
+    /// 外框 `[x0, x1) × [y0, y1)`。
+    outer: (i32, i32, i32, i32),
+    /// 填充内框 `[x0, x1) × [y0, y1)`，已裁剪到外框。
+    fill_box: (i32, i32, i32, i32),
+    /// 轨道填充色。
+    fill: u32,
+    /// 轨道描边色。
+    border: u32,
+    /// 洋葱皮 owner 值。
+    owner_value: u32,
+    /// owner 写入上限（0 = 只占未使用像素）。
+    owner_limit: u32,
+}
+
 /// 画一条音符；矩形与 band/视口无交集时返回 `false`。
 pub(crate) fn draw_note(
     job: &BandJob,
@@ -102,55 +119,97 @@ pub(crate) fn draw_note(
     fy1 = fy1.min(iy1);
     let has_fill = fx1 > fx0 && fy1 > fy0;
 
+    let raster = NoteRaster {
+        outer: (ix0, ix1, iy0, iy1),
+        fill_box: (fx0, fx1, fy0, fy1),
+        fill,
+        border,
+        owner_value,
+        owner_limit,
+    };
     let mut covered = 0usize;
-
     if !has_fill {
-        // 细音符 / 纯描边：宽度 ≤ 8px 时直接遍历像素，避免每行一次函数调用。
-        let width_px = ix1 - ix0;
-        if width_px == 1 {
-            covered += draw_pixel_column(
+        draw_stroked_note(job, buffer, raster, &mut covered);
+        return Some(covered);
+    }
+    draw_filled_note(job, buffer, raster, &mut covered);
+    Some(covered)
+}
+
+/// 纯描边路径：按宽度选择像素列、整块或逐行填充。
+fn draw_stroked_note(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    raster: NoteRaster,
+    covered: &mut usize,
+) {
+    let NoteRaster {
+        outer: (ix0, ix1, iy0, iy1),
+        border,
+        owner_value,
+        owner_limit,
+        ..
+    } = raster;
+    // 细音符 / 纯描边：宽度 ≤ 8px 时直接遍历像素，避免每行一次函数调用。
+    let width_px = ix1 - ix0;
+    if width_px == 1 {
+        *covered += draw_pixel_column(
+            buffer,
+            ix0 - job.x0 as i32,
+            iy0,
+            iy1,
+            border,
+            owner_value,
+            owner_limit,
+        );
+    } else if width_px <= 8 {
+        *covered += draw_owner_block(
+            buffer,
+            job.x0,
+            ix0,
+            ix1,
+            iy0,
+            iy1,
+            border,
+            owner_value,
+            owner_limit,
+        );
+    } else {
+        for y in iy0..iy1 {
+            *covered += draw_segment(
                 buffer,
-                ix0 - job.x0 as i32,
-                iy0,
-                iy1,
-                border,
-                owner_value,
-                owner_limit,
-            );
-        } else if width_px <= 8 {
-            covered += draw_owner_block(
-                buffer,
+                y,
                 job.x0,
                 ix0,
                 ix1,
-                iy0,
-                iy1,
                 border,
                 owner_value,
                 owner_limit,
+                job.simd,
             );
-        } else {
-            for y in iy0..iy1 {
-                covered += draw_segment(
-                    buffer,
-                    y,
-                    job.x0,
-                    ix0,
-                    ix1,
-                    border,
-                    owner_value,
-                    owner_limit,
-                    job.simd,
-                );
-            }
         }
-        return Some(covered);
     }
+}
 
+/// 填充路径：逐行合成「左描边 + 填充 + 右描边」，与着色器稳定序一致。
+fn draw_filled_note(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    raster: NoteRaster,
+    covered: &mut usize,
+) {
+    let NoteRaster {
+        outer: (ix0, ix1, iy0, iy1),
+        fill_box: (fx0, fx1, fy0, fy1),
+        fill,
+        border,
+        owner_value,
+        owner_limit,
+    } = raster;
     for y in iy0..iy1 {
         if y >= fy0 && y < fy1 {
             if fx0 > ix0 {
-                covered += draw_segment(
+                *covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
@@ -162,7 +221,7 @@ pub(crate) fn draw_note(
                     job.simd,
                 );
             }
-            covered += draw_segment(
+            *covered += draw_segment(
                 buffer,
                 y,
                 job.x0,
@@ -174,7 +233,7 @@ pub(crate) fn draw_note(
                 job.simd,
             );
             if ix1 > fx1 {
-                covered += draw_segment(
+                *covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
@@ -187,7 +246,7 @@ pub(crate) fn draw_note(
                 );
             }
         } else {
-            covered += draw_segment(
+            *covered += draw_segment(
                 buffer,
                 y,
                 job.x0,
@@ -200,7 +259,6 @@ pub(crate) fn draw_note(
             );
         }
     }
-    Some(covered)
 }
 
 #[allow(clippy::too_many_arguments)]
