@@ -9,6 +9,36 @@ use crate::shader::create_shader_module;
 /// 走带音符着色器（直接复用钢琴卷帘常驻 GPU 音符缓冲）
 const NOTE_VERTEX_SHADER: &str = include_str!("../shaders/arrangement_note.wgsl");
 
+/// 覆盖层资源：管线、uniform、实例缓冲与绑定组。
+struct OverlayResources {
+    pipeline: wgpu::RenderPipeline,
+    uniform_buffer: TrackedBuffer,
+    overlay_buffer: TrackedBuffer,
+    bind_group: wgpu::BindGroup,
+}
+
+/// 音符绘制阶段资源：管线与绑定组布局。
+struct NoteDrawResources {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+/// 音符裁剪阶段资源：计算管线与绑定组布局。
+struct NoteCullResources {
+    pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+/// 音符层缓冲资源：uniform、泳道映射、可见索引、间接参数、裁剪 uniform 与占位源。
+struct NoteBuffers {
+    note_uniform_buffer: TrackedBuffer,
+    lane_index_buffer: TrackedBuffer,
+    note_visible_buffer: TrackedBuffer,
+    note_indirect_buffer: TrackedBuffer,
+    cull_info_buffer: TrackedBuffer,
+    placeholder_source: wgpu::Buffer,
+}
+
 impl ArrangementRenderer {
     /// 创建新的走带渲染器（默认带 depth attachment）
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
@@ -25,6 +55,42 @@ impl ArrangementRenderer {
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
+        let overlay = Self::create_overlay_resources(device, format, needs_depth);
+        let note_draw = Self::create_note_draw_resources(device, format, needs_depth);
+        let note_cull = Self::create_note_cull_resources(device);
+        let buffers = Self::create_note_buffers(device);
+
+        Self {
+            pipeline: overlay.pipeline,
+            uniform_buffer: overlay.uniform_buffer,
+            overlay_buffer: overlay.overlay_buffer,
+            overlay_capacity: INITIAL_CAPACITY,
+            overlay_count: 0,
+            overlay_back_len: 0,
+            bind_group: overlay.bind_group,
+            note_pipeline: note_draw.pipeline,
+            note_cull_pipeline: note_cull.pipeline,
+            note_uniform_buffer: buffers.note_uniform_buffer,
+            lane_index_buffer: buffers.lane_index_buffer,
+            lane_index_capacity: INITIAL_LANE_CAPACITY,
+            note_draw_bind_group: None,
+            note_cull_bind_group: None,
+            note_cull_bind_group_layout: note_cull.bind_group_layout,
+            note_draw_bind_group_layout: note_draw.bind_group_layout,
+            note_visible_buffer: buffers.note_visible_buffer,
+            note_indirect_buffer: buffers.note_indirect_buffer,
+            cull_info_buffer: buffers.cull_info_buffer,
+            note_source: buffers.placeholder_source,
+            note_instance_count: 0,
+        }
+    }
+
+    /// 创建覆盖层管线及其 uniform、实例缓冲与绑定组。
+    fn create_overlay_resources(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> OverlayResources {
         // ── 覆盖层管线（屏幕空间实例，每帧重建）──
         let shader = create_shader_module(device, "arrangement_shader", VERTEX_SHADER);
 
@@ -88,6 +154,20 @@ impl ArrangementRenderer {
             }],
         });
 
+        OverlayResources {
+            pipeline,
+            uniform_buffer,
+            overlay_buffer,
+            bind_group,
+        }
+    }
+
+    /// 创建音符绘制管线（复用钢琴卷帘常驻缓冲）及其绘制绑定组布局。
+    fn create_note_draw_resources(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> NoteDrawResources {
         // ── 音符管线：复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）──
         // 顶点输入改为 cull 阶段输出的 u32 源索引（instance-step），
         // VS 从 all_instances storage buffer 回查原实例。
@@ -154,74 +234,15 @@ impl ArrangementRenderer {
                 ))
                 .build();
 
-        // 裁剪阶段 bind group layout（计算着色器）
-        let note_cull_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("arrangement_note_cull_bind_group_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 5,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+        NoteDrawResources {
+            pipeline: note_pipeline,
+            bind_group_layout: note_draw_bind_group_layout,
+        }
+    }
 
+    /// 创建裁剪阶段的计算管线及其绑定组布局（先布局、后管线，保持创建顺序）。
+    fn create_note_cull_resources(device: &wgpu::Device) -> NoteCullResources {
+        let note_cull_bind_group_layout = Self::create_note_cull_bind_group_layout(device);
         let note_cull_pipeline = ComputePipelineBuilder::new(
             device,
             "arrangement_note_cull_pipeline",
@@ -230,6 +251,83 @@ impl ArrangementRenderer {
         .bind_group(&note_cull_bind_group_layout)
         .build();
 
+        NoteCullResources {
+            pipeline: note_cull_pipeline,
+            bind_group_layout: note_cull_bind_group_layout,
+        }
+    }
+
+    /// 裁剪阶段 bind group layout（计算着色器）。
+    fn create_note_cull_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("arrangement_note_cull_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        })
+    }
+
+    /// 创建音符层全部缓冲（uniform / 泳道映射 / 可见索引 / 间接参数 / 占位源）。
+    fn create_note_buffers(device: &wgpu::Device) -> NoteBuffers {
         let note_uniform_buffer = TrackedBuffer::new_init(
             device,
             &wgpu::util::BufferInitDescriptor {
@@ -299,28 +397,13 @@ impl ArrangementRenderer {
             mapped_at_creation: false,
         });
 
-        Self {
-            pipeline,
-            uniform_buffer,
-            overlay_buffer,
-            overlay_capacity: INITIAL_CAPACITY,
-            overlay_count: 0,
-            overlay_back_len: 0,
-            bind_group,
-            note_pipeline,
-            note_cull_pipeline,
+        NoteBuffers {
             note_uniform_buffer,
             lane_index_buffer,
-            lane_index_capacity: INITIAL_LANE_CAPACITY,
-            note_draw_bind_group: None,
-            note_cull_bind_group: None,
-            note_cull_bind_group_layout,
-            note_draw_bind_group_layout,
             note_visible_buffer,
             note_indirect_buffer,
             cull_info_buffer,
-            note_source: placeholder_source,
-            note_instance_count: 0,
+            placeholder_source,
         }
     }
 

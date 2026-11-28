@@ -3,8 +3,56 @@ use std::time::{Duration, Instant};
 
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
+use super::Renderers;
 use super::runner::context::{RenderContext, RenderFrameState};
-use crate::{CameraParams, CameraUniform, WaterfallTileCoord};
+use crate::{CameraParams, CameraUniform, TextureWaterfallRenderer, WaterfallTileCoord};
+
+/// 渲染通道的不可变配置：目标视图、深度视图、清屏色与尺寸。
+///
+/// 视图句柄按值持有（仅引用计数克隆，不新建 GPU 资源），使各绘制阶段能在
+/// 自身作用域内派生出短生命周期的附件引用，避免 render pass 借用被拉长。
+struct PassConfig<'a> {
+    params: &'a RenderParams,
+    view: wgpu::TextureView,
+    depth_view: Option<wgpu::TextureView>,
+    clear_color: wgpu::Color,
+    size: (u32, u32),
+}
+
+impl PassConfig<'_> {
+    /// 深度附件参数（与拆分前完全一致：清 1.0、Discard、无 stencil）。
+    fn depth_attachment(&self) -> Option<wgpu::RenderPassDepthStencilAttachment<'_>> {
+        self.depth_view
+            .as_ref()
+            .map(|dv| wgpu::RenderPassDepthStencilAttachment {
+                view: dv,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            })
+    }
+}
+
+/// 卷帘绘制阶段的可变资源集合。
+struct RollPassEnv<'a> {
+    config: PassConfig<'a>,
+    ctx: &'a RenderContext,
+    renderers: &'a mut Renderers,
+    waterfall: &'a mut Option<TextureWaterfallRenderer>,
+}
+
+/// 绘制目标渲染器（共享引用：`draw` 方法把 `&self` 持有至 pass 结束）。
+struct DrawTargets<'a> {
+    grid: &'a crate::GridRenderer,
+    vertical_grid: &'a crate::GridRenderer,
+    note: &'a crate::NoteRenderer,
+    onion_skin: &'a crate::NoteRenderer,
+    ruler: &'a crate::RulerRenderer,
+    cc_bar: &'a crate::CcBarRenderer,
+    waterfall: Option<&'a TextureWaterfallRenderer>,
+}
 
 /// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
 pub fn execute_render_pass(
@@ -24,12 +72,12 @@ pub fn execute_render_pass(
 
     // 优先使用 ensure_textures 缓存的 texture view；未命中时退化为每帧创建
     let mut fresh_view: Option<wgpu::TextureView> = None;
-    let view: &wgpu::TextureView = if let Some(v) = frame.texture_view.as_ref() {
-        v
+    let view = if let Some(v) = frame.texture_view.as_ref() {
+        v.clone()
     } else {
         fresh_view = Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
-        match fresh_view {
-            Some(ref v) => v,
+        match fresh_view.as_ref() {
+            Some(v) => v.clone(),
             None => {
                 debug_assert!(false, "fresh_view 刚被赋值为 Some，不应为 None");
                 return;
@@ -38,20 +86,11 @@ pub fn execute_render_pass(
     };
 
     // depth 仅在需要时存在（视频导出为纯 2D，跳过 depth attachment）
-    let depth_view = frame.depth_texture_view.as_ref();
+    let depth_view = frame.depth_texture_view.clone();
     // 是否存在 depth attachment —— 同时是「能否用 early-Z」的唯一判据（PREF-005）：
     // 有 depth 的 UI 路径走 VS cull 直绘；无 depth 的导出路径保留 compute cull
     // （early-Z 不可用，直绘会把 FS 全量铺开）。
     let has_depth = depth_view.is_some();
-
-    let depth_stencil_attachment = depth_view.map(|dv| wgpu::RenderPassDepthStencilAttachment {
-        view: dv,
-        depth_ops: Some(wgpu::Operations {
-            load: wgpu::LoadOp::Clear(1.0),
-            store: wgpu::StoreOp::Discard,
-        }),
-        stencil_ops: None,
-    });
 
     let clear_color = wgpu::Color {
         r: params.background_color[0],
@@ -60,43 +99,95 @@ pub fn execute_render_pass(
         a: params.background_color[3],
     };
 
+    let config = PassConfig {
+        params,
+        view,
+        depth_view,
+        clear_color,
+        size: (width, height),
+    };
+
     // 工程走带模式：渲染走带背景和音符
     if params.is_arrangement_mode {
-        puffin::profile_scope!("arrangement::render_pass");
-        // 排列模式同样需要 scissor rect 剔除，避免渲染视口外音符
-        let arr_scissor_x = ((params.canvas_offset.0 * params.scale_factor) as u32).min(width);
-        let arr_scissor_y = ((params.canvas_offset.1 * params.scale_factor) as u32).min(height);
-        let arr_scissor_w = ((params.canvas_size.0 * params.scale_factor) as u32)
-            .min(width.saturating_sub(arr_scissor_x));
-        let arr_scissor_h = ((params.canvas_size.1 * params.scale_factor) as u32)
-            .min(height.saturating_sub(arr_scissor_y));
-
-        // GPU 裁剪计算 pass：全量单次分发覆盖整份共享缓冲，输出可见实例索引 +
-        // indirect 计数（绘制阶段 draw_indirect 一次性提交，CPU 零参与）
-        frame.renderers.arrangement.run_cull(encoder);
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("arrangement_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear_color),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: depth_stencil_attachment.clone(),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_scissor_rect(arr_scissor_x, arr_scissor_y, arr_scissor_w, arr_scissor_h);
-        // 走带渲染器绘制（背景 + 网格 + 音符 + 演奏指示线）
-        frame.renderers.arrangement.draw(&mut render_pass);
+        draw_arrangement(encoder, &mut *frame.renderers, &config);
         return;
     }
 
+    prepare_note_passes(
+        encoder,
+        &ctx.queue,
+        &mut *frame.renderers,
+        params,
+        has_depth,
+    );
+
+    let mut env = RollPassEnv {
+        config,
+        ctx,
+        renderers: &mut *frame.renderers,
+        waterfall: &mut *frame.texture_waterfall_renderer,
+    };
+    draw_roll_pass(encoder, &mut env, waterfall_visible_coords, render_notes);
+
+    // 若本帧退化为每帧创建 view，则缓存它供后续复用
+    if let Some(v) = fresh_view {
+        *frame.texture_view = Some(v);
+    }
+}
+
+/// 工程走带 pass：裁剪计算后按单一 render pass 绘制走带背景、网格与音符。
+fn draw_arrangement(
+    encoder: &mut wgpu::CommandEncoder,
+    renderers: &mut Renderers,
+    config: &PassConfig<'_>,
+) {
+    puffin::profile_scope!("arrangement::render_pass");
+    // 排列模式同样需要 scissor rect 剔除，避免渲染视口外音符
+    let (width, height) = config.size;
+    let arr_scissor_x =
+        ((config.params.canvas_offset.0 * config.params.scale_factor) as u32).min(width);
+    let arr_scissor_y =
+        ((config.params.canvas_offset.1 * config.params.scale_factor) as u32).min(height);
+    let arr_scissor_w = ((config.params.canvas_size.0 * config.params.scale_factor) as u32)
+        .min(width.saturating_sub(arr_scissor_x));
+    let arr_scissor_h = ((config.params.canvas_size.1 * config.params.scale_factor) as u32)
+        .min(height.saturating_sub(arr_scissor_y));
+
+    // GPU 裁剪计算 pass：全量单次分发覆盖整份共享缓冲，输出可见实例索引 +
+    // indirect 计数（绘制阶段 draw_indirect 一次性提交，CPU 零参与）
+    renderers.arrangement.run_cull(encoder);
+
+    let view = &config.view;
+    let depth_stencil_attachment = config.depth_attachment();
+    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("arrangement_render_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(config.clear_color),
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    render_pass.set_scissor_rect(arr_scissor_x, arr_scissor_y, arr_scissor_w, arr_scissor_h);
+    // 走带渲染器绘制（背景 + 网格 + 音符 + 演奏指示线）
+    renderers.arrangement.draw(&mut render_pass);
+}
+
+/// 钢琴卷帘模式：构造相机并按渲染档位选择音符/洋葱皮的 prepare 路径。
+fn prepare_note_passes(
+    encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
+    renderers: &mut Renderers,
+    params: &RenderParams,
+    has_depth: bool,
+) {
     // 钢琴卷帘模式：正常渲染（纵向头部对齐键盘顶部，向远离键盘方向递增，复用同 GPU 数据）
     let camera = CameraUniform::new(CameraParams {
         scroll: [params.scroll.0, params.scroll.1],
@@ -114,21 +205,17 @@ pub fn execute_render_pass(
         // `draw_direct_vertical`（不读 cull 产出的可见索引/indirect），若此处仍走
         // `prepare_vertical_pass`，那趟 compute cull 就是**纯粹的每帧浪费**。
         // 洋葱皮纵向保持 cull：纵向直绘管线只为预览层创建（见 `note_renderer::init`）。
-        frame.renderers.note.prepare_direct(camera, &ctx.queue);
-        frame
-            .renderers
+        renderers.note.prepare_direct(camera, queue);
+        renderers
             .onion_skin
-            .prepare_vertical_pass(encoder, camera, &ctx.queue);
+            .prepare_vertical_pass(encoder, camera, queue);
     } else if params.subpixel_note_mode {
         // 亚像素档位（PREF-004 P1）：主音符层走点图元直绘，可见性判定移入
         // `vs_point`，**跳过 cull pass**（真机 16M 全景：cull 1.60ms / draw 13.44ms）。
         // 预览层（`note`）实例数由 §18 视口窗口界定、可见占比 ≈ 100%，故同样直绘
         // 并跳过 cull pass（`prepare_direct` 只写相机 uniform）。
-        frame.renderers.note.prepare_direct(camera, &ctx.queue);
-        frame
-            .renderers
-            .onion_skin
-            .prepare_direct(camera, &ctx.queue);
+        renderers.note.prepare_direct(camera, queue);
+        renderers.onion_skin.prepare_direct(camera, queue);
     } else if has_depth && params.vs_cull_mode {
         // UI 路径 + 近全量可见闸门（PREF-005）：主音符层取消 compute cull，改由
         // `vs_direct` 自判可见，并按 `instance_index` 升序（= `region_depth` 近→远序）
@@ -137,204 +224,252 @@ pub fn execute_render_pass(
         // 实测慢 8 倍（1.5 万可见 / 1600 万总数）。仅当可见占比 > 90% 才占优。
         // 预览层恒直绘（可见占比 ≈ 100%）：既保证重叠区「后来者居上」（§19），
         // 又省掉每帧一次 cull dispatch。
-        frame.renderers.note.prepare_direct(camera, &ctx.queue);
-        frame
-            .renderers
-            .onion_skin
-            .prepare_direct(camera, &ctx.queue);
-    } else if frame.renderers.note.has_direct_pipeline() {
+        renderers.note.prepare_direct(camera, queue);
+        renderers.onion_skin.prepare_direct(camera, queue);
+    } else if renderers.note.has_direct_pipeline() {
         // 预览层恒直绘（可见占比 ≈ 100%，见上），洋葱皮仍走 cull
-        frame.renderers.note.prepare_direct(camera, &ctx.queue);
-        frame
-            .renderers
-            .onion_skin
-            .prepare_pass(encoder, camera, &ctx.queue);
+        renderers.note.prepare_direct(camera, queue);
+        renderers.onion_skin.prepare_pass(encoder, camera, queue);
     } else {
         // 无直绘管线的音符渲染器（视频导出的 `needs_depth=false` 变体）：
         // **必须**跑 compute cull。`draw_direct` 在缺少直绘管线时会回退到
         // `draw_with_pipeline` → `draw_indirect`，而 indirect 参数只由 cull 写入；
         // 若此处沿用 `prepare_direct`（只写相机 uniform），参数恒为 0 ⇒
         // 整帧一个音符都不画（取证：`note_renderer/export_path_tests`）。
-        frame
-            .renderers
-            .note
-            .prepare_pass(encoder, camera, &ctx.queue);
-        frame
-            .renderers
-            .onion_skin
-            .prepare_pass(encoder, camera, &ctx.queue);
+        renderers.note.prepare_pass(encoder, camera, queue);
+        renderers.onion_skin.prepare_pass(encoder, camera, queue);
     }
+}
 
+/// 卷帘 render pass：按网格 → CPU 洋葱皮 → GPU 洋葱皮/瀑布流 → 音符 → 标尺 → CC 的顺序编码。
+fn draw_roll_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    env: &mut RollPassEnv<'_>,
+    coords: &[WaterfallTileCoord],
+    render_notes: bool,
+) {
+    puffin::profile_scope!("render_pass");
+    let view = &env.config.view;
+    let depth_stencil_attachment = env.config.depth_attachment();
+    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("offscreen_render_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(env.config.clear_color),
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
+
+    // 计算裁剪区域
+    let params = env.config.params;
+    let scale = params.scale_factor;
+    let (width, height) = env.config.size;
+    let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
+    let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
+    let scissor_width =
+        ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
+    let scissor_height =
+        ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
+    let scissor = (scissor_x, scissor_y, scissor_width, scissor_height);
+
+    let targets = DrawTargets {
+        grid: &env.renderers.grid,
+        vertical_grid: &env.renderers.vertical_grid,
+        note: &env.renderers.note,
+        onion_skin: &env.renderers.onion_skin,
+        ruler: &env.renderers.ruler,
+        cc_bar: &env.renderers.cc_bar,
+        waterfall: env.waterfall.as_ref(),
+    };
+
+    draw_grid(&mut render_pass, &targets, params, scissor);
+
+    // CPU 洋葱皮透明叠加层（B 方案）：网格之上、GPU 洋葱皮与当前轨之前。
+    // - 走带模式已在函数开头提前 `return`，本层结构上不会绘制；
+    // - 管线携带只读 `DEPTH_FORMAT` 状态，只有带 depth attachment 的 UI 通道
+    //   可以绘制；导出通道无 depth，本步不接（`cpu_onion_frame` 恒 None），
+    //   以 `has_depth` 兜底避免 wgpu 管线/通道不兼容校验；
+    // - `cpu_onion_frame` 为 `None`（默认）时整段跳过，零行为变化。
+    if env.config.depth_view.is_some()
+        && let Some(cpu_frame) = params.cpu_onion_frame.as_ref()
     {
-        puffin::profile_scope!("render_pass");
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("offscreen_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear_color),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: depth_stencil_attachment.clone(),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        // 计算裁剪区域
-        let scale = params.scale_factor;
-        let scissor_x = ((params.canvas_offset.0 * scale) as u32).min(width);
-        let scissor_y = ((params.canvas_offset.1 * scale) as u32).min(height);
-        let scissor_width =
-            ((params.canvas_size.0 * scale) as u32).min(width.saturating_sub(scissor_x));
-        let scissor_height =
-            ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
-
-        // 绘制背景网格（纵向 wgpu 转置版：键盘在底部，Key 范围八度分割更明显）
-        //
-        // 叠加层接管卷帘骨架时（`skip_roll_chrome`）：网格绘制的裁剪区去掉
-        // 键盘列与标尺行，这两块由 egui 用同一套主题色绘制（键盘 / 标尺），
-        // 中央网格线仍由本通道绘制，音符不受影响。
-        let grid_scissor = skip_roll_chrome_scissor(
-            (scissor_x, scissor_y, scissor_width, scissor_height),
-            params.keyboard_width,
-            params.ruler_height,
-            scale,
-            params.skip_roll_chrome && !params.is_vertical_roll,
-        );
-        render_pass.set_scissor_rect(
-            grid_scissor.0,
-            grid_scissor.1,
-            grid_scissor.2,
-            grid_scissor.3,
-        );
-        if params.is_vertical_roll {
-            frame.renderers.vertical_grid.draw(&mut render_pass, 1);
-        } else {
-            frame.renderers.grid.draw(&mut render_pass, 1);
-        }
-
-        // CPU 洋葱皮透明叠加层（B 方案）：网格之上、GPU 洋葱皮与当前轨之前。
-        // - 走带模式已在函数开头提前 `return`，本层结构上不会绘制；
-        // - 管线携带只读 `DEPTH_FORMAT` 状态，只有带 depth attachment 的 UI 通道
-        //   可以绘制；导出通道无 depth，本步不接（`cpu_onion_frame` 恒 None），
-        //   以 `has_depth` 兜底避免 wgpu 管线/通道不兼容校验；
-        // - `cpu_onion_frame` 为 `None`（默认）时整段跳过，零行为变化。
-        if has_depth && let Some(cpu_frame) = params.cpu_onion_frame.as_ref() {
-            // 受既有 canvas scissor 约束（与网格/音符同一剔除区域）
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            frame.renderers.cpu_onion.set_viewport(width, height);
-            frame.renderers.cpu_onion.prepare(&ctx.queue, cpu_frame);
-            frame.renderers.cpu_onion.draw(&mut render_pass, cpu_frame);
-        }
-
-        // 绘制贴图瀑布流（不透明背景层，网格之上、主音轨之前）
-        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        let onion_has_instances = frame.renderers.onion_skin.last_upload_count() > 0;
-        if params.is_vertical_roll {
-            frame
-                .renderers
-                .onion_skin
-                .draw_vertical(&mut render_pass, onion_has_instances, None);
-        } else if params.subpixel_note_mode {
-            // 点图元直绘：每实例 1 顶点 1 点，不读可见索引缓冲（无 cull 输出）
-            frame
-                .renderers
-                .onion_skin
-                .draw_points(&mut render_pass, onion_has_instances, None);
-        } else if has_depth && params.vs_cull_mode {
-            // VS cull 直绘：每 chunk 4 顶点 × chunk_len 实例，实例序 = 深度序
-            frame
-                .renderers
-                .onion_skin
-                .draw_direct(&mut render_pass, onion_has_instances, None);
-        } else {
-            frame
-                .renderers
-                .onion_skin
-                .draw(&mut render_pass, onion_has_instances, None);
-        }
-
-        // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
-        //
-        // 洋葱皮全局开关关闭（`!params.onion_visible`）时整块跳过：高精度贴图
-        // 同样是「其它音轨的幽灵音符」，只藏 GPU 实例层会留下一份幽灵贴图
-        // （用户要求「关闭就彻底关闭」）。贴图资源不卸载——关闭只是不画。
-        //
-        // CPU 洋葱皮后端（`cpu_onion_active`）跳过本块：非当前轨的洋葱皮由 CPU
-        // 透明叠加层负责，hires 贴图再叠一层会**双重绘制**（互相遮挡、白付采样），
-        // 且该叠加层是半废稿（Step 4/后续卡片整体改造）。默认 `false` → 行为不变。
-        if params.onion_visible
-            && !params.cpu_onion_active
-            && let Some(waterfall) = frame.texture_waterfall_renderer.as_ref()
-        {
-            let has_depth = depth_view.is_some();
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            waterfall.render(&mut render_pass, waterfall_visible_coords, has_depth);
-            // 绘制编辑后的临时脏区域覆层（在正常贴图之上，颜色与当前音轨一致）
-            waterfall.render_dirty_overlays(&mut render_pass, waterfall_visible_coords, has_depth);
-        }
-
-        // 绘制音符（纵向复用同 MIDI GPU 数据，瀑布流风格纵向流动）
-        if render_notes {
-            render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            if params.is_vertical_roll {
-                // 预览层纵向同样走 VS 直绘（`note_vertical.wgsl::vs_direct`）：
-                // 实例序 = 提交序 ⇒ 重叠预览矩形恒为「后来者居上」（§19.4 补齐）。
-                frame.renderers.note.draw_direct_vertical(
-                    &mut render_pass,
-                    true,
-                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-                );
-            } else {
-                // 预览层走 VS 直绘（PREF-005 入口）：实例序 = 提交序，重叠预览矩形
-                // 恒为「后来者居上」，与 cull 抢占式槽位的逐帧随机序解耦（z-order
-                // 闪烁修复，2026-10）。无直绘管线时 `draw_direct` 内部回退 cull 路径。
-                frame.renderers.note.draw_direct(
-                    &mut render_pass,
-                    true,
-                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-                );
-            }
-        }
-
-        // 绘制标尺（纵向已由 wgpu 网格 + Canvas 小节号文本接管，跳过横向 RulerRenderer）
-        //
-        // 叠加层接管骨架时标尺由 egui 绘制（`skip_roll_chrome`），本通道不再提交
-        // 标尺实例，避免同一行像素被两套渲染叠加。egui 标尺已支持拍号分段
-        // （`ruler::measure_labels`），因此横向标尺不再有「让位给 gfx」的分支。
-        if !params.is_vertical_roll && !params.skip_roll_chrome {
-            let ruler_count = frame.renderers.ruler.instance_count();
-            if ruler_count > 0 {
-                render_pass.set_scissor_rect(0, 0, width, height);
-                frame
-                    .renderers
-                    .ruler
-                    .draw(&mut render_pass, ruler_count as u32);
-            }
-        }
-
-        // 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）
-        if let Some((vx, vy, vw, vh)) = params.velocity_panel_rect {
-            let scale = params.scale_factor;
-            let vscissor_x = ((vx * scale) as u32).min(width);
-            let vscissor_y = ((vy * scale) as u32).min(height);
-            let vscissor_w = ((vw * scale) as u32).min(width.saturating_sub(vscissor_x));
-            let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
-
-            render_pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
-            frame
-                .renderers
-                .cc_bar
-                .draw(&mut render_pass, params.cc_bar_instances.len() as u32);
-        }
+        // 受既有 canvas scissor 约束（与网格/音符同一剔除区域）
+        render_pass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+        env.renderers.cpu_onion.set_viewport(width, height);
+        env.renderers.cpu_onion.prepare(&env.ctx.queue, cpu_frame);
+        env.renderers.cpu_onion.draw(&mut render_pass, cpu_frame);
     }
 
-    // 若本帧退化为每帧创建 view，则缓存它供后续复用
-    if let Some(v) = fresh_view {
-        *frame.texture_view = Some(v);
+    let has_depth = env.config.depth_view.is_some();
+    draw_gpu_onion(&mut render_pass, &targets, params, has_depth, scissor);
+    draw_waterfall(
+        &mut render_pass,
+        &targets,
+        params,
+        has_depth,
+        scissor,
+        coords,
+    );
+    draw_notes(&mut render_pass, &targets, params, scissor, render_notes);
+    draw_ruler(&mut render_pass, &targets, params, width, height);
+    draw_cc_bar(&mut render_pass, &targets, params, width, height);
+}
+
+/// 绘制背景网格（纵向 wgpu 转置版：键盘在底部，Key 范围八度分割更明显）。
+fn draw_grid<'r>(
+    pass: &mut wgpu::RenderPass<'r>,
+    targets: &DrawTargets<'r>,
+    params: &RenderParams,
+    scissor: (u32, u32, u32, u32),
+) {
+    // 叠加层接管卷帘骨架时（`skip_roll_chrome`）：网格绘制的裁剪区去掉
+    // 键盘列与标尺行，这两块由 egui 用同一套主题色绘制（键盘 / 标尺），
+    // 中央网格线仍由本通道绘制，音符不受影响。
+    let grid_scissor = skip_roll_chrome_scissor(
+        scissor,
+        params.keyboard_width,
+        params.ruler_height,
+        params.scale_factor,
+        params.skip_roll_chrome && !params.is_vertical_roll,
+    );
+    pass.set_scissor_rect(
+        grid_scissor.0,
+        grid_scissor.1,
+        grid_scissor.2,
+        grid_scissor.3,
+    );
+    if params.is_vertical_roll {
+        targets.vertical_grid.draw(pass, 1);
+    } else {
+        targets.grid.draw(pass, 1);
+    }
+}
+
+/// 绘制贴图瀑布流（不透明背景层，网格之上、主音轨之前）。
+fn draw_gpu_onion<'r>(
+    pass: &mut wgpu::RenderPass<'r>,
+    targets: &DrawTargets<'r>,
+    params: &RenderParams,
+    has_depth: bool,
+    scissor: (u32, u32, u32, u32),
+) {
+    pass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+    let onion_has_instances = targets.onion_skin.last_upload_count() > 0;
+    if params.is_vertical_roll {
+        targets
+            .onion_skin
+            .draw_vertical(pass, onion_has_instances, None);
+    } else if params.subpixel_note_mode {
+        // 点图元直绘：每实例 1 顶点 1 点，不读可见索引缓冲（无 cull 输出）
+        targets
+            .onion_skin
+            .draw_points(pass, onion_has_instances, None);
+    } else if has_depth && params.vs_cull_mode {
+        // VS cull 直绘：每 chunk 4 顶点 × chunk_len 实例，实例序 = 深度序
+        targets
+            .onion_skin
+            .draw_direct(pass, onion_has_instances, None);
+    } else {
+        targets.onion_skin.draw(pass, onion_has_instances, None);
+    }
+}
+
+/// 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）与临时脏区域覆层。
+fn draw_waterfall<'r>(
+    pass: &mut wgpu::RenderPass<'r>,
+    targets: &DrawTargets<'r>,
+    params: &RenderParams,
+    has_depth: bool,
+    scissor: (u32, u32, u32, u32),
+    coords: &[WaterfallTileCoord],
+) {
+    // 洋葱皮全局开关关闭（`!params.onion_visible`）时整块跳过：高精度贴图
+    // 同样是「其它音轨的幽灵音符」，只藏 GPU 实例层会留下一份幽灵贴图
+    // （用户要求「关闭就彻底关闭」）。贴图资源不卸载——关闭只是不画。
+    //
+    // CPU 洋葱皮后端（`cpu_onion_active`）跳过本块：非当前轨的洋葱皮由 CPU
+    // 透明叠加层负责，hires 贴图再叠一层会**双重绘制**（互相遮挡、白付采样），
+    // 且该叠加层是半废稿（Step 4/后续卡片整体改造）。默认 `false` → 行为不变。
+    if params.onion_visible
+        && !params.cpu_onion_active
+        && let Some(waterfall) = targets.waterfall
+    {
+        pass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+        waterfall.render(pass, coords, has_depth);
+        // 绘制编辑后的临时脏区域覆层（在正常贴图之上，颜色与当前音轨一致）
+        waterfall.render_dirty_overlays(pass, coords, has_depth);
+    }
+}
+
+/// 绘制音符（纵向复用同 MIDI GPU 数据，瀑布流风格纵向流动）。
+fn draw_notes<'r>(
+    pass: &mut wgpu::RenderPass<'r>,
+    targets: &DrawTargets<'r>,
+    params: &RenderParams,
+    scissor: (u32, u32, u32, u32),
+    render_notes: bool,
+) {
+    if render_notes {
+        pass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+        if params.is_vertical_roll {
+            // 预览层纵向同样走 VS 直绘（`note_vertical.wgsl::vs_direct`）：
+            // 实例序 = 提交序 ⇒ 重叠预览矩形恒为「后来者居上」（§19.4 补齐）。
+            targets.note.draw_direct_vertical(pass, true, Some(scissor));
+        } else {
+            // 预览层走 VS 直绘（PREF-005 入口）：实例序 = 提交序，重叠预览矩形
+            // 恒为「后来者居上」，与 cull 抢占式槽位的逐帧随机序解耦（z-order
+            // 闪烁修复，2026-10）。无直绘管线时 `draw_direct` 内部回退 cull 路径。
+            targets.note.draw_direct(pass, true, Some(scissor));
+        }
+    }
+}
+
+/// 绘制标尺（纵向已由 wgpu 网格 + Canvas 小节号文本接管，跳过横向 RulerRenderer）。
+fn draw_ruler(
+    pass: &mut wgpu::RenderPass<'_>,
+    targets: &DrawTargets<'_>,
+    params: &RenderParams,
+    width: u32,
+    height: u32,
+) {
+    // 叠加层接管骨架时标尺由 egui 绘制（`skip_roll_chrome`），本通道不再提交
+    // 标尺实例，避免同一行像素被两套渲染叠加。egui 标尺已支持拍号分段
+    // （`ruler::measure_labels`），因此横向标尺不再有「让位给 gfx」的分支。
+    if !params.is_vertical_roll && !params.skip_roll_chrome {
+        let ruler_count = targets.ruler.instance_count();
+        if ruler_count > 0 {
+            pass.set_scissor_rect(0, 0, width, height);
+            targets.ruler.draw(pass, ruler_count as u32);
+        }
+    }
+}
+
+/// 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）。
+fn draw_cc_bar(
+    pass: &mut wgpu::RenderPass<'_>,
+    targets: &DrawTargets<'_>,
+    params: &RenderParams,
+    width: u32,
+    height: u32,
+) {
+    if let Some((vx, vy, vw, vh)) = params.velocity_panel_rect {
+        let scale = params.scale_factor;
+        let vscissor_x = ((vx * scale) as u32).min(width);
+        let vscissor_y = ((vy * scale) as u32).min(height);
+        let vscissor_w = ((vw * scale) as u32).min(width.saturating_sub(vscissor_x));
+        let vscissor_h = ((vh * scale) as u32).min(height.saturating_sub(vscissor_y));
+
+        pass.set_scissor_rect(vscissor_x, vscissor_y, vscissor_w, vscissor_h);
+        targets
+            .cc_bar
+            .draw(pass, params.cc_bar_instances.len() as u32);
     }
 }
 
