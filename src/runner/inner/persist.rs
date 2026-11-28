@@ -137,37 +137,13 @@ impl RunnerInner {
         window.ui().root().editor.editor_state.auto_scroll.mode != old_mode
     }
 
-    pub(crate) fn save_storage(&mut self) {
-        let new = self.window_state.window.ui().settings();
-        // UI-020：本次启动语言是否来自环境变量（LUMINO_LANG）。
-        // 排障覆盖只影响本次启动，不得被任意一次设置保存物化为「固定语言」。
-        let language_from_env = self.window_state.storage.config.language_from_env();
-        let old = &self.window_state.storage.config.get().ui;
-        let current_theme = self.window_state.window.ui().root().theme().to_string();
-        let auto_scroll_mode_changed =
-            Self::auto_scroll_mode_changed(&self.window_state.window, old.auto_scroll.mode);
-        // 「加载 MIDI 后禁止切换后端」的持久化兜底：主窗口会话是否加载过真实 MIDI
-        // 才是硬事实（`Host::onion_backend_locked()` 的同一真源），面板字段
-        // （`hires.backend_locked`）在「先开设置、后载 MIDI」的时序下会过期。
-        // 刻意不查 `document.is_some()`——空白工程也挂着 2 轨空文档，那样会永远不落盘。
-        let midi_loaded = self.window_state.window.ui().onion_backend_locked();
-        let persist_onion_backend =
-            should_persist_onion_backend(new.onion_skin.backend_locked, midi_loaded);
-        let diff = match Self::config_diff(new, old, &current_theme, persist_onion_backend) {
-            Some(d) => d,
-            None if !auto_scroll_mode_changed => return,
-            None => ConfigDiff {
-                synth_changed: false,
-                xsynth_changed: false,
-                audio_engine_changed: false,
-                titlebar_changed: false,
-                font_changed: false,
-                lgs_changed: false,
-                winmm_changed: false,
-                audio_output_changed: false,
-                language_changed: false,
-            },
-        };
+    /// 合成器后端变更：记日志并清除会话级覆盖、标记重建。
+    fn apply_synth_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.synth_changed {
             tracing::info!(
                 "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
@@ -181,6 +157,15 @@ impl RunnerInner {
             self.midi_state.midi.clear_backend_override();
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// XSynth 参数变更：记日志并标记重建。
+    fn apply_xsynth_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.xsynth_changed {
             tracing::info!(
                 "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, voices={:?}-> {:?}, 全局上限={:?}-> {:?}, 软目标比例={:.3}-> {:.3}, 保险闸={}-> {}",
@@ -201,6 +186,15 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// LGS (GPU) 参数变更：记日志并标记重建。
+    fn apply_lgs_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.lgs_changed {
             tracing::info!(
                 "LGS (GPU) 参数已改变: block_size {} -> {}, max_voices {} -> {}, 全局上限 {:?} -> {:?}, 防爆闸 {} -> {}, velocity_filter {} -> {}",
@@ -217,6 +211,15 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// WinMM 播表（输出设备）变更：记日志并标记重建。
+    fn apply_winmm_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.winmm_changed {
             tracing::info!(
                 "WinMM 播表(输出设备)已改变: {:?} -> {:?}",
@@ -225,6 +228,15 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// 音频播放输出设备变更：记日志并标记重建。
+    fn apply_audio_output_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.audio_output_changed {
             tracing::info!(
                 "音频播放输出设备已改变: {:?} -> {:?}",
@@ -233,6 +245,15 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// 音频引擎变更：记日志并标记重建。
+    fn apply_audio_engine_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.audio_engine_changed {
             tracing::info!(
                 "音频引擎已改变: {:?} -> {:?}",
@@ -241,6 +262,15 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+    }
+
+    /// 标题栏设置变更：记日志并请求窗口重启。
+    fn apply_titlebar_diff(
+        &mut self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.titlebar_changed {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
@@ -249,6 +279,15 @@ impl RunnerInner {
             );
             self.window_state.needs_window_restart = true;
         }
+    }
+
+    /// 字体设置变更：记日志（egui 版立即生效，无需重启）。
+    fn apply_font_diff(
+        &self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.font_changed {
             tracing::info!(
                 "字体设置已改变（立即生效）: font_name {} -> {}, font_path {} -> {}",
@@ -261,6 +300,15 @@ impl RunnerInner {
             // `lumino_ui_egui::fonts::configure`，设置应用时立即重建字体表；
             // 上一代 iced 渲染器时代「必须重启」的约束已随该层整体移除。
         }
+    }
+
+    /// 界面语言变更：记日志并（macOS）显式重建原生菜单。
+    fn apply_language_diff(
+        &self,
+        diff: &ConfigDiff,
+        old: &lumino_core::storage::config::UiConfig,
+        new: &lumino_ui::settings::SettingsPanel,
+    ) {
         if diff.language_changed {
             tracing::info!(
                 "界面语言已改变: {} -> {}（偏好 {:?}）",
@@ -285,11 +333,18 @@ impl RunnerInner {
                 }
             }
         }
-        if current_theme != old.theme {
-            tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);
-        }
+    }
+
+    /// 把主题、语言与合成器相关字段写入配置（落盘前的内存同步，第一段）。
+    fn persist_synth_fields(
+        &mut self,
+        new: &lumino_ui::settings::SettingsPanel,
+        current_theme: &str,
+        language_from_env: bool,
+        diff: &ConfigDiff,
+    ) {
         self.window_state.storage.config.patch(|config| {
-            config.ui.theme.clone_from(&current_theme);
+            config.ui.theme = current_theme.to_string();
             // UI-018 + UI-020：语言字段落盘守卫。环境变量（LUMINO_LANG）只影响
             // 本次启动：来源为 env 且用户本次未显式改语言时，`language` 与
             // `language_preference` 都不写——`language` 必须一并守卫：老配置
@@ -326,6 +381,16 @@ impl RunnerInner {
             config.ui.gpu_buffer_status_enabled = new.synth.gpu_buffer_status_enabled;
             config.ui.gpu_governor_metrics_enabled = new.synth.gpu_governor_metrics_enabled;
             config.ui.gpu_load_display = new.synth.gpu_load_display;
+        });
+    }
+
+    /// 把编辑、显示与兼容相关字段写入配置（落盘前的内存同步，第二段）。
+    fn persist_editor_fields(
+        &mut self,
+        new: &lumino_ui::settings::SettingsPanel,
+        persist_onion_backend: bool,
+    ) {
+        self.window_state.storage.config.patch(|config| {
             config.ui.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             config.ui.eraser_behavior = new.editing.eraser_behavior;
             config.ui.auto_scroll.mode = self
@@ -372,6 +437,56 @@ impl RunnerInner {
                 config.ui.autosave_interval_mins = v;
             }
         });
+    }
+
+    pub(crate) fn save_storage(&mut self) {
+        // 快照取一次：面板与配置在本次保存期间不变，克隆解掉对 `self` 的借用，
+        // 让下面的逐域副作用方法可安全地 `&mut self`。
+        let new = self.window_state.window.ui().settings().clone();
+        // UI-020：本次启动语言是否来自环境变量（LUMINO_LANG）。
+        // 排障覆盖只影响本次启动，不得被任意一次设置保存物化为「固定语言」。
+        let language_from_env = self.window_state.storage.config.language_from_env();
+        let old = self.window_state.storage.config.get().ui.clone();
+        let current_theme = self.window_state.window.ui().root().theme().to_string();
+        let auto_scroll_mode_changed =
+            Self::auto_scroll_mode_changed(&self.window_state.window, old.auto_scroll.mode);
+        // 「加载 MIDI 后禁止切换后端」的持久化兜底：主窗口会话是否加载过真实 MIDI
+        // 才是硬事实（`Host::onion_backend_locked()` 的同一真源），面板字段
+        // （`hires.backend_locked`）在「先开设置、后载 MIDI」的时序下会过期。
+        // 刻意不查 `document.is_some()`——空白工程也挂着 2 轨空文档，那样会永远不落盘。
+        let midi_loaded = self.window_state.window.ui().onion_backend_locked();
+        let persist_onion_backend =
+            should_persist_onion_backend(new.onion_skin.backend_locked, midi_loaded);
+        let diff = match Self::config_diff(&new, &old, &current_theme, persist_onion_backend) {
+            Some(d) => d,
+            None if !auto_scroll_mode_changed => return,
+            None => ConfigDiff {
+                synth_changed: false,
+                xsynth_changed: false,
+                audio_engine_changed: false,
+                titlebar_changed: false,
+                font_changed: false,
+                lgs_changed: false,
+                winmm_changed: false,
+                audio_output_changed: false,
+                language_changed: false,
+            },
+        };
+        // 逐域应用：调用顺序即原 `if diff.x` 的执行顺序，不得调整。
+        self.apply_synth_diff(&diff, &old, &new);
+        self.apply_xsynth_diff(&diff, &old, &new);
+        self.apply_lgs_diff(&diff, &old, &new);
+        self.apply_winmm_diff(&diff, &old, &new);
+        self.apply_audio_output_diff(&diff, &old, &new);
+        self.apply_audio_engine_diff(&diff, &old, &new);
+        self.apply_titlebar_diff(&diff, &old, &new);
+        self.apply_font_diff(&diff, &old, &new);
+        self.apply_language_diff(&diff, &old, &new);
+        if current_theme != old.theme {
+            tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);
+        }
+        self.persist_synth_fields(&new, &current_theme, language_from_env, &diff);
+        self.persist_editor_fields(&new, persist_onion_backend);
         lumino_extras::palette::set_current_palette_by_name(&new.display.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");
