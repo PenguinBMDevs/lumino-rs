@@ -1,8 +1,69 @@
 use super::*;
 
+/// 上传阶段的只读快照；由 `mem::take` 构造，末尾原样放回 `self`。
+struct UploadSnapshot {
+    prev_ids: Vec<u32>,
+    new_ids: Vec<u32>,
+    last_states: Option<Vec<u8>>,
+    st_count: usize,
+    fade_env_base: u32,
+}
+
 impl GpuSynth {
     pub(crate) fn upload_voices(&mut self, _base: u64) -> Result<(), SynthError> {
         self.trim_voice_pool_for_block();
+        let n = self.voices.len();
+
+        self.prepare_upload_tables();
+
+        // Snapshot data needed for the parallel phase to avoid borrowing
+        // `self` inside the closure. PREF-006 B：`prev_voice_ids` 与
+        // `last_states` 用 take/交换代替 clone（每块省 O(voices) 的 memcpy；
+        // `last_states` 用完原样放回，供下一块 readback 的 resume 匹配）。
+        let prev_ids = std::mem::take(&mut self.prev_voice_ids);
+        let mut new_ids = std::mem::take(&mut self.scratch_voice_ids);
+        new_ids.clear();
+        new_ids.extend(self.voices.iter().map(|v| v.id));
+        let last_states = self.last_states.take();
+        let st_count = last_states
+            .as_ref()
+            .map_or(0, |st| st.len() / VoiceState::SIZE);
+        let fade_env_base = self.fade_env_template;
+        let snap = UploadSnapshot {
+            prev_ids,
+            new_ids,
+            last_states,
+            st_count,
+            fade_env_base,
+        };
+
+        // Parallel path for large voice counts (black MIDI peaks). For small
+        // n the rayon overhead outweighs the benefit, so keep the sequential
+        // fast path.
+        if n > 2048 {
+            self.fill_uploads_parallel(&snap);
+        } else {
+            self.fill_uploads_sequential(&snap);
+        }
+        let UploadSnapshot {
+            prev_ids,
+            new_ids,
+            last_states,
+            ..
+        } = snap;
+        self.prev_voice_ids = new_ids;
+        // 旧列表缓冲转为下一块的 scratch（交换复用，零分配）
+        self.scratch_voice_ids = prev_ids;
+        self.last_states = last_states;
+        // (Upload is deferred to `dispatch` so all GPU work - staging copies,
+        // render pass, readback copies - happens in ONE submit; separate
+        // submits measured ~9ms each of fixed wgpu/Vulkan overhead.)
+        self.finish_upload();
+        Ok(())
+    }
+
+    /// 静态槽位分配、脏区间合并、包络驻留与三缓冲 resize。
+    fn prepare_upload_tables(&mut self) {
         let n = self.voices.len();
         // REF-LGS-010: 新声部分配静态槽位。静态参数只在分配槽位这一块写一次
         // GPU（压缩声部列表不改变槽位），之后每块只上传动态字段。
@@ -18,26 +79,17 @@ impl GpuSynth {
             .resize(n.max(1), VoiceParamsDyn::zeroed());
         self.upload_states.resize(n.max(1), VoiceState::zeroed());
         self.upload_chans.resize(n.max(1), 0);
+    }
 
-        // Snapshot data needed for the parallel phase to avoid borrowing
-        // `self` inside the closure. PREF-006 B：`prev_voice_ids` 与
-        // `last_states` 用 take/交换代替 clone（每块省 O(voices) 的 memcpy；
-        // `last_states` 用完原样放回，供下一块 readback 的 resume 匹配）。
+    /// 大声部数（黑乐谱峰值）下的并行填充路径。
+    fn fill_uploads_parallel(&mut self, snap: &UploadSnapshot) {
+        let n = self.voices.len();
         let sample_offsets = &self.sample_offsets;
-        let prev_ids = std::mem::take(&mut self.prev_voice_ids);
-        let mut new_ids = std::mem::take(&mut self.scratch_voice_ids);
-        new_ids.clear();
-        new_ids.extend(self.voices.iter().map(|v| v.id));
-        let last_states = self.last_states.take();
-        let st_count = last_states
-            .as_ref()
-            .map_or(0, |st| st.len() / VoiceState::SIZE);
-        let fade_env_base = self.fade_env_template;
-
-        // Parallel path for large voice counts (black MIDI peaks). For small
-        // n the rayon overhead outweighs the benefit, so keep the sequential
-        // fast path.
-        if n > 2048 {
+        let fade_env_base = snap.fade_env_base;
+        let st_count = snap.st_count;
+        let prev_ids = &snap.prev_ids;
+        let last_states = &snap.last_states;
+        {
             // Resolve the per-voice sample offsets first (hash lookups are
             // not thread-safe for mutation, so do them sequentially but cheap).
             let mut sample_offs: Vec<(u32, u32, f32, f32)> = Vec::with_capacity(n);
@@ -128,7 +180,17 @@ impl GpuSynth {
             self.upload_params[..n].copy_from_slice(&params_vec);
             self.upload_chans[..n].copy_from_slice(&chans_vec);
             self.upload_states[..n].copy_from_slice(&states_vec);
-        } else {
+        }
+    }
+
+    /// 小声部数下的串行填充路径（避开 rayon 开销）。
+    fn fill_uploads_sequential(&mut self, snap: &UploadSnapshot) {
+        let sample_offsets = &self.sample_offsets;
+        let fade_env_base = snap.fade_env_base;
+        let st_count = snap.st_count;
+        let prev_ids = &snap.prev_ids;
+        let last_states = &snap.last_states;
+        {
             let params = &mut self.upload_params;
             let states = &mut self.upload_states;
             let chans = &mut self.upload_chans;
@@ -183,13 +245,11 @@ impl GpuSynth {
                     }) << 8);
             }
         }
-        self.prev_voice_ids = new_ids;
-        // 旧列表缓冲转为下一块的 scratch（交换复用，零分配）
-        self.scratch_voice_ids = prev_ids;
-        self.last_states = last_states;
-        // (Upload is deferred to `dispatch` so all GPU work - staging copies,
-        // render pass, readback copies - happens in ONE submit; separate
-        // submits measured ~9ms each of fixed wgpu/Vulkan overhead.)
+    }
+
+    /// 设置活跃声部数并构建稳定的 mix 桶（顺序与旧 mix 内核一致）。
+    fn finish_upload(&mut self) {
+        let n = self.voices.len();
         self.active_voice_count = n as u32;
         // REF-LGS-001: 构建稳定的 (通道, released) 声部桶。索引按 v 升序
         // 追加，与旧 mix 内核的累加顺序一致，因此浮点结果逐位不变。
@@ -200,7 +260,6 @@ impl GpuSynth {
             &mut self.mix_bucket_cursor,
             &mut self.mix_bucket_indices,
         );
-        Ok(())
     }
 
     /// REF-LGS-011: 把每个声部的 stage 序列驻留到共享模板池。

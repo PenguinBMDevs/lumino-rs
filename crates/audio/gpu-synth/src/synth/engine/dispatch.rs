@@ -11,16 +11,81 @@ fn checked_buffer_size(bytes: usize) -> Result<wgpu::BufferSize, SynthError> {
         .ok_or_else(|| SynthError::Gpu(trf!("buffer size 为 0（bytes={bytes}）", bytes = bytes)))
 }
 
+/// 同一次提交内所有 chunk 的 pass 派发参数（REF-LGS-002）。
+#[derive(Clone, Copy)]
+struct ChunkPassPlan {
+    chunk_align: u32,
+    voice_groups: u32,
+    chunk_groups: u32,
+    channels: u32,
+}
+
 impl GpuSynth {
     #[allow(clippy::modulo_one)] // STATES_SYNC_EVERY is 1; the cadence is configurable
     pub(crate) fn dispatch(&mut self, base: u64) -> Result<(), SynthError> {
-        let mut voices = self.active_voice_count;
-        let block = self.config.block_size as u32;
         // REF-LGS-002: render/mix in frame chunks that reuse `voice_out`;
         // the buffer cap therefore scales with the chunk, not the block.
         let chunk_size = self.res.chunk_size as u32;
-        let chunks = block.div_ceil(chunk_size).max(1);
 
+        let voices = self.apply_device_voice_ceiling(chunk_size)?;
+        self.ensure_dispatch_buffers();
+
+        let device = &self.res.ctx.device;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("lumino block encoder"),
+        });
+
+        self.stage_block_uploads(&mut encoder)?;
+
+        // REF-LGS-002: per-chunk uniforms, addressed with dynamic offsets so
+        // all chunks can be recorded into one encoder/submission.
+        let chunks = self.write_chunk_params(base);
+
+        let channels = self.channels.len().max(1) as u32;
+        let voice_groups = voices.div_ceil(128).max(1);
+        let chunk_groups = chunk_size.div_ceil(128).max(1);
+        let chunk_align = self.chunk_align as u32;
+        let plan = ChunkPassPlan {
+            chunk_align,
+            voice_groups,
+            chunk_groups,
+            channels,
+        };
+
+        for i in 0..chunks {
+            self.encode_chunk_passes(&mut encoder, i, &plan)?;
+        }
+
+        let (cur, states_cur) = self.encode_readback_copies(&mut encoder)?;
+
+        let queue = &self.res.ctx.queue;
+        let idx = queue.submit(Some(encoder.finish()));
+
+        // One-block pipeline: this submission's readback is consumed by the
+        // next `render_block` (`collect_pending_readback`), so the GPU runs
+        // this block while the CPU maps the PREVIOUS block back - the
+        // per-block synchronous poll wait is gone. Record the exact slots
+        // the copies landed in: they are read back next block, and silent
+        // blocks that skip dispatching never shift this window.
+        self.pending = Some(PendingReadback {
+            idx,
+            out_slot: cur,
+            states_slot: states_cur,
+        });
+        // `STATES_SYNC_EVERY = 1` keeps the counter at 0 (every block maps
+        // its states); the modulo is intentional and kept for the
+        // configurable cadence.
+        self.states_sync_counter = if STATES_SYNC_EVERY > 1 {
+            (self.states_sync_counter + 1) % STATES_SYNC_EVERY
+        } else {
+            0
+        };
+        Ok(())
+    }
+
+    /// 物理上限裁剪：受限模式报错，无限（黑乐谱）模式丢弃最老的音符组。
+    fn apply_device_voice_ceiling(&mut self, chunk_size: u32) -> Result<u32, SynthError> {
+        let mut voices = self.active_voice_count;
         // Physical ceiling: the voice output buffer cannot exceed the
         // device's maximum buffer size. For limited mode report a clear
         // error; for unlimited (black-MIDI) mode we trim the oldest note
@@ -71,7 +136,13 @@ impl GpuSynth {
                 return Err(SynthError::VoiceLimit(voices as usize));
             }
         }
+        Ok(voices)
+    }
 
+    /// 按需扩容五个 per-voice 缓冲；扩容后只做一次 bind group 重建。
+    fn ensure_dispatch_buffers(&mut self) {
+        let voices = self.active_voice_count;
+        let chunk_size = self.res.chunk_size as u32;
         // Grow the per-voice buffers if the active voice count exceeds the
         // current pool (dense MIDI may hold tens of thousands of voices).
         // Growing replaces the backing buffers, so bind groups are rebuilt
@@ -129,15 +200,14 @@ impl GpuSynth {
         if self.mix_bg_dirty {
             self.rebuild_mix_bind_group();
         }
+    }
 
+    /// 把本块上传写入 staging belt，并在返回前且仅在返回前 `finish` 一次。
+    fn stage_block_uploads(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<(), SynthError> {
         let device = &self.res.ctx.device;
-        let queue = &self.res.ctx.queue;
-        let voices = self.active_voice_count;
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("lumino block encoder"),
-        });
-
         // Voice parameter uploads, staged through the persistent belt into
         // the SAME submission as the compute passes (one submit per block).
         {
@@ -146,7 +216,7 @@ impl GpuSynth {
                 .max(1);
             self.belt
                 .write_buffer(
-                    &mut encoder,
+                    encoder,
                     self.params_dyn_buf.buffer(),
                     0,
                     checked_buffer_size(std::mem::size_of::<VoiceParamsDyn>() * n)?,
@@ -155,7 +225,7 @@ impl GpuSynth {
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_params[..n]));
             self.belt
                 .write_buffer(
-                    &mut encoder,
+                    encoder,
                     self.states_buf.buffer(),
                     0,
                     checked_buffer_size(std::mem::size_of::<VoiceState>() * n)?,
@@ -170,7 +240,7 @@ impl GpuSynth {
                 );
                 self.belt
                     .write_buffer(
-                        &mut encoder,
+                        encoder,
                         self.params_static_buf.buffer(),
                         u64::from(start) * VoiceParamsStatic::SIZE as u64,
                         checked_buffer_size(bytes.len())?,
@@ -185,7 +255,7 @@ impl GpuSynth {
                 let bytes = bytemuck::cast_slice(&self.env_pool.stages()[env_start..]);
                 self.belt
                     .write_buffer(
-                        &mut encoder,
+                        encoder,
                         self.env_buf.buffer(),
                         env_start as u64 * EnvStageGpu::SIZE as u64,
                         checked_buffer_size(bytes.len())?,
@@ -196,18 +266,15 @@ impl GpuSynth {
             }
             self.belt.finish();
         }
+        Ok(())
+    }
 
-        let render_bg = self
-            .render_bg
-            .as_ref()
-            .ok_or_else(|| SynthError::Gpu("render bind group missing".into()))?;
-        let mix_bg = self
-            .mix_bg
-            .as_ref()
-            .ok_or_else(|| SynthError::Gpu("mix bind group missing".into()))?;
-
-        // REF-LGS-002: per-chunk uniforms, addressed with dynamic offsets so
-        // all chunks can be recorded into one encoder/submission.
+    /// 填充 chunk uniform 并一次写入 GPU buffer；返回 chunk 数供主函数派发。
+    fn write_chunk_params(&mut self, base: u64) -> u32 {
+        let block = self.config.block_size as u32;
+        let chunk_size = self.res.chunk_size as u32;
+        let chunks = block.div_ceil(chunk_size).max(1);
+        let queue = &self.res.ctx.queue;
         {
             let align = self.chunk_align as usize;
             self.chunk_params_bytes.clear();
@@ -223,48 +290,75 @@ impl GpuSynth {
             }
             queue.write_buffer(&self.chunk_params_buf, 0, &self.chunk_params_bytes);
         }
+        chunks
+    }
 
-        let channels = self.channels.len().max(1) as u32;
-        let voice_groups = voices.div_ceil(128).max(1);
-        let chunk_groups = chunk_size.div_ceil(128).max(1);
-        let chunk_align = self.chunk_align as u32;
+    /// 单个 chunk 的 render -> mix -> mix_reduce 三个 pass，顺序固定。
+    fn encode_chunk_passes(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        i: u32,
+        plan: &ChunkPassPlan,
+    ) -> Result<(), SynthError> {
+        let render_bg = self
+            .render_bg
+            .as_ref()
+            .ok_or_else(|| SynthError::Gpu("render bind group missing".into()))?;
+        let mix_bg = self
+            .mix_bg
+            .as_ref()
+            .ok_or_else(|| SynthError::Gpu("mix bind group missing".into()))?;
 
-        for i in 0..chunks {
-            let offset = i * chunk_align;
+        let ChunkPassPlan {
+            chunk_align,
+            voice_groups,
+            chunk_groups,
+            channels,
+            ..
+        } = *plan;
+        let offset = i * chunk_align;
 
-            {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("render pass"),
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(&self.res.render_pipeline);
-                pass.set_bind_group(0, render_bg, &[offset]);
-                // REF-LGS-005: one thread per voice renders the whole chunk;
-                // the old gid.y segment split + fast-forward is gone.
-                pass.dispatch_workgroups(voice_groups, 1, 1);
-            }
-
-            {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("mix pass"),
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(&self.res.mix_pipeline);
-                pass.set_bind_group(0, mix_bg, &[offset]);
-                pass.dispatch_workgroups(chunk_groups, channels, 1);
-            }
-
-            {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("mix reduce pass"),
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(&self.res.mix_reduce_pipeline);
-                pass.set_bind_group(0, mix_bg, &[offset]);
-                pass.dispatch_workgroups(chunk_groups, 1, 1);
-            }
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("render pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.res.render_pipeline);
+            pass.set_bind_group(0, render_bg, &[offset]);
+            // REF-LGS-005: one thread per voice renders the whole chunk;
+            // the old gid.y segment split + fast-forward is gone.
+            pass.dispatch_workgroups(voice_groups, 1, 1);
         }
 
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("mix pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.res.mix_pipeline);
+            pass.set_bind_group(0, mix_bg, &[offset]);
+            pass.dispatch_workgroups(chunk_groups, channels, 1);
+        }
+
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("mix reduce pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.res.mix_reduce_pipeline);
+            pass.set_bind_group(0, mix_bg, &[offset]);
+            pass.dispatch_workgroups(chunk_groups, 1, 1);
+        }
+        Ok(())
+    }
+
+    /// 所有 pass 之后追加回读拷贝，返回本块落地的 (out_slot, states_slot)。
+    fn encode_readback_copies(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<(usize, usize), SynthError> {
+        let device = &self.res.ctx.device;
+        let queue = &self.res.ctx.queue;
         // Readbacks. The voice states are only copied back every
         // STATES_SYNC_EVERY blocks (see `states_sync_counter`); the output
         // must come back every block.
@@ -292,28 +386,6 @@ impl GpuSynth {
                 states_bytes,
             );
         }
-
-        let idx = queue.submit(Some(encoder.finish()));
-
-        // One-block pipeline: this submission's readback is consumed by the
-        // next `render_block` (`collect_pending_readback`), so the GPU runs
-        // this block while the CPU maps the PREVIOUS block back - the
-        // per-block synchronous poll wait is gone. Record the exact slots
-        // the copies landed in: they are read back next block, and silent
-        // blocks that skip dispatching never shift this window.
-        self.pending = Some(PendingReadback {
-            idx,
-            out_slot: cur,
-            states_slot: states_cur,
-        });
-        // `STATES_SYNC_EVERY = 1` keeps the counter at 0 (every block maps
-        // its states); the modulo is intentional and kept for the
-        // configurable cadence.
-        self.states_sync_counter = if STATES_SYNC_EVERY > 1 {
-            (self.states_sync_counter + 1) % STATES_SYNC_EVERY
-        } else {
-            0
-        };
-        Ok(())
+        Ok((cur, states_cur))
     }
 }
