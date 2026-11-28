@@ -1,15 +1,10 @@
 {
-  "files_total": 2304,
-  "lines_total": 420049,
+  "files_total": 2332,
+  "lines_total": 420725,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
       "lines": 876,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-runtime/src/app.rs",
-      "lines": 769,
       "test": false
     },
     {
@@ -23,33 +18,13 @@
       "test": true
     },
     {
-      "path": "crates/editor/ui-core/src/state/video_clip_state.rs",
-      "lines": 716,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "lines": 700,
-      "test": false
-    },
-    {
-      "path": "crates/core/project/src/project/archive.rs",
-      "lines": 682,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/shape_drawer.rs",
-      "lines": 678,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/toolbar/tests.rs",
       "lines": 662,
       "test": true
     },
     {
       "path": "crates/editor/ui/src/root/view/egui_chrome/tests.rs",
-      "lines": 657,
+      "lines": 658,
       "test": true
     },
     {
@@ -61,11 +36,6 @@
       "path": "crates/editor/ui-editor/src/tests/drawn_shape_marquee_e2e.rs",
       "lines": 638,
       "test": true
-    },
-    {
-      "path": "crates/editor/ui-egui/src/chrome/sidebar.rs",
-      "lines": 636,
-      "test": false
     },
     {
       "path": "crates/editor/ui-editor/src/interaction/shape_edit_ui/tests.rs",
@@ -88,19 +58,9 @@
       "test": true
     },
     {
-      "path": "crates/editor/gfx/src/arrangement_instances.rs",
-      "lines": 624,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/src/interaction/shape_ops/tests.rs",
       "lines": 624,
       "test": true
-    },
-    {
-      "path": "crates/editor/ui-editor/src/impls/editor_impl/commit.rs",
-      "lines": 616,
-      "test": false
     },
     {
       "path": "crates/editor/ui-editor/src/interaction/shape_compose/tests/pending.rs",
@@ -108,23 +68,13 @@
       "test": true
     },
     {
-      "path": "crates/editor/ui-core/src/theme/palette.rs",
-      "lines": 613,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/src/grid/brush_tool_box/tests.rs",
       "lines": 611,
       "test": true
-    },
-    {
-      "path": "crates/audio/note-core/src/spatial_index.rs",
-      "lines": 603,
-      "test": false
     }
   ],
   "test_files_over_800": [],
-  "production_files_over_600": 11,
+  "production_files_over_600": 1,
   "functions_over_100": [
     {
       "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
@@ -145,20 +95,6 @@
       "name": "handle_video_export",
       "line": 21,
       "lines": 352,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/shape_drawer.rs",
-      "name": "show",
-      "line": 49,
-      "lines": 351,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/settings/ui.rs",
-      "name": "show",
-      "line": 34,
-      "lines": 345,
       "test": false
     },
     {
@@ -386,13 +322,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "name": "egui_chrome_model_for",
-      "line": 446,
-      "lines": 235,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/root/view/egui_chrome/settings_ui.rs",
       "name": "page",
       "line": 19,
@@ -404,13 +333,6 @@
       "name": "show",
       "line": 40,
       "lines": 229,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-runtime/src/app.rs",
-      "name": "render",
-      "line": 452,
-      "lines": 227,
       "test": false
     },
     {
@@ -729,13 +651,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-egui/src/chrome/sidebar.rs",
-      "name": "route_bar",
-      "line": 151,
-      "lines": 167,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/chrome/arrangement/lane.rs",
       "name": "show",
       "line": 106,
@@ -1044,13 +959,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "name": "egui_model",
-      "line": 96,
-      "lines": 144,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/root/view/egui_chrome/audio_export_panel.rs",
       "name": "audio_export_model",
       "line": 50,
@@ -1331,13 +1239,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "name": "egui_piano_roll_model",
-      "line": 303,
-      "lines": 124,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-egui/src/settings/general.rs",
       "name": "show",
       "line": 12,
@@ -1548,23 +1449,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-runtime/src/app.rs",
-      "name": "window_event",
-      "line": 270,
-      "lines": 114,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/dsp/envelope.rs",
       "name": "to_gpu_stages",
       "line": 98,
-      "lines": 113,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/arrangement_instances.rs",
-      "name": "build_arrangement_overlay_front",
-      "line": 153,
       "lines": 113,
       "test": false
     },
@@ -1935,20 +1822,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-egui/src/shape_drawer.rs",
-      "name": "show",
-      "line": 49,
-      "lines": 351,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/settings/ui.rs",
-      "name": "show",
-      "line": 34,
-      "lines": 345,
-      "test": false
-    },
-    {
       "path": "src/runner/menu/file.rs",
       "name": "handle_file_menu_event",
       "line": 48,
@@ -2173,13 +2046,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome.rs",
-      "name": "egui_chrome_model_for",
-      "line": 446,
-      "lines": 235,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/root/view/egui_chrome/settings_ui.rs",
       "name": "page",
       "line": 19,
@@ -2191,13 +2057,6 @@
       "name": "show",
       "line": 40,
       "lines": 229,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-runtime/src/app.rs",
-      "name": "render",
-      "line": 452,
-      "lines": 227,
       "test": false
     },
     {
@@ -2328,7 +2187,7 @@
     ],
     [
       "Root",
-      323
+      331
     ],
     [
       "Host",
@@ -2352,7 +2211,7 @@
     ],
     [
       "Sidebar",
-      80
+      82
     ],
     [
       "GpuSynth",
