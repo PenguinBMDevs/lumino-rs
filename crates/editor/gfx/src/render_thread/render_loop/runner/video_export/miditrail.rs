@@ -18,6 +18,16 @@ use crate::miditrail_renderer::miditrail_viewport_span;
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
 
+/// 每帧准备结果：uniform + 几何标签 + cull 窗口。
+struct MiditrailFrameSetup {
+    uniform: MiditrailUniformGpu,
+    geo_label: &'static str,
+    window: CullWindow,
+}
+
+/// 单条渲染路径的规模与分段耗时统计。
+type PathOutcome = (&'static str, usize, u64, u64, u64);
+
 /// Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
 pub(super) fn handle_miditrail_frame(
     ctx: &RenderContext,
@@ -39,6 +49,74 @@ pub(super) fn handle_miditrail_frame(
         }
     };
 
+    let MiditrailFrameSetup {
+        uniform,
+        geo_label,
+        window,
+    } = prepare_miditrail_frame(ctx, &params, renderer, width, height);
+
+    let t_work = std::time::Instant::now();
+    let mut encoder = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("miditrail_encoder"),
+        });
+
+    let (path_label, note_total, count_us, fill_us, tail_us) =
+        render_miditrail_path(ctx, &params, renderer, &uniform, window, &mut encoder);
+    let work_us = t_work.elapsed().as_micros() as u64;
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：work 含 cull 两次提交 + 回读/聚合 +
+    // 渲染调度；count/fill/tail 三段拆开，下次诊断不再盲人摸象。
+    {
+        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n.is_multiple_of(300) {
+            tracing::info!(
+                "miditrail渲染打点[{n}]: path={path_label} geo={geo_label} work={work_us}us notes={note_total} count={count_us}us fill_readback={fill_us}us tail={tail_us}us"
+            );
+        }
+    }
+
+    let pipeline = match frame.export_pipeline.as_mut() {
+        Some(p) => p,
+        None => {
+            debug_assert!(false, "export_pipeline 应已初始化（pipeline_ready 已保证）");
+            return;
+        }
+    };
+    let tx = match frame.export_frame_tx.as_ref() {
+        Some(t) => t,
+        None => {
+            debug_assert!(false, "export_frame_tx 应已初始化（pipeline_ready 已保证）");
+            return;
+        }
+    };
+
+    if let Some(tex) = renderer.output_texture() {
+        copy_texture_and_drain(CopyDrainInput {
+            pipeline,
+            tx,
+            encoder,
+            texture: tex,
+            queue: &ctx.queue,
+            width,
+            height,
+            label: "Miditrail",
+        });
+    } else {
+        tracing::warn!("Miditrail 输出纹理未就绪");
+        ctx.queue.submit(std::iter::once(encoder.finish()));
+    }
+}
+
+/// 构建 uniform、播种常驻音符并计算 cull 窗口，全部在计时起点之前完成。
+fn prepare_miditrail_frame(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    renderer: &mut MiditrailRenderer,
+    width: u32,
+    height: u32,
+) -> MiditrailFrameSetup {
     let kb_height = ((height as f64) * 0.12).round() as u32;
     let kb_height = kb_height.max(20).min(height / 3);
 
@@ -84,143 +162,129 @@ pub(super) fn handle_miditrail_frame(
         params.miditrail_z_far,
     ));
 
-    let t_work = std::time::Instant::now();
-    let mut encoder = ctx
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("miditrail_encoder"),
-        });
-
-    // 出口选择：Normal 走 driven（零音符回读：COUNT 顺带活跃键聚合 + FILL 直写
-    // compact 交 driven 顶点管线直绑）；Top 与任一步失败回退 legacy 回读路径
-    //（Top 逐音时间量化仍在 CPU，见 quantize.rs）。失败回退所带音符（首帧全量
-    // 已排序，回退正确；空帧黑帧 + 错误日志），属防御路径。
     let window = CullWindow {
         tick_start: tick,
         tick_end,
         key_count,
     };
-    let mut driven_outcome: Option<(&str, usize, u64, u64, u64)> = None;
-    if !uniform.view_mode.is_top() {
-        match renderer.cull_prepare(
-            &ctx.device,
-            &ctx.queue,
-            window,
-            crate::CullActiveParams {
-                ticks_per_second: uniform.ticks_per_second,
-                fps: uniform.fps,
-            },
-        ) {
-            Ok(prepared) => {
-                let compact = renderer.cull_compact_buffer().cloned();
-                if let Some(compact) = compact {
-                    let t_tail = std::time::Instant::now();
-                    renderer.render_gpu_driven_from_compact(
-                        &ctx.device,
-                        &ctx.queue,
-                        &mut encoder,
-                        &uniform,
-                        &compact,
-                        prepared.total,
-                        &prepared.active,
-                    );
-                    let tail_us = t_tail.elapsed().as_micros() as u64;
-                    driven_outcome = Some((
-                        "cull-driven",
-                        prepared.total,
-                        prepared.timing.count_us,
-                        prepared.timing.fill_readback_us,
-                        tail_us,
-                    ));
-                } else {
-                    tracing::error!("Miditrail driven 缺 compact 缓冲，回退 legacy 回读路径");
-                }
-            }
-            Err(e) => {
-                tracing::error!("Miditrail cull_prepare 失败，回退 legacy 回读路径: {e}");
-            }
-        }
+    MiditrailFrameSetup {
+        uniform,
+        geo_label,
+        window,
     }
-    let (path_label, note_total, count_us, fill_us, tail_us) = match driven_outcome {
-        Some(x) => x,
-        None => match renderer.cull_window(&ctx.device, &ctx.queue, window) {
-            Ok((window, timing)) => {
-                let n = window.len();
-                let t_tail = std::time::Instant::now();
-                renderer.render_from_instances(
-                    &ctx.device,
-                    &ctx.queue,
-                    &mut encoder,
-                    &uniform,
-                    &window,
-                );
-                let tail_us = t_tail.elapsed().as_micros() as u64;
-                renderer.restore_window(window);
-                (
-                    "cull-legacy",
-                    n,
-                    timing.count_us,
-                    timing.fill_readback_us,
-                    tail_us,
-                )
-            }
-            Err(e) => {
-                tracing::error!("Miditrail cull 失败，回退所带音符: {e}");
-                let n = params.note_instances.len();
-                let t_tail = std::time::Instant::now();
-                renderer.render_from_instances(
-                    &ctx.device,
-                    &ctx.queue,
-                    &mut encoder,
-                    &uniform,
-                    &params.note_instances,
-                );
-                let tail_us = t_tail.elapsed().as_micros() as u64;
-                ("legacy-fallback", n, 0, 0, tail_us)
-            }
-        },
-    };
-    let work_us = t_work.elapsed().as_micros() as u64;
-    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：work 含 cull 两次提交 + 回读/聚合 +
-    // 渲染调度；count/fill/tail 三段拆开，下次诊断不再盲人摸象。
-    {
-        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if n < 3 || n.is_multiple_of(300) {
-            tracing::info!(
-                "miditrail渲染打点[{n}]: path={path_label} geo={geo_label} work={work_us}us notes={note_total} count={count_us}us fill_readback={fill_us}us tail={tail_us}us"
-            );
-        }
-    }
+}
 
-    let pipeline = match frame.export_pipeline.as_mut() {
-        Some(p) => p,
-        None => {
-            debug_assert!(false, "export_pipeline 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-    let tx = match frame.export_frame_tx.as_ref() {
-        Some(t) => t,
-        None => {
-            debug_assert!(false, "export_frame_tx 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-
-    if let Some(tex) = renderer.output_texture() {
-        copy_texture_and_drain(CopyDrainInput {
-            pipeline,
-            tx,
-            encoder,
-            texture: tex,
-            queue: &ctx.queue,
-            width,
-            height,
-            label: "Miditrail",
-        });
+/// 出口选择：Normal 先试 driven，Top 与任一步失败回退 legacy 回读路径。
+fn render_miditrail_path(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    renderer: &mut MiditrailRenderer,
+    uniform: &MiditrailUniformGpu,
+    window: CullWindow,
+    encoder: &mut wgpu::CommandEncoder,
+) -> PathOutcome {
+    // 出口选择：Normal 走 driven（零音符回读：COUNT 顺带活跃键聚合 + FILL 直写
+    // compact 交 driven 顶点管线直绑）；Top 与任一步失败回退 legacy 回读路径
+    //（Top 逐音时间量化仍在 CPU，见 quantize.rs）。失败回退所带音符（首帧全量
+    // 已排序，回退正确；空帧黑帧 + 错误日志），属防御路径。
+    let driven_outcome = if !uniform.view_mode.is_top() {
+        try_driven_render(ctx, renderer, uniform, window, encoder)
     } else {
-        tracing::warn!("Miditrail 输出纹理未就绪");
-        ctx.queue.submit(std::iter::once(encoder.finish()));
+        None
+    };
+    match driven_outcome {
+        Some(x) => x,
+        None => render_legacy_path(ctx, params, renderer, uniform, window, encoder),
+    }
+}
+
+/// driven 路径：cull 准备成功后直接由 compact 缓冲驱动顶点管线，失败返回 None 让调用方回退。
+fn try_driven_render(
+    ctx: &RenderContext,
+    renderer: &mut MiditrailRenderer,
+    uniform: &MiditrailUniformGpu,
+    window: CullWindow,
+    encoder: &mut wgpu::CommandEncoder,
+) -> Option<PathOutcome> {
+    match renderer.cull_prepare(
+        &ctx.device,
+        &ctx.queue,
+        window,
+        crate::CullActiveParams {
+            ticks_per_second: uniform.ticks_per_second,
+            fps: uniform.fps,
+        },
+    ) {
+        Ok(prepared) => {
+            let compact = renderer.cull_compact_buffer().cloned();
+            if let Some(compact) = compact {
+                let t_tail = std::time::Instant::now();
+                renderer.render_gpu_driven_from_compact(
+                    &ctx.device,
+                    &ctx.queue,
+                    encoder,
+                    uniform,
+                    &compact,
+                    prepared.total,
+                    &prepared.active,
+                );
+                let tail_us = t_tail.elapsed().as_micros() as u64;
+                Some((
+                    "cull-driven",
+                    prepared.total,
+                    prepared.timing.count_us,
+                    prepared.timing.fill_readback_us,
+                    tail_us,
+                ))
+            } else {
+                tracing::error!("Miditrail driven 缺 compact 缓冲，回退 legacy 回读路径");
+                None
+            }
+        }
+        Err(e) => {
+            tracing::error!("Miditrail cull_prepare 失败，回退 legacy 回读路径: {e}");
+            None
+        }
+    }
+}
+
+/// legacy 路径：cull 回读窗口后直绘；cull 失败时回退到本帧所带音符。
+fn render_legacy_path(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    renderer: &mut MiditrailRenderer,
+    uniform: &MiditrailUniformGpu,
+    window: CullWindow,
+    encoder: &mut wgpu::CommandEncoder,
+) -> PathOutcome {
+    match renderer.cull_window(&ctx.device, &ctx.queue, window) {
+        Ok((window, timing)) => {
+            let n = window.len();
+            let t_tail = std::time::Instant::now();
+            renderer.render_from_instances(&ctx.device, &ctx.queue, encoder, uniform, &window);
+            let tail_us = t_tail.elapsed().as_micros() as u64;
+            renderer.restore_window(window);
+            (
+                "cull-legacy",
+                n,
+                timing.count_us,
+                timing.fill_readback_us,
+                tail_us,
+            )
+        }
+        Err(e) => {
+            tracing::error!("Miditrail cull 失败，回退所带音符: {e}");
+            let n = params.note_instances.len();
+            let t_tail = std::time::Instant::now();
+            renderer.render_from_instances(
+                &ctx.device,
+                &ctx.queue,
+                encoder,
+                uniform,
+                &params.note_instances,
+            );
+            let tail_us = t_tail.elapsed().as_micros() as u64;
+            ("legacy-fallback", n, 0, 0, tail_us)
+        }
     }
 }

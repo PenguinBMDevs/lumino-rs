@@ -6,6 +6,45 @@ use crate::note_renderer::NoteRenderer;
 // 缓冲 / 绑定组构造拆到子模块，保持本文件 ≤600 行（REF-001）
 mod buffers;
 
+/// 着色器模块集合（横向/纵向 × 渲染/cull，按原创建顺序聚合）。
+struct NoteShaderStage {
+    render: wgpu::ShaderModule,
+    cull: wgpu::ShaderModule,
+    vertical: wgpu::ShaderModule,
+    vertical_cull: wgpu::ShaderModule,
+}
+
+/// 绑定组布局集合（先渲染后 cull，保持原创建顺序）。
+struct NoteBindLayouts {
+    render: wgpu::BindGroupLayout,
+    cull: wgpu::BindGroupLayout,
+}
+
+/// 管线集合（按原创建顺序：渲染 → cull → 点 → 直绘 → 纵向直绘）。
+struct NotePipelines {
+    render: wgpu::RenderPipeline,
+    vertical: wgpu::RenderPipeline,
+    cull: wgpu::ComputePipeline,
+    vertical_cull: wgpu::ComputePipeline,
+    point: Option<wgpu::RenderPipeline>,
+    direct: Option<wgpu::RenderPipeline>,
+    vertical_direct: Option<wgpu::RenderPipeline>,
+}
+
+/// 缓冲区与分块布局集合（按原创建顺序聚合）。
+struct NoteBufferStage {
+    max_capacity: usize,
+    chunk_layout: super::chunk::ChunkLayout,
+    indirect_template: Vec<u8>,
+    gpu_note_buffer: crate::gpu_note_buffer::GpuNoteBuffer,
+    visible_instance_buffer: TrackedBuffer,
+    indirect_buffer: TrackedBuffer,
+    viewport_buffer: TrackedBuffer,
+    view_state_buffer: TrackedBuffer,
+    cull_uniform_buffer: TrackedBuffer,
+    cull_uniform_buffer_size: u64,
+}
+
 impl NoteRenderer {
     /// 创建新的音符渲染器（默认带 depth attachment）
     ///
@@ -115,12 +154,55 @@ impl NoteRenderer {
         vertex_shader: &'static str,
         cull_shader: &'static str,
     ) -> Self {
+        let is_onion = vertex_shader == Self::ONION_SHADER;
+        let shaders = Self::create_shader_stage(device, vertex_shader, cull_shader, is_onion);
+        let layouts = Self::create_bind_layouts(device);
+        let pipelines =
+            Self::create_pipelines(device, &shaders, &layouts, format, needs_depth, is_onion);
+        let buffers = Self::create_buffer_stage(device, queue, epoch);
+        let (render_bind_groups, cull_bind_groups) =
+            Self::create_bind_groups(device, &buffers, &layouts);
+
+        Self {
+            pipeline: pipelines.render,
+            vertical_pipeline: pipelines.vertical,
+            cull_pipeline: pipelines.cull,
+            vertical_cull_pipeline: pipelines.vertical_cull,
+            gpu_note_buffer: buffers.gpu_note_buffer,
+            visible_instance_buffer: buffers.visible_instance_buffer,
+            indirect_buffer: buffers.indirect_buffer,
+            indirect_template: buffers.indirect_template,
+            external_bound: false,
+            capacity: Self::INITIAL_CAPACITY,
+            max_capacity: buffers.max_capacity,
+            last_upload_count: 0,
+            viewport_buffer: buffers.viewport_buffer,
+            view_state_buffer: buffers.view_state_buffer,
+            cull_uniform_buffer: buffers.cull_uniform_buffer,
+            cull_uniform_buffer_size: buffers.cull_uniform_buffer_size,
+            render_bind_groups,
+            cull_bind_groups,
+            render_bind_group_layout: layouts.render,
+            cull_bind_group_layout: layouts.cull,
+            chunk_layout: buffers.chunk_layout,
+            point_pipeline: pipelines.point,
+            direct_pipeline: pipelines.direct,
+            vertical_direct_pipeline: pipelines.vertical_direct,
+        }
+    }
+
+    /// 按原顺序创建横向/纵向的渲染与 cull 着色器模块。
+    fn create_shader_stage(
+        device: &wgpu::Device,
+        vertex_shader: &'static str,
+        cull_shader: &'static str,
+        is_onion: bool,
+    ) -> NoteShaderStage {
         let shader = crate::shader::create_shader_module(device, "note_shader", vertex_shader);
         let cull_shader = crate::shader::create_shader_module(device, "cull_shader", cull_shader);
 
         // 纵向转置版管线（复用同缓冲，瀑布流风格的纵向流动）
         // 洋葱皮纵向需主轨特别显示（ViewState），与普通预览音符的 note_vertical 不同
-        let is_onion = vertex_shader == Self::ONION_SHADER;
         let vertical_shader_source = if is_onion {
             Self::ONION_SHADER_VERTICAL
         } else {
@@ -142,45 +224,42 @@ impl NoteRenderer {
             Self::CULL_SHADER_VERTICAL,
         );
 
+        NoteShaderStage {
+            render: shader,
+            cull: cull_shader,
+            vertical: vertical_shader,
+            vertical_cull: vertical_cull_shader,
+        }
+    }
+
+    /// 按原顺序创建渲染与 cull 绑定组布局。
+    fn create_bind_layouts(device: &wgpu::Device) -> NoteBindLayouts {
         // 创建渲染 bind group layout
-        let render_bind_group_layout = Self::create_render_bind_group_layout(device);
-
+        let render = Self::create_render_bind_group_layout(device);
         // 创建计算 bind group layout
-        let cull_bind_group_layout = Self::create_cull_bind_group_layout(device);
+        let cull = Self::create_cull_bind_group_layout(device);
+        NoteBindLayouts { render, cull }
+    }
 
-        // 创建渲染管线
-        // `opaque`：洋葱皮/主音符层 FS 恒输出 alpha = 1.0 ⇒ 用替换写入，省掉
-        // blend ROP 的读改写；预览层 `note.wgsl` 有 70% alpha 哨兵分支，保持混合。
-        let pipeline = Self::create_render_pipeline(
-            device,
-            &shader,
-            &render_bind_group_layout,
-            format,
-            needs_depth,
-            is_onion,
-        );
-        let vertical_pipeline = Self::create_render_pipeline(
-            device,
-            &vertical_shader,
-            &render_bind_group_layout,
-            format,
-            needs_depth,
-            is_onion,
-        );
-
-        // 创建计算管线
-        let cull_pipeline =
-            Self::create_cull_pipeline(device, &cull_shader, &cull_bind_group_layout);
-        let vertical_cull_pipeline =
-            Self::create_cull_pipeline(device, &vertical_cull_shader, &cull_bind_group_layout);
+    /// 按原顺序创建全部管线；可选管线依 is_onion / needs_depth 条件省略。
+    fn create_pipelines(
+        device: &wgpu::Device,
+        shaders: &NoteShaderStage,
+        layouts: &NoteBindLayouts,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+        is_onion: bool,
+    ) -> NotePipelines {
+        let mut pipelines =
+            Self::create_core_pipelines(device, shaders, layouts, format, needs_depth, is_onion);
 
         // 点图元直绘管线（亚像素档位，PREF-004 P1）：仅横向洋葱皮 + 带 depth 的
         // 交互路径需要，导出无 depth 变体不建（省掉大 shader 的管线编译，启动可见）。
-        let point_pipeline = if is_onion && needs_depth {
+        pipelines.point = if is_onion && needs_depth {
             Some(Self::create_point_pipeline(
                 device,
-                &shader,
-                &render_bind_group_layout,
+                &shaders.render,
+                &layouts.render,
                 format,
                 needs_depth,
             ))
@@ -194,11 +273,11 @@ impl NoteRenderer {
         // 逐帧翻转 = 闪烁；直绘按提交序绘制 ⇒ 后来者居上且跨帧稳定。
         // 混合模式随 `is_onion`：洋葱皮不透明（early-Z），预览层 alpha 混合。
         // 导出无 depth 变体保持 `None`（`draw_direct` 内部回退 cull 路径）。
-        let direct_pipeline = if needs_depth {
+        pipelines.direct = if needs_depth {
             Some(Self::create_direct_pipeline(
                 device,
-                &shader,
-                &render_bind_group_layout,
+                &shaders.render,
+                &layouts.render,
                 format,
                 needs_depth,
                 !is_onion,
@@ -211,11 +290,11 @@ impl NoteRenderer {
         // 仍走 cull + 可见索引路径（与本卡前既有口径一致），不为它多付一次大 shader
         // 的管线编译（启动时间敏感）。预览层纵向必须建：重叠预览矩形若走 cull
         // 随机序，纵向卷帘下同样闪烁。
-        let vertical_direct_pipeline = if needs_depth && !is_onion {
+        pipelines.vertical_direct = if needs_depth && !is_onion {
             Some(Self::create_direct_pipeline(
                 device,
-                &vertical_shader,
-                &render_bind_group_layout,
+                &shaders.vertical,
+                &layouts.render,
                 format,
                 needs_depth,
                 true,
@@ -224,6 +303,60 @@ impl NoteRenderer {
             None
         };
 
+        pipelines
+    }
+
+    /// 按原顺序创建横向/纵向渲染管线与 cull 计算管线，可选直绘管线留待调用方补齐。
+    fn create_core_pipelines(
+        device: &wgpu::Device,
+        shaders: &NoteShaderStage,
+        layouts: &NoteBindLayouts,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+        is_onion: bool,
+    ) -> NotePipelines {
+        // 创建渲染管线
+        // `opaque`：洋葱皮/主音符层 FS 恒输出 alpha = 1.0 ⇒ 用替换写入，省掉
+        // blend ROP 的读改写；预览层 `note.wgsl` 有 70% alpha 哨兵分支，保持混合。
+        let pipeline = Self::create_render_pipeline(
+            device,
+            &shaders.render,
+            &layouts.render,
+            format,
+            needs_depth,
+            is_onion,
+        );
+        let vertical_pipeline = Self::create_render_pipeline(
+            device,
+            &shaders.vertical,
+            &layouts.render,
+            format,
+            needs_depth,
+            is_onion,
+        );
+
+        // 创建计算管线
+        let cull_pipeline = Self::create_cull_pipeline(device, &shaders.cull, &layouts.cull);
+        let vertical_cull_pipeline =
+            Self::create_cull_pipeline(device, &shaders.vertical_cull, &layouts.cull);
+
+        NotePipelines {
+            render: pipeline,
+            vertical: vertical_pipeline,
+            cull: cull_pipeline,
+            vertical_cull: vertical_cull_pipeline,
+            point: None,
+            direct: None,
+            vertical_direct: None,
+        }
+    }
+
+    /// 按原顺序计算容量、分块布局与模板，并创建全部缓冲区与视图状态 uniform。
+    fn create_buffer_stage(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        epoch: GpuEpoch,
+    ) -> NoteBufferStage {
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
             / std::mem::size_of::<crate::NoteInstance>();
@@ -258,59 +391,54 @@ impl NoteRenderer {
             },
         );
 
+        NoteBufferStage {
+            max_capacity,
+            chunk_layout,
+            indirect_template,
+            gpu_note_buffer,
+            visible_instance_buffer,
+            indirect_buffer,
+            viewport_buffer,
+            view_state_buffer,
+            cull_uniform_buffer,
+            cull_uniform_buffer_size,
+        }
+    }
+
+    /// 按原顺序创建渲染绑定组与计算绑定组。
+    fn create_bind_groups(
+        device: &wgpu::Device,
+        buffers: &NoteBufferStage,
+        layouts: &NoteBindLayouts,
+    ) -> (Vec<wgpu::BindGroup>, Vec<wgpu::BindGroup>) {
         // 创建渲染 bind groups（按 chunk 分块，避免大 source buffer 整体绑定超限）
         // binding 3 = 本 chunk 的 cull uniform 槽位（chunk_start 全局基准）
         let render_bind_groups = Self::create_render_bind_groups(
             device,
-            &render_bind_group_layout,
-            viewport_buffer.inner(),
-            view_state_buffer.inner(),
-            gpu_note_buffer.buffer(),
-            visible_instance_buffer.inner(),
-            cull_uniform_buffer.inner(),
-            &chunk_layout,
+            &layouts.render,
+            buffers.viewport_buffer.inner(),
+            buffers.view_state_buffer.inner(),
+            buffers.gpu_note_buffer.buffer(),
+            buffers.visible_instance_buffer.inner(),
+            buffers.cull_uniform_buffer.inner(),
+            &buffers.chunk_layout,
         );
 
         // 创建计算 bind groups（初始无实例数据，绑定切片按 buffer 容量划分）
         let cull_bind_groups = Self::build_cull_bind_groups(
             device,
-            &chunk_layout,
-            &gpu_note_buffer,
-            visible_instance_buffer.inner(),
-            indirect_buffer.inner(),
-            cull_uniform_buffer.inner(),
-            &cull_uniform_buffer_size,
-            viewport_buffer.inner(),
-            view_state_buffer.inner(),
-            &cull_bind_group_layout,
+            &buffers.chunk_layout,
+            &buffers.gpu_note_buffer,
+            buffers.visible_instance_buffer.inner(),
+            buffers.indirect_buffer.inner(),
+            buffers.cull_uniform_buffer.inner(),
+            &buffers.cull_uniform_buffer_size,
+            buffers.viewport_buffer.inner(),
+            buffers.view_state_buffer.inner(),
+            &layouts.cull,
         );
 
-        Self {
-            pipeline,
-            vertical_pipeline,
-            cull_pipeline,
-            vertical_cull_pipeline,
-            gpu_note_buffer,
-            visible_instance_buffer,
-            indirect_buffer,
-            indirect_template,
-            external_bound: false,
-            capacity: Self::INITIAL_CAPACITY,
-            max_capacity,
-            last_upload_count: 0,
-            viewport_buffer,
-            view_state_buffer,
-            cull_uniform_buffer,
-            cull_uniform_buffer_size,
-            render_bind_groups,
-            cull_bind_groups,
-            render_bind_group_layout,
-            cull_bind_group_layout,
-            chunk_layout,
-            point_pipeline,
-            direct_pipeline,
-            vertical_direct_pipeline,
-        }
+        (render_bind_groups, cull_bind_groups)
     }
 
     /// 创建所有 GPU 缓冲区（音符实例缓冲、可见索引缓冲、间接绘制缓冲、

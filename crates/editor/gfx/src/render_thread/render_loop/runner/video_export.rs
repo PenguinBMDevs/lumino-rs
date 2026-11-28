@@ -7,6 +7,7 @@ use super::super::prepare::prepare_renderers;
 use super::super::render_pass::execute_render_pass;
 use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{RenderContext, RenderFrameState, RenderThreadChannels};
+use crate::gpu_resource_tracker::TrackedTexture;
 use crate::{CullActiveParams, CullWindow};
 
 pub(crate) mod common;
@@ -109,6 +110,49 @@ fn handle_video_frame_inner(
 
     // 钢琴卷帘模式：正常 GPU 渲染管线
 
+    // 准备阶段：离屏纹理 + 音符数据源（直绑/回退）→ 编码器与当前纹理
+    let Some((mut encoder, texture_arc)) =
+        prepare_video_frame(ctx, &params, frame, width, height, diag_idx)
+    else {
+        return;
+    };
+
+    // 渲染阶段：准备渲染器 + 执行渲染通道
+    render_video_frame(ctx, &params, frame, &mut encoder);
+
+    // 收尾阶段：键色聚合、背压、copy/submit 与读回
+    finish_video_frame(
+        ctx,
+        &params,
+        frame,
+        VideoFrameOutput {
+            width,
+            height,
+            encoder,
+            texture_arc,
+        },
+    );
+}
+
+/// 导出帧收尾阶段入参（替代多个位置参数，保持调用点可读）。
+struct VideoFrameOutput {
+    width: u32,
+    height: u32,
+    encoder: wgpu::CommandEncoder,
+    texture_arc: Arc<TrackedTexture>,
+}
+
+/// 准备离屏纹理与音符数据源，返回编码器与当前帧纹理。
+///
+/// 纹理未就绪时返回 `None`，主流程据此跳过本帧。
+fn prepare_video_frame(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    frame: &mut RenderFrameState<'_>,
+    width: u32,
+    height: u32,
+    diag_idx: u32,
+) -> Option<(wgpu::CommandEncoder, Arc<TrackedTexture>)> {
     // 1. 确保离屏纹理已创建（视频导出为纯 2D，禁用 depth）
     let mut tex_resources = OffscreenTextureResources {
         device: &ctx.device,
@@ -121,12 +165,9 @@ fn handle_video_frame_inner(
         depth_texture_view: frame.depth_texture_view,
         texture_view: frame.texture_view,
         latest_texture_clone: frame.latest_texture_clone,
-        params: &params,
+        params,
     };
     ensure_textures(&mut tex_resources, false);
-
-    // 视频导出始终使用 Lumino卷帘渲染模式：不上传 贴图瀑布流
-    let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
     // 2. 音符数据源（二选一，互斥，优先级：直绑 > 上传回退）：
     //    - 主缓冲就绪且尚未直绑 → 直绑 onion 常驻缓冲，零上传。含首帧竞态后的
@@ -159,7 +200,28 @@ fn handle_video_frame_inner(
             }
         }
     }
-    // 首帧诊断：数据源（直绑/回退/空）＋上传/直绑后的 last_upload_count。
+    log_video_note_source(frame, diag_idx);
+
+    // 3. 检查离屏纹理是否就绪（clone Arc 断开与 frame 的借用链，
+    //    使后续 execute_render_pass 可以再借 &mut frame）。
+    let texture_opt = frame.current_texture.as_ref().map(Arc::clone);
+    let Some(texture_arc) = texture_opt else {
+        tracing::warn!("视频帧渲染：离屏纹理未就绪，跳过");
+        return None;
+    };
+
+    // 4. 创建编码器并执行渲染通道
+    let encoder = ctx
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("video_export_render_encoder"),
+        });
+
+    Some((encoder, texture_arc))
+}
+
+/// 首帧诊断：数据源（直绑/回退/空）＋上传/直绑后的 last_upload_count。
+fn log_video_note_source(frame: &RenderFrameState<'_>, diag_idx: u32) {
     // 下次导出若怀疑"仍然上传"，看这三行：bound=直绑零上传，fallback=回退上传。
     if diag_idx < 3 {
         let source = if frame.renderers.note.is_external_bound() {
@@ -176,41 +238,45 @@ fn handle_video_frame_inner(
             frame.renderers.note.last_upload_count(),
         );
     }
+}
 
-    // 3. 检查离屏纹理是否就绪（clone Arc 断开与 frame 的借用链，
-    //    使后续 execute_render_pass 可以再借 &mut frame）。
-    let texture_opt = frame.current_texture.as_ref().map(Arc::clone);
-    let Some(texture_arc) = texture_opt else {
-        tracing::warn!("视频帧渲染：离屏纹理未就绪，跳过");
-        return;
-    };
-
-    // 4. 创建编码器并执行渲染通道
-    let mut encoder = ctx
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("video_export_render_encoder"),
-        });
+/// 执行渲染通道（准备渲染器 → 渲染 pass），调用顺序与主流程一致。
+fn render_video_frame(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    frame: &mut RenderFrameState<'_>,
+    encoder: &mut wgpu::CommandEncoder,
+) {
+    // 视频导出始终使用 Lumino卷帘渲染模式：不上传 贴图瀑布流
+    let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
     crate::profiling::tracy_zone!("gfx.export.prepare", {
-        prepare_renderers(frame.renderers, &params, &ctx.device, &ctx.queue);
+        prepare_renderers(frame.renderers, params, &ctx.device, &ctx.queue);
     });
 
     crate::profiling::tracy_zone!("gfx.export.render_pass", {
-        execute_render_pass(
-            &mut encoder,
-            ctx,
-            &params,
-            &waterfall_visible_coords,
-            true,
-            frame,
-        );
+        execute_render_pass(encoder, ctx, params, &waterfall_visible_coords, true, frame);
     });
+}
+
+/// 键色聚合 → 流水线背压 → copy/submit → 非阻塞读回。
+fn finish_video_frame(
+    ctx: &RenderContext,
+    params: &RenderParams,
+    frame: &mut RenderFrameState<'_>,
+    output: VideoFrameOutput,
+) {
+    let VideoFrameOutput {
+        width,
+        height,
+        encoder,
+        texture_arc,
+    } = output;
 
     // 4b. 钢琴卷帘键色 GPU 聚合：COUNT 顺带推导 128 键色（1KB 回读），
     // 随帧同槽排队发送，导出线程零 CPU 扫描。
     let current_key_colors = crate::profiling::tracy_zone!("gfx.export.key_colors", {
-        collect_piano_key_colors(ctx, &params, frame)
+        collect_piano_key_colors(ctx, params, frame)
     });
     // 可见实例数（钢琴卷帘直绑时 params.note_instances 为 0，取常驻缓冲计数）
     let visible_notes = params
