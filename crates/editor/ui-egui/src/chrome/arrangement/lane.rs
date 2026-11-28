@@ -99,6 +99,25 @@ const STATE_ID: &str = "lumino.arrangement.lane-state";
 /// 中键平移状态（视图局部坐标）。
 const PAN_ID: &str = "lumino.arrangement.lane-pan";
 
+/// 本帧指针输入快照（`show` 只读一次，避免多处重复展开 `ui.input` 闭包）。
+#[derive(Debug, Clone, Copy)]
+struct LanePointer {
+    /// 指针屏幕坐标；`None` = 本帧没有指针位置。
+    pos: Option<egui::Pos2>,
+    /// 左键按下（本帧有任意按下事件且主键按下）。
+    left_pressed: bool,
+    /// 左键释放。
+    left_released: bool,
+    /// 中键按下。
+    middle_pressed: bool,
+    /// 中键释放。
+    middle_released: bool,
+    /// 中键持续按下。
+    middle_down: bool,
+    /// 指针正在移动。
+    moving: bool,
+}
+
 /// egui 侧驱动：把本帧指针事件喂给共享 handler，返回动作。
 ///
 /// `lane_model` 携带真实输入（工具 / 选区 / 选中音符 / 精度），
@@ -110,41 +129,10 @@ pub fn show(
     track_list: &crate::chrome::ArrangementTrackListModel,
 ) -> Vec<ArrangementAction> {
     let rect = lane_model.rect;
-    let zoom_x = ruler.zoom_x.max(1e-6);
-    let zoom_y = (track_list.track_height / lane_model.track_height.max(1e-6)).max(1e-6);
-    let mut viewport = ArrangementViewport {
-        scroll_x: ruler.scroll_x,
-        scroll_y: track_list.scroll_y,
-        zoom_x,
-        zoom_y,
-        track_height: lane_model.track_height,
-        canvas_offset: Point2::new(rect.x, rect.y),
-        canvas_size: Point2::new(rect.width, rect.height),
-        total_ticks: ruler.total_ticks,
-        ppq: ruler.ppq,
-        ..ArrangementViewport::default()
-    };
+    let mut viewport = build_viewport(lane_model, ruler, track_list, rect);
 
-    let (
-        pointer,
-        left_pressed,
-        left_released,
-        middle_pressed,
-        middle_released,
-        middle_down,
-        moving,
-    ) = ui.input(|i| {
-        (
-            i.pointer.interact_pos(),
-            i.pointer.any_pressed() && i.pointer.primary_pressed(),
-            i.pointer.primary_released(),
-            i.pointer.button_pressed(egui::PointerButton::Middle),
-            i.pointer.button_released(egui::PointerButton::Middle),
-            i.pointer.button_down(egui::PointerButton::Middle),
-            i.pointer.is_moving(),
-        )
-    });
-    let Some(pos) = pointer else {
+    let pointer = read_pointer(ui);
+    let Some(pos) = pointer.pos else {
         return Vec::new();
     };
     let local = Point2::new(pos.x - rect.x, pos.y - rect.y);
@@ -157,95 +145,22 @@ pub fn show(
     let mut actions = Vec::new();
 
     // ── 中键平移（等价 上一代 的 middle_drag） ──
-    if middle_pressed && inside {
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(egui::Id::unique(PAN_ID), local);
-        });
-    } else if middle_down {
-        if let Some(start) = ui
-            .ctx()
-            .data(|d| d.get_temp::<Point2>(egui::Id::unique(PAN_ID)))
-        {
-            let delta = local - start;
-            if delta.x != 0.0 || delta.y != 0.0 {
-                ui.ctx().data_mut(|d| {
-                    d.insert_temp(egui::Id::unique(PAN_ID), local);
-                });
-                actions.push(ArrangementAction::ScrollX(
-                    (ruler.scroll_x - delta.x).max(0.0),
-                ));
-                actions.push(ArrangementAction::ScrollY(
-                    (track_list.scroll_y - delta.y).max(0.0),
-                ));
-                return actions;
-            }
-        }
-    } else if middle_released {
-        ui.ctx()
-            .data_mut(|d| d.remove::<Point2>(egui::Id::unique(PAN_ID)));
+    if apply_middle_pan(ui, &pointer, inside, local, &viewport, &mut actions) {
+        return actions;
     }
 
     // ── 滚轮：Ctrl 缩放 / Shift 横向 / 普通双轴滚动 ──
-    if inside && let Some(wheel) = super::wheel::WheelGesture::collect(ui) {
-        if ui.input(|i| i.modifiers.ctrl) {
-            let lines = wheel.zoom_lines().clamp(-1.0, 1.0);
-            if lines.abs() > f32::EPSILON {
-                actions.push(ArrangementAction::ZoomX {
-                    zoom: zoom_x * (1.0 + lines * 0.1),
-                    fixed_ratio: (local.x / rect.width.max(1.0)).clamp(0.0, 1.0),
-                });
-                return actions;
-            }
-        } else {
-            // 与钢琴卷帘同口径：触控板水平 / 斜向滑动直接映射双轴；
-            // Shift+滚轮在平台未提供横向分量时把纵向增量转成横向；
-            // 方向为 `scroll = base - delta`（内容跟随手指）。
-            let (scroll_x, scroll_y) = wheel.scroll_targets(
-                ui.input(|i| i.modifiers.shift),
-                ruler.scroll_x,
-                track_list.scroll_y,
-            );
-            if let Some(x) = scroll_x {
-                actions.push(ArrangementAction::ScrollX(x));
-            }
-            if let Some(y) = scroll_y {
-                actions.push(ArrangementAction::ScrollY(y));
-            }
-            if !actions.is_empty() {
-                return actions;
-            }
-        }
+    if apply_wheel(ui, inside, local, &viewport, &mut actions) {
+        return actions;
     }
 
     // ── 工具事件：按下 > 移动 > 释放（一次只喂一个，与画布逐事件投递等价） ──
-    let event = if left_pressed && inside {
-        Some(pressed_left())
-    } else if moving && ui.input(|i| i.pointer.primary_down()) {
-        Some(moved_event())
-    } else if left_released {
-        Some(released_left())
-    } else {
-        None
-    };
-    let Some(event) = event else {
+    let Some(event) = pick_event(ui, &pointer, inside) else {
         return actions;
     };
 
     // 交互状态跨帧保存（egui ctx-data 要求 Send+Sync，用 Arc<Mutex>）。
-    let state = ui
-        .ctx()
-        .data(|d| {
-            d.get_temp::<std::sync::Arc<std::sync::Mutex<ArrangementInteractionState>>>(
-                egui::Id::unique(STATE_ID),
-            )
-        })
-        .unwrap_or_else(|| {
-            let state =
-                std::sync::Arc::new(std::sync::Mutex::new(ArrangementInteractionState::default()));
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state.clone()));
-            state
-        });
+    let state = lane_state(ui);
 
     let lane_ctx = LaneContext {
         rect,
@@ -269,6 +184,152 @@ pub fn show(
         &lane_ctx,
     ));
     actions
+}
+
+/// 由泳道 / 标尺 / 轨道列模型组装本帧视口（只读，不写回任何模型）。
+fn build_viewport(
+    lane_model: &crate::chrome::ArrangementLaneModel,
+    ruler: &crate::chrome::ArrangementRulerModel,
+    track_list: &crate::chrome::ArrangementTrackListModel,
+    rect: Rect2,
+) -> ArrangementViewport {
+    let zoom_x = ruler.zoom_x.max(1e-6);
+    let zoom_y = (track_list.track_height / lane_model.track_height.max(1e-6)).max(1e-6);
+    ArrangementViewport {
+        scroll_x: ruler.scroll_x,
+        scroll_y: track_list.scroll_y,
+        zoom_x,
+        zoom_y,
+        track_height: lane_model.track_height,
+        canvas_offset: Point2::new(rect.x, rect.y),
+        canvas_size: Point2::new(rect.width, rect.height),
+        total_ticks: ruler.total_ticks,
+        ppq: ruler.ppq,
+        ..ArrangementViewport::default()
+    }
+}
+
+/// 读取本帧指针状态（指针坐标与各键的按下 / 释放 / 持续按下）。
+fn read_pointer(ui: &egui::Ui) -> LanePointer {
+    ui.input(|i| LanePointer {
+        pos: i.pointer.interact_pos(),
+        left_pressed: i.pointer.any_pressed() && i.pointer.primary_pressed(),
+        left_released: i.pointer.primary_released(),
+        middle_pressed: i.pointer.button_pressed(egui::PointerButton::Middle),
+        middle_released: i.pointer.button_released(egui::PointerButton::Middle),
+        middle_down: i.pointer.button_down(egui::PointerButton::Middle),
+        moving: i.pointer.is_moving(),
+    })
+}
+
+/// 中键平移：把本帧的平移滚动追加进 `actions`，返回 `true` 表示本帧只投递平移。
+fn apply_middle_pan(
+    ui: &egui::Ui,
+    pointer: &LanePointer,
+    inside: bool,
+    local: Point2,
+    viewport: &ArrangementViewport,
+    actions: &mut Vec<ArrangementAction>,
+) -> bool {
+    if pointer.middle_pressed && inside {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(egui::Id::unique(PAN_ID), local);
+        });
+    } else if pointer.middle_down {
+        if let Some(start) = ui
+            .ctx()
+            .data(|d| d.get_temp::<Point2>(egui::Id::unique(PAN_ID)))
+        {
+            let delta = local - start;
+            if delta.x != 0.0 || delta.y != 0.0 {
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(egui::Id::unique(PAN_ID), local);
+                });
+                actions.push(ArrangementAction::ScrollX(
+                    (viewport.scroll_x - delta.x).max(0.0),
+                ));
+                actions.push(ArrangementAction::ScrollY(
+                    (viewport.scroll_y - delta.y).max(0.0),
+                ));
+                return true;
+            }
+        }
+    } else if pointer.middle_released {
+        ui.ctx()
+            .data_mut(|d| d.remove::<Point2>(egui::Id::unique(PAN_ID)));
+    }
+    false
+}
+
+/// 滚轮：Ctrl 缩放 / Shift 横向 / 普通双轴滚动，返回 `true` 表示本帧需要提前返回。
+fn apply_wheel(
+    ui: &egui::Ui,
+    inside: bool,
+    local: Point2,
+    viewport: &ArrangementViewport,
+    actions: &mut Vec<ArrangementAction>,
+) -> bool {
+    if inside && let Some(wheel) = super::wheel::WheelGesture::collect(ui) {
+        if ui.input(|i| i.modifiers.ctrl) {
+            let lines = wheel.zoom_lines().clamp(-1.0, 1.0);
+            if lines.abs() > f32::EPSILON {
+                actions.push(ArrangementAction::ZoomX {
+                    zoom: viewport.zoom_x * (1.0 + lines * 0.1),
+                    fixed_ratio: (local.x / viewport.canvas_size.x.max(1.0)).clamp(0.0, 1.0),
+                });
+                return true;
+            }
+        } else {
+            // 与钢琴卷帘同口径：触控板水平 / 斜向滑动直接映射双轴；
+            // Shift+滚轮在平台未提供横向分量时把纵向增量转成横向；
+            // 方向为 `scroll = base - delta`（内容跟随手指）。
+            let (scroll_x, scroll_y) = wheel.scroll_targets(
+                ui.input(|i| i.modifiers.shift),
+                viewport.scroll_x,
+                viewport.scroll_y,
+            );
+            if let Some(x) = scroll_x {
+                actions.push(ArrangementAction::ScrollX(x));
+            }
+            if let Some(y) = scroll_y {
+                actions.push(ArrangementAction::ScrollY(y));
+            }
+            if !actions.is_empty() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 本次输入对应的工具事件（按下 > 移动 > 释放，一次只喂一个）。
+fn pick_event(ui: &egui::Ui, pointer: &LanePointer, inside: bool) -> Option<ArrangementEvent> {
+    if pointer.left_pressed && inside {
+        Some(pressed_left())
+    } else if pointer.moving && ui.input(|i| i.pointer.primary_down()) {
+        Some(moved_event())
+    } else if pointer.left_released {
+        Some(released_left())
+    } else {
+        None
+    }
+}
+
+/// 取出（首次调用时创建）跨帧保存在 egui ctx-data 中的交互状态。
+fn lane_state(ui: &egui::Ui) -> std::sync::Arc<std::sync::Mutex<ArrangementInteractionState>> {
+    ui.ctx()
+        .data(|d| {
+            d.get_temp::<std::sync::Arc<std::sync::Mutex<ArrangementInteractionState>>>(
+                egui::Id::unique(STATE_ID),
+            )
+        })
+        .unwrap_or_else(|| {
+            let state =
+                std::sync::Arc::new(std::sync::Mutex::new(ArrangementInteractionState::default()));
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state.clone()));
+            state
+        })
 }
 
 #[cfg(test)]

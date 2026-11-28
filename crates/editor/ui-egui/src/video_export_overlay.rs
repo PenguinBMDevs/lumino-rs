@@ -121,43 +121,9 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
         match row {
             Row::Gap(_) => {}
             Row::Text(text, size, color, center) => {
-                let layout = if center {
-                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight)
-                } else {
-                    egui::Layout::left_to_right(Align::Center)
-                };
-                let mut child =
-                    ui.new_child(egui::UiBuilder::new().max_rect(row_rect).layout(layout));
-                child.add(
-                    egui::Label::new(RichText::new(text).size(size).color(color))
-                        .selectable(false)
-                        .truncate(),
-                );
+                text_row(ui, row_rect, text, size, color, center)
             }
-            Row::Bar(progress) => {
-                let bar = egui::Rect::from_center_size(
-                    row_rect.center(),
-                    Vec2::new(row_rect.width(), 10.0),
-                );
-                ui.painter().rect(
-                    bar,
-                    CornerRadius::same(5),
-                    theme::base_bg(),
-                    Stroke::new(1.0, theme::selected_bg()),
-                    egui::StrokeKind::Inside,
-                );
-                let filled = (bar.width() - 2.0) * progress.clamp(0.0, 1.0);
-                if filled > 0.0 {
-                    ui.painter().rect_filled(
-                        egui::Rect::from_min_size(
-                            egui::pos2(bar.left() + 1.0, bar.top() + 1.0),
-                            Vec2::new(filled, bar.height() - 2.0),
-                        ),
-                        CornerRadius::same(4),
-                        theme::accent(),
-                    );
-                }
-            }
+            Row::Bar(progress) => bar_row(ui, row_rect, progress),
             Row::Preview(_) => {
                 preview::show_row(ui, row_rect, model.preview.as_ref());
             }
@@ -188,34 +154,79 @@ pub fn show(ui: &mut egui::Ui, model: &VideoExportOverlayModel) {
                         .truncate(),
                 );
             }
-            Row::ErrorBox(detail) => {
-                ui.painter().rect(
-                    row_rect,
-                    CornerRadius::same(4),
-                    theme::base_bg(),
-                    Stroke::new(1.0, theme::selected_bg()),
-                    egui::StrokeKind::Inside,
-                );
-                let mut child = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(row_rect.shrink(8.0))
-                        .layout(egui::Layout::top_down(Align::Min)),
-                );
-                egui::ScrollArea::vertical()
-                    .id_salt("lumino.video-overlay.error")
-                    .auto_shrink([false, false])
-                    .show(&mut child, |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(detail).size(13.0).color(theme::danger()),
-                            )
-                            .wrap(),
-                        );
-                    });
-            }
+            Row::ErrorBox(detail) => error_box_row(ui, row_rect, detail),
         }
         y += h;
     }
+}
+
+/// 落笔一行文本（`center` 决定水平居中对齐）。
+fn text_row(
+    ui: &mut egui::Ui,
+    row_rect: egui::Rect,
+    text: String,
+    size: f32,
+    color: Color32,
+    center: bool,
+) {
+    let layout = if center {
+        egui::Layout::centered_and_justified(egui::Direction::LeftToRight)
+    } else {
+        egui::Layout::left_to_right(Align::Center)
+    };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row_rect).layout(layout));
+    child.add(
+        egui::Label::new(RichText::new(text).size(size).color(color))
+            .selectable(false)
+            .truncate(),
+    );
+}
+
+/// 落笔一行进度条（含底框与已完成填充）。
+fn bar_row(ui: &mut egui::Ui, row_rect: egui::Rect, progress: f32) {
+    let bar = egui::Rect::from_center_size(row_rect.center(), Vec2::new(row_rect.width(), 10.0));
+    ui.painter().rect(
+        bar,
+        CornerRadius::same(5),
+        theme::base_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
+        egui::StrokeKind::Inside,
+    );
+    let filled = (bar.width() - 2.0) * progress.clamp(0.0, 1.0);
+    if filled > 0.0 {
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(bar.left() + 1.0, bar.top() + 1.0),
+                Vec2::new(filled, bar.height() - 2.0),
+            ),
+            CornerRadius::same(4),
+            theme::accent(),
+        );
+    }
+}
+
+/// 落笔错误详情滚动框。
+fn error_box_row(ui: &mut egui::Ui, row_rect: egui::Rect, detail: String) {
+    ui.painter().rect(
+        row_rect,
+        CornerRadius::same(4),
+        theme::base_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
+        egui::StrokeKind::Inside,
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(row_rect.shrink(8.0))
+            .layout(egui::Layout::top_down(Align::Min)),
+    );
+    egui::ScrollArea::vertical()
+        .id_salt("lumino.video-overlay.error")
+        .auto_shrink([false, false])
+        .show(&mut child, |ui| {
+            ui.add(
+                egui::Label::new(RichText::new(detail).size(13.0).color(theme::danger())).wrap(),
+            );
+        });
 }
 
 /// 按状态产出排版计划。

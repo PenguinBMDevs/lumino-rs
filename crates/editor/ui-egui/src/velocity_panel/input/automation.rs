@@ -50,7 +50,6 @@ pub(in crate::velocity_panel) fn handle(
         return Some(action);
     }
     let rect = model.canvas;
-    let height = rect.height();
     let pos = ui.ctx().input(|i| i.pointer.latest_pos())?;
     let pressed = ui.ctx().input(|i| i.pointer.primary_pressed());
     let released = ui.ctx().input(|i| i.pointer.primary_released());
@@ -59,10 +58,7 @@ pub(in crate::velocity_panel) fn handle(
     let local = Vec2::new(pos.x - rect.left(), pos.y - rect.top());
     let in_canvas = rect.contains(pos) && local.y > RESIZE_HANDLE;
 
-    let mut state = ui
-        .ctx()
-        .data(|d| d.get_temp::<EditState>(egui::Id::unique(STATE_ID)))
-        .unwrap_or_default();
+    let mut state = load_state(ui);
     let mut action = None;
 
     // 右键：命中锚点即删除。
@@ -93,63 +89,95 @@ pub(in crate::velocity_panel) fn handle(
                 old_value: anchor.value,
             });
             state.auto_first = true;
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state));
+            store_state(ui, &state);
             return None;
         }
         if model.eraser_tool {
             return None;
         }
         // 空白处：新增锚点（Curve 工具）。
-        let tick = snapped_tick(model, local.x);
-        let value = y_to_value(
-            local.y,
-            lane.max_value,
-            model.value_zoom,
-            model.value_scroll,
-            height,
-        );
-        return Some(VelocityPanelAction::AutomationAdd {
-            track_idx: lane.track_idx,
-            controller: lane.controller,
-            tick,
-            value: value.round().clamp(0.0, lane.max_value) as u16,
-        });
+        return Some(add_action(model, lane, local));
     }
 
     if down && let Some(drag) = state.auto {
-        let tick = snapped_tick(model, local.x);
-        let value = y_to_value(
-            local.y,
-            lane.max_value,
-            model.value_zoom,
-            model.value_scroll,
-            height,
-        );
-        let new_value = value.round().clamp(0.0, lane.max_value) as u16;
-        if new_value != drag.old_value || tick != drag.old_tick {
-            action = Some(VelocityPanelAction::AutomationMove {
-                track_idx: drag.track_idx,
-                lane_idx: drag.lane_idx,
-                old_tick: drag.old_tick,
-                old_value: lane.controller.is_none().then_some(drag.old_value),
-                new_tick: tick,
-                new_value,
-                first: state.auto_first,
-            });
-            state.auto_first = false;
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state.clone()));
-        }
+        action = drag_action(ui, model, lane, drag, &mut state, local);
     }
 
     if released {
         state.auto = None;
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state));
+        store_state(ui, &state);
     }
 
     action
+}
+
+/// 读取本帧自动化拖拽状态。
+fn load_state(ui: &egui::Ui) -> EditState {
+    ui.ctx()
+        .data(|d| d.get_temp::<EditState>(egui::Id::unique(STATE_ID)))
+        .unwrap_or_default()
+}
+
+/// 写回自动化拖拽状态。
+fn store_state(ui: &egui::Ui, state: &EditState) {
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::unique(STATE_ID), state.clone()));
+}
+
+/// 面板 Y → 原始自动化值（未吸附 / 钳制）。
+fn raw_value_at(model: &VelocityPanelModel, lane: &AutomationLaneModel, y: f32) -> f32 {
+    y_to_value(
+        y,
+        lane.max_value,
+        model.value_zoom,
+        model.value_scroll,
+        model.canvas.height(),
+    )
+}
+
+/// 空白处新增锚点（Curve 工具）。
+fn add_action(
+    model: &VelocityPanelModel,
+    lane: &AutomationLaneModel,
+    local: Vec2,
+) -> VelocityPanelAction {
+    let tick = snapped_tick(model, local.x);
+    let value = raw_value_at(model, lane, local.y);
+    VelocityPanelAction::AutomationAdd {
+        track_idx: lane.track_idx,
+        controller: lane.controller,
+        tick,
+        value: value.round().clamp(0.0, lane.max_value) as u16,
+    }
+}
+
+/// 拖拽中：指针位置变化时生成移动动作。
+fn drag_action(
+    ui: &egui::Ui,
+    model: &VelocityPanelModel,
+    lane: &AutomationLaneModel,
+    drag: super::AutoDrag,
+    state: &mut EditState,
+    local: Vec2,
+) -> Option<VelocityPanelAction> {
+    let tick = snapped_tick(model, local.x);
+    let value = raw_value_at(model, lane, local.y);
+    let new_value = value.round().clamp(0.0, lane.max_value) as u16;
+    if new_value != drag.old_value || tick != drag.old_tick {
+        let action = Some(VelocityPanelAction::AutomationMove {
+            track_idx: drag.track_idx,
+            lane_idx: drag.lane_idx,
+            old_tick: drag.old_tick,
+            old_value: lane.controller.is_none().then_some(drag.old_value),
+            new_tick: tick,
+            new_value,
+            first: state.auto_first,
+        });
+        state.auto_first = false;
+        store_state(ui, state);
+        return action;
+    }
+    None
 }
 
 fn hit_test(

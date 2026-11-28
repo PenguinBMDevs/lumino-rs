@@ -31,9 +31,15 @@ pub fn draw(ui: &egui::Ui, area: Rect, view: &PianoRollView) {
     let grid_bottom = canvas.bottom() - keyboard_h;
     let painter = ui.painter();
 
-    // 上下边框（1 物理像素，与 上一代 的网格边界一致）。
     let ppp = ui.ctx().pixels_per_point().max(f32::EPSILON);
     let line = 1.0 / ppp;
+    draw_borders(painter, canvas, grid_bottom, line);
+    draw_measures(painter, canvas, grid_bottom, view);
+    draw_keyboard(painter, canvas, grid_bottom, keyboard_h, view, line);
+}
+
+/// 上下边框（1 物理像素，与 上一代 的网格边界一致）。
+fn draw_borders(painter: &egui::Painter, canvas: Rect, grid_bottom: f32, line: f32) {
     for y in [canvas.top(), grid_bottom] {
         painter.rect_filled(
             Rect::from_min_size(
@@ -44,8 +50,10 @@ pub fn draw(ui: &egui::Ui, area: Rect, view: &PianoRollView) {
             theme::roll_key_line(),
         );
     }
+}
 
-    // 小节号：tick 从键盘顶线向上增长。
+/// 小节号：tick 从键盘顶线向上增长。
+fn draw_measures(painter: &egui::Painter, canvas: Rect, grid_bottom: f32, view: &PianoRollView) {
     let zoom_x = view.zoom_x.max(f32::EPSILON);
     let span = view.ticks_per_measure.max(1.0);
     let start_tick = (view.scroll_x / zoom_x).max(0.0);
@@ -71,8 +79,17 @@ pub fn draw(ui: &egui::Ui, area: Rect, view: &PianoRollView) {
             break;
         }
     }
+}
 
-    // 底部键盘：先铺底色，再逐键填充 + 1px 边框 + 音名。
+/// 底部键盘：先铺底色，再逐键填充 + 1px 边框 + 音名。
+fn draw_keyboard(
+    painter: &egui::Painter,
+    canvas: Rect,
+    grid_bottom: f32,
+    keyboard_h: f32,
+    view: &PianoRollView,
+    line: f32,
+) {
     let keyboard = Rect::from_min_size(
         egui::pos2(canvas.left(), grid_bottom),
         Vec2::new(canvas.width(), keyboard_h),

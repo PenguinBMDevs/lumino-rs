@@ -11,7 +11,7 @@
 
 use egui::{Align2, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind, Vec2};
 
-use super::{HelpTipModel, ToastModel};
+use super::{HelpTipModel, ToastCardModel, ToastModel};
 
 /// Toast 卡片内边距。
 const TOAST_PAD: f32 = 10.0;
@@ -94,62 +94,7 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
     let mut bottom = full.bottom() - TOAST_BOTTOM;
     let mut rects: Vec<(u64, Rect)> = Vec::with_capacity(model.cards.len());
     for card in model.cards.iter().rev() {
-        let label_w = crate::text::text_width(ui, &card.icon, TOAST_ICON_FONT);
-        let text_w = crate::text::text_width(ui, &card.message, TOAST_FONT);
-        let width =
-            (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0 + TOAST_CLOSE_GAP + TOAST_CLOSE_W)
-                .min(max_w);
-        // 文案区可用宽度：单行放得下时正好等于文本宽度，触顶后即为折行宽度。
-        let text_area =
-            (width - TOAST_PAD * 2.0 - label_w - TOAST_ICON_GAP - TOAST_CLOSE_GAP - TOAST_CLOSE_W)
-                .max(1.0);
-        let wrapped = text_w > text_area + 0.5;
-        let galley = ui.painter().layout(
-            card.message.clone(),
-            FontId::proportional(TOAST_FONT),
-            card.text,
-            text_area,
-        );
-        let text_h = if wrapped {
-            galley.size().y
-        } else {
-            TOAST_TEXT_H
-        };
-        let height = text_h + TOAST_PAD * 2.0;
-        let rect = Rect::from_min_size(
-            egui::pos2(full.right() - TOAST_RIGHT - width, bottom - height),
-            Vec2::new(width, height),
-        );
-        ui.painter().rect(
-            rect,
-            CornerRadius::same(6),
-            card.background,
-            Stroke::NONE,
-            StrokeKind::Inside,
-        );
-        ui.painter().text(
-            egui::pos2(rect.left() + TOAST_PAD, rect.center().y),
-            Align2::LEFT_CENTER,
-            &card.icon,
-            FontId::proportional(TOAST_ICON_FONT),
-            card.text,
-        );
-        ui.painter().galley(
-            egui::pos2(
-                rect.left() + TOAST_PAD + label_w + TOAST_ICON_GAP,
-                rect.center().y - galley.size().y * 0.5,
-            ),
-            galley,
-            card.text,
-        );
-        // 关闭按钮（×）：仅作视觉提示；点击卡片任意位置都能关闭。
-        ui.painter().text(
-            egui::pos2(rect.right() - TOAST_PAD, rect.center().y),
-            Align2::RIGHT_CENTER,
-            "×",
-            FontId::proportional(14.0),
-            card.text,
-        );
+        let rect = draw_card(ui, card, max_w, full.right(), bottom);
         rects.push((card.id, rect));
         bottom = rect.top() - TOAST_GAP;
     }
@@ -184,6 +129,67 @@ pub fn show_toasts(ui: &egui::Ui, full: Rect, model: &ToastModel) {
             rects.iter().map(|(_, rect)| *rect).collect::<Vec<_>>(),
         )
     });
+}
+
+/// 画单条 Toast 卡片（右下角定位），返回其矩形。
+fn draw_card(ui: &egui::Ui, card: &ToastCardModel, max_w: f32, right: f32, bottom: f32) -> Rect {
+    let label_w = crate::text::text_width(ui, &card.icon, TOAST_ICON_FONT);
+    let text_w = crate::text::text_width(ui, &card.message, TOAST_FONT);
+    let width =
+        (text_w + label_w + TOAST_ICON_GAP + TOAST_PAD * 2.0 + TOAST_CLOSE_GAP + TOAST_CLOSE_W)
+            .min(max_w);
+    // 文案区可用宽度：单行放得下时正好等于文本宽度，触顶后即为折行宽度。
+    let text_area =
+        (width - TOAST_PAD * 2.0 - label_w - TOAST_ICON_GAP - TOAST_CLOSE_GAP - TOAST_CLOSE_W)
+            .max(1.0);
+    let wrapped = text_w > text_area + 0.5;
+    let galley = ui.painter().layout(
+        card.message.clone(),
+        FontId::proportional(TOAST_FONT),
+        card.text,
+        text_area,
+    );
+    let text_h = if wrapped {
+        galley.size().y
+    } else {
+        TOAST_TEXT_H
+    };
+    let height = text_h + TOAST_PAD * 2.0;
+    let rect = Rect::from_min_size(
+        egui::pos2(right - TOAST_RIGHT - width, bottom - height),
+        Vec2::new(width, height),
+    );
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(6),
+        card.background,
+        Stroke::NONE,
+        StrokeKind::Inside,
+    );
+    ui.painter().text(
+        egui::pos2(rect.left() + TOAST_PAD, rect.center().y),
+        Align2::LEFT_CENTER,
+        &card.icon,
+        FontId::proportional(TOAST_ICON_FONT),
+        card.text,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            rect.left() + TOAST_PAD + label_w + TOAST_ICON_GAP,
+            rect.center().y - galley.size().y * 0.5,
+        ),
+        galley,
+        card.text,
+    );
+    // 关闭按钮（×）：仅作视觉提示；点击卡片任意位置都能关闭。
+    ui.painter().text(
+        egui::pos2(rect.right() - TOAST_PAD, rect.center().y),
+        Align2::RIGHT_CENTER,
+        "×",
+        FontId::proportional(14.0),
+        card.text,
+    );
+    rect
 }
 
 /// 本帧 Toast 卡片矩形（自下而上）。无 Toast 时返回空。

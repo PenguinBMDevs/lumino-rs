@@ -74,6 +74,20 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
     let accent = theme::accent_strong();
     let selection = theme::selection();
 
+    draw_outlines(&painter, model, accent, selection);
+
+    draw_frames(&painter, model, selection);
+
+    draw_anchors(&painter, model, selection);
+}
+
+/// 常显轮廓（弱化细线）与选中高亮（外发光 + 实线双描边）。
+fn draw_outlines(
+    painter: &egui::Painter,
+    model: &ShapeEditModel,
+    accent: Color32,
+    selection: Color32,
+) {
     // 常显轮廓：弱化细线，避免盖过音符。
     for outline in &model.idle_outlines {
         if outline.len() >= 2 {
@@ -97,7 +111,10 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
             Stroke::new(2.5, selection),
         ));
     }
+}
 
+/// 框选矩形、选中选框（含四角手柄）、编辑框。
+fn draw_frames(painter: &egui::Painter, model: &ShapeEditModel, selection: Color32) {
     // 框选矩形：主题色 12% 填充 + 75% 描边（与上一代同口径）。
     if let Some(rect) = model.marquee {
         painter.rect_filled(rect, CornerRadius::ZERO, with_alpha(selection, 31));
@@ -139,7 +156,10 @@ pub fn show(ui: &egui::Ui, model: &ShapeEditModel) {
             StrokeKind::Middle,
         );
     }
+}
 
+/// 8 个箱体锚点（白底方块 + 选中色描边）与中心锚点（白底圆 + 十字）。
+fn draw_anchors(painter: &egui::Painter, model: &ShapeEditModel, selection: Color32) {
     let half = EDIT_HANDLE_SIZE / 2.0;
     for point in &model.handles {
         let handle = Rect::from_min_size(

@@ -98,113 +98,26 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
             continue;
         }
         let row = Rect::from_min_size(egui::pos2(rect.left(), y), egui::vec2(rect.width(), row_h));
-
-        // 行底色。
-        let bg = match track.color {
-            Some(color) if track.selected => blend(color, theme::selected_bg(), 0.35),
-            Some(color) => color,
-            // 选中：主色弱调（对应 上一代 `palette.primary.weak`），不是灰底，
-            // 否则配合白字会糊成一片。
-            None if track.selected => blend(theme::base_bg(), theme::accent(), 0.16),
-            None if index % 2 == 0 => {
-                if is_light {
-                    Color32::from_rgb(0xf7, 0xf7, 0xf7)
-                } else {
-                    Color32::from_rgb(0x33, 0x33, 0x33)
-                }
-            }
-            None => {
-                if is_light {
-                    Color32::from_rgb(0xf0, 0xf0, 0xf0)
-                } else {
-                    Color32::from_rgb(0x26, 0x26, 0x26)
-                }
-            }
-        };
-        painter.rect_filled(row, 0, bg);
+        let bg = paint_row_fill(painter, row, index, track, is_light);
 
         // 被拖拽行：25% 黑遮罩。
         if model.drag_active && model.drag_track == Some(track.id) {
             painter.rect_filled(row, 0, Color32::from_black_alpha(64));
         }
 
-        // 未配色：左侧 8px 灰块。
-        if track.color.is_none() {
-            painter.rect_filled(
-                Rect::from_min_size(row.min, egui::vec2(BADGE_WIDTH, row_h)),
-                0,
-                if is_light {
-                    Color32::from_rgb(0x99, 0x99, 0x99)
-                } else {
-                    Color32::from_rgb(0x80, 0x80, 0x80)
-                },
-            );
-        }
-
-        let text_color = if track.selected && track.color.is_none() {
-            // 对应 上一代 `palette.primary.strong`：深主色在浅主色底上可读。
-            theme::accent_strong()
-        } else if track.color.is_some() {
-            contrast_text(bg)
-        } else {
-            theme::text()
-        };
-
-        if row_h >= DETAIL_MIN_HEIGHT {
-            let small = (row_h * 0.25).clamp(8.0, 13.0);
-            let text_x = rect.left() + BADGE_WIDTH + TEXT_MARGIN;
-            let label = if track.conductor {
-                "Master".to_string()
-            } else if track.label.is_empty() {
-                let port = (b'A' + (track.channel / 16).min(7)) as char;
-                format!("{}{:02}", port, (track.channel % 16) + 1)
-            } else {
-                track.label.clone()
-            };
-            painter.text(
-                egui::pos2(text_x, y + row_h * 0.30),
-                Align2::LEFT_CENTER,
-                format!("{:03}", track.id),
-                FontId::proportional(small),
+        paint_row_badge(painter, row, row_h, track, is_light);
+        let text_color = row_text_color(bg, track);
+        paint_row_content(
+            painter,
+            rect,
+            y,
+            row_h,
+            track,
+            RowStyle {
+                is_light,
                 text_color,
-            );
-            painter.text(
-                egui::pos2(text_x + 32.0, y + row_h * 0.30),
-                Align2::LEFT_CENTER,
-                label,
-                FontId::proportional(small),
-                text_color,
-            );
-            let name_size = (row_h * 0.25).clamp(9.0, 13.0);
-            painter.text(
-                egui::pos2(text_x, y + row_h * 0.70),
-                Align2::LEFT_CENTER,
-                &track.name,
-                FontId::proportional(name_size),
-                text_color,
-            );
-
-            if !track.conductor {
-                draw_buttons(painter, rect, y, row_h, track, is_light, text_color);
-            }
-        } else {
-            let size = (row_h * 0.45).clamp(8.0, 14.0);
-            let text_x = rect.left() + BADGE_WIDTH + TEXT_MARGIN;
-            painter.text(
-                egui::pos2(text_x, y + row_h * 0.5),
-                Align2::LEFT_CENTER,
-                format!("{:03}", track.id),
-                FontId::proportional(size),
-                text_color,
-            );
-            painter.text(
-                egui::pos2(text_x + 40.0, y + row_h * 0.5),
-                Align2::LEFT_CENTER,
-                &track.name,
-                FontId::proportional(size),
-                text_color,
-            );
-        }
+            },
+        );
     }
 
     // 拖拽插入位置：3px 主色横线。
@@ -236,6 +149,157 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &ArrangementTrackListModel) {
         0,
         line,
     );
+}
+
+/// 行内文字与 M/S 按钮共用的配色（深浅主题 + 本行文字色）。
+#[derive(Debug, Clone, Copy)]
+struct RowStyle {
+    /// 浅色主题。
+    is_light: bool,
+    /// 本行文字颜色。
+    text_color: Color32,
+}
+
+/// 行底色（配色 / 选中 / 斑马纹），返回该底色。
+fn paint_row_fill(
+    painter: &egui::Painter,
+    row: Rect,
+    index: usize,
+    track: &ArrangementTrackRow,
+    is_light: bool,
+) -> Color32 {
+    // 行底色。
+    let bg = match track.color {
+        Some(color) if track.selected => blend(color, theme::selected_bg(), 0.35),
+        Some(color) => color,
+        // 选中：主色弱调（对应 上一代 `palette.primary.weak`），不是灰底，
+        // 否则配合白字会糊成一片。
+        None if track.selected => blend(theme::base_bg(), theme::accent(), 0.16),
+        None if index.is_multiple_of(2) => {
+            if is_light {
+                Color32::from_rgb(0xf7, 0xf7, 0xf7)
+            } else {
+                Color32::from_rgb(0x33, 0x33, 0x33)
+            }
+        }
+        None => {
+            if is_light {
+                Color32::from_rgb(0xf0, 0xf0, 0xf0)
+            } else {
+                Color32::from_rgb(0x26, 0x26, 0x26)
+            }
+        }
+    };
+    painter.rect_filled(row, 0, bg);
+    bg
+}
+
+/// 未配色行的左侧色块（8px 宽）。
+fn paint_row_badge(
+    painter: &egui::Painter,
+    row: Rect,
+    row_h: f32,
+    track: &ArrangementTrackRow,
+    is_light: bool,
+) {
+    // 未配色：左侧 8px 灰块。
+    if track.color.is_none() {
+        painter.rect_filled(
+            Rect::from_min_size(row.min, egui::vec2(BADGE_WIDTH, row_h)),
+            0,
+            if is_light {
+                Color32::from_rgb(0x99, 0x99, 0x99)
+            } else {
+                Color32::from_rgb(0x80, 0x80, 0x80)
+            },
+        );
+    }
+}
+
+/// 行文字颜色：选中取深主色，配色行按底色对比，其余用正文色。
+fn row_text_color(bg: Color32, track: &ArrangementTrackRow) -> Color32 {
+    if track.selected && track.color.is_none() {
+        // 对应 上一代 `palette.primary.strong`：深主色在浅主色底上可读。
+        theme::accent_strong()
+    } else if track.color.is_some() {
+        contrast_text(bg)
+    } else {
+        theme::text()
+    }
+}
+
+/// 单行文字（编号 / 音轨号 / 名称）与静音、独奏按钮。
+fn paint_row_content(
+    painter: &egui::Painter,
+    rect: Rect,
+    y: f32,
+    row_h: f32,
+    track: &ArrangementTrackRow,
+    style: RowStyle,
+) {
+    if row_h >= DETAIL_MIN_HEIGHT {
+        let small = (row_h * 0.25).clamp(8.0, 13.0);
+        let text_x = rect.left() + BADGE_WIDTH + TEXT_MARGIN;
+        let label = if track.conductor {
+            "Master".to_string()
+        } else if track.label.is_empty() {
+            let port = (b'A' + (track.channel / 16).min(7)) as char;
+            format!("{}{:02}", port, (track.channel % 16) + 1)
+        } else {
+            track.label.clone()
+        };
+        painter.text(
+            egui::pos2(text_x, y + row_h * 0.30),
+            Align2::LEFT_CENTER,
+            format!("{:03}", track.id),
+            FontId::proportional(small),
+            style.text_color,
+        );
+        painter.text(
+            egui::pos2(text_x + 32.0, y + row_h * 0.30),
+            Align2::LEFT_CENTER,
+            label,
+            FontId::proportional(small),
+            style.text_color,
+        );
+        let name_size = (row_h * 0.25).clamp(9.0, 13.0);
+        painter.text(
+            egui::pos2(text_x, y + row_h * 0.70),
+            Align2::LEFT_CENTER,
+            &track.name,
+            FontId::proportional(name_size),
+            style.text_color,
+        );
+
+        if !track.conductor {
+            draw_buttons(
+                painter,
+                rect,
+                y,
+                row_h,
+                track,
+                style.is_light,
+                style.text_color,
+            );
+        }
+    } else {
+        let size = (row_h * 0.45).clamp(8.0, 14.0);
+        let text_x = rect.left() + BADGE_WIDTH + TEXT_MARGIN;
+        painter.text(
+            egui::pos2(text_x, y + row_h * 0.5),
+            Align2::LEFT_CENTER,
+            format!("{:03}", track.id),
+            FontId::proportional(size),
+            style.text_color,
+        );
+        painter.text(
+            egui::pos2(text_x + 40.0, y + row_h * 0.5),
+            Align2::LEFT_CENTER,
+            &track.name,
+            FontId::proportional(size),
+            style.text_color,
+        );
+    }
 }
 
 /// 静音 / 独奏按钮（18×18，右对齐，间距 2，右边距 6）。

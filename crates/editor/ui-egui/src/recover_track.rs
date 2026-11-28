@@ -100,6 +100,17 @@ pub fn show(ui: &mut egui::Ui, model: &RecoverTrackModel) {
     y += 18.0 + 16.0;
 
     // 表头。
+    let y = draw_header(ui, inner, y, model);
+
+    // 列表区（固定 400 高 + 边框）。
+    let y = draw_list(ui, inner, y, model);
+
+    // 底部按钮行：右对齐 永久删除 / 恢复 / 关闭。
+    draw_buttons(ui, inner, y, model);
+}
+
+/// 表头（`background.weak` 底 + 1px `strong` 边框、圆角 4），返回列表区顶部 y。
+fn draw_header(ui: &mut egui::Ui, inner: egui::Rect, mut y: f32, model: &RecoverTrackModel) -> f32 {
     let header =
         egui::Rect::from_min_size(egui::pos2(inner.left(), y), Vec2::new(inner.width(), ROW_H));
     ui.painter().rect(
@@ -134,8 +145,11 @@ pub fn show(ui: &mut egui::Ui, model: &RecoverTrackModel) {
         Align::Max,
     );
     y += ROW_H + 8.0;
+    y
+}
 
-    // 列表区（固定 400 高 + 边框）。
+/// 列表区（固定 400 高 + 边框），返回底部按钮行 y。
+fn draw_list(ui: &mut egui::Ui, inner: egui::Rect, mut y: f32, model: &RecoverTrackModel) -> f32 {
     let list = egui::Rect::from_min_size(
         egui::pos2(inner.left(), y),
         Vec2::new(
@@ -154,8 +168,11 @@ pub fn show(ui: &mut egui::Ui, model: &RecoverTrackModel) {
     );
     list_rows(ui, list.shrink(1.0), model);
     y = list.bottom() + 16.0 + 4.0;
+    y
+}
 
-    // 底部按钮行：右对齐 永久删除 / 恢复 / 关闭。
+/// 底部按钮行：右对齐 永久删除 / 恢复 / 关闭。
+fn draw_buttons(ui: &mut egui::Ui, inner: egui::Rect, y: f32, model: &RecoverTrackModel) {
     let mut x = inner.right() - BUTTON_W;
     if button(ui, x, y, &model.close, ButtonKind::Neutral).clicked() {
         push_action(ui.ctx(), RecoverTrackAction::CloseDialog);

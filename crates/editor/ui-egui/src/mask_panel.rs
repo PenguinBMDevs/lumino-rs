@@ -119,6 +119,24 @@ pub enum MaskPanelAction {
 /// `full` = 窗口逻辑矩形。面板打开期间整窗计入占用（与 上一代 的全屏 backdrop
 /// 同义：点面板外关闭，且不再把这一击传给下层）。
 pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPanelAction> {
+    let mut action = panel(ui, model);
+
+    // backdrop：点面板外关闭（面板在 Foreground 层，优先收到点击）。
+    let backdrop = ui.interact(
+        full,
+        egui::Id::unique("lumino.mask.backdrop"),
+        egui::Sense::click(),
+    );
+    if action.is_none() && backdrop.clicked() {
+        action = Some(MaskPanelAction::Close);
+    }
+    // 面板打开期间整窗占用：画布与其余面板都收不到点击（与全屏 backdrop 同义）。
+    crate::chrome::menu::extend_blocked(ui.ctx(), [full]);
+    action
+}
+
+/// 面板本体（`Area` + 边框 + 标题 / 开关 / 应用行）；返回本帧动作。
+fn panel(ui: &egui::Ui, model: &MaskPanelModel) -> Option<MaskPanelAction> {
     let ctx = ui.ctx().clone();
     let mut action = None;
 
@@ -135,135 +153,150 @@ pub fn show(ui: &egui::Ui, full: Rect, model: &MaskPanelModel) -> Option<MaskPan
                 .inner_margin(PAD);
             frame.show(ui, |ui| {
                 ui.set_width(PANEL_W);
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(crate::text::truncate_to_width(
-                            ui,
-                            &model.labels.title,
-                            13.0,
-                            (PANEL_W - 64.0).max(1.0),
-                        ))
-                        .size(13.0)
-                        .color(theme::text()),
-                    );
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui
-                            .add(
-                                crate::widgets::text_button(
-                                    RichText::new(&model.labels.close)
-                                        .size(12.0)
-                                        .color(theme::text()),
-                                )
-                                .fill(Color32::TRANSPARENT)
-                                .stroke(Stroke::NONE),
-                            )
-                            .clicked()
-                        {
-                            action = Some(MaskPanelAction::Close);
-                        }
-                    });
-                });
-
-                ui.horizontal(|ui| {
-                    label(ui, &model.labels.enable);
-                    if toggle(ui, &model.labels.enable_on, model.enabled) {
-                        action = Some(MaskPanelAction::SetEnabled(!model.enabled));
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    label(ui, &model.labels.region);
-                    if toggle(ui, &model.labels.inside, model.show == MaskShowKind::Inside) {
-                        action = Some(MaskPanelAction::SetShow(MaskShowKind::Inside));
-                    }
-                    if toggle(ui, &model.labels.line, model.show == MaskShowKind::Line) {
-                        action = Some(MaskPanelAction::SetShow(MaskShowKind::Line));
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    label(ui, &model.labels.size);
-                    let mut size = model.size_keys;
-                    let slider = ui.add_sized(
-                        Vec2::new(SLIDER_W, 18.0),
-                        egui::Slider::new(&mut size, 0.5..=16.0)
-                            .step_by(0.5)
-                            .show_value(false),
-                    );
-                    if slider.changed() {
-                        action = Some(MaskPanelAction::SetSize(size));
-                    }
-                    ui.add_sized(
-                        Vec2::new(VALUE_W, 16.0),
-                        egui::Label::new(
-                            RichText::new(format!("{:.1}", size))
-                                .size(11.0)
-                                .color(theme::text()),
-                        ),
-                    );
-                });
-
-                ui.horizontal(|ui| {
-                    label(ui, &model.labels.invert);
-                    if toggle(ui, &model.labels.hole, model.invert) {
-                        action = Some(MaskPanelAction::SetInvert(!model.invert));
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    label(ui, &model.labels.own);
-                    if toggle(ui, &model.labels.own_border, model.own) {
-                        action = Some(MaskPanelAction::SetOwn(!model.own));
-                    }
-                });
-
-                if model.baked {
-                    ui.horizontal(|ui| {
-                        let status = if model.dirty {
-                            &model.labels.pending
-                        } else {
-                            &model.labels.synced
-                        };
-                        ui.add(
-                            egui::Label::new(RichText::new(status).size(11.0).color(theme::text()))
-                                .truncate(),
-                        )
-                        .on_hover_text(&model.labels.apply_hint);
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let text = if model.dirty {
-                                &model.labels.apply_dirty
-                            } else {
-                                &model.labels.apply
-                            };
-                            if ui
-                                .add(
-                                    crate::widgets::text_button(
-                                        RichText::new(text).size(12.0).color(theme::text()),
-                                    )
-                                    .fill(theme::selected_bg())
-                                    .corner_radius(4),
-                                )
-                                .clicked()
-                            {
-                                action = Some(MaskPanelAction::Apply);
-                            }
-                        });
-                    });
+                if let Some(picked) = title_row(ui, model) {
+                    action = Some(picked);
+                }
+                if let Some(picked) = switch_rows(ui, model) {
+                    action = Some(picked);
+                }
+                if let Some(picked) = apply_row(ui, model) {
+                    action = Some(picked);
                 }
             });
         });
 
-    // backdrop：点面板外关闭（面板在 Foreground 层，优先收到点击）。
-    let backdrop = ui.interact(
-        full,
-        egui::Id::unique("lumino.mask.backdrop"),
-        egui::Sense::click(),
-    );
-    if action.is_none() && backdrop.clicked() {
-        action = Some(MaskPanelAction::Close);
+    action
+}
+
+/// 标题行：标题文本 + 右上关闭按钮。
+fn title_row(ui: &mut egui::Ui, model: &MaskPanelModel) -> Option<MaskPanelAction> {
+    let mut action = None;
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(crate::text::truncate_to_width(
+                ui,
+                &model.labels.title,
+                13.0,
+                (PANEL_W - 64.0).max(1.0),
+            ))
+            .size(13.0)
+            .color(theme::text()),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui
+                .add(
+                    crate::widgets::text_button(
+                        RichText::new(&model.labels.close)
+                            .size(12.0)
+                            .color(theme::text()),
+                    )
+                    .fill(Color32::TRANSPARENT)
+                    .stroke(Stroke::NONE),
+                )
+                .clicked()
+            {
+                action = Some(MaskPanelAction::Close);
+            }
+        });
+    });
+    action
+}
+
+/// 开关与数值行（启用 / 区域 / 带宽 / 取反 / 自身发声）。
+fn switch_rows(ui: &mut egui::Ui, model: &MaskPanelModel) -> Option<MaskPanelAction> {
+    let mut action = None;
+
+    ui.horizontal(|ui| {
+        label(ui, &model.labels.enable);
+        if toggle(ui, &model.labels.enable_on, model.enabled) {
+            action = Some(MaskPanelAction::SetEnabled(!model.enabled));
+        }
+    });
+
+    ui.horizontal(|ui| {
+        label(ui, &model.labels.region);
+        if toggle(ui, &model.labels.inside, model.show == MaskShowKind::Inside) {
+            action = Some(MaskPanelAction::SetShow(MaskShowKind::Inside));
+        }
+        if toggle(ui, &model.labels.line, model.show == MaskShowKind::Line) {
+            action = Some(MaskPanelAction::SetShow(MaskShowKind::Line));
+        }
+    });
+
+    ui.horizontal(|ui| {
+        label(ui, &model.labels.size);
+        let mut size = model.size_keys;
+        let slider = ui.add_sized(
+            Vec2::new(SLIDER_W, 18.0),
+            egui::Slider::new(&mut size, 0.5..=16.0)
+                .step_by(0.5)
+                .show_value(false),
+        );
+        if slider.changed() {
+            action = Some(MaskPanelAction::SetSize(size));
+        }
+        ui.add_sized(
+            Vec2::new(VALUE_W, 16.0),
+            egui::Label::new(
+                RichText::new(format!("{:.1}", size))
+                    .size(11.0)
+                    .color(theme::text()),
+            ),
+        );
+    });
+
+    ui.horizontal(|ui| {
+        label(ui, &model.labels.invert);
+        if toggle(ui, &model.labels.hole, model.invert) {
+            action = Some(MaskPanelAction::SetInvert(!model.invert));
+        }
+    });
+
+    ui.horizontal(|ui| {
+        label(ui, &model.labels.own);
+        if toggle(ui, &model.labels.own_border, model.own) {
+            action = Some(MaskPanelAction::SetOwn(!model.own));
+        }
+    });
+
+    action
+}
+
+/// 已 Bake 时的同步状态 + 应用按钮行。
+fn apply_row(ui: &mut egui::Ui, model: &MaskPanelModel) -> Option<MaskPanelAction> {
+    let mut action = None;
+    if model.baked {
+        ui.horizontal(|ui| {
+            let status = if model.dirty {
+                &model.labels.pending
+            } else {
+                &model.labels.synced
+            };
+            ui.add(
+                egui::Label::new(RichText::new(status).size(11.0).color(theme::text())).truncate(),
+            )
+            .on_hover_text(&model.labels.apply_hint);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let text = if model.dirty {
+                    &model.labels.apply_dirty
+                } else {
+                    &model.labels.apply
+                };
+                if ui
+                    .add(
+                        crate::widgets::text_button(
+                            RichText::new(text).size(12.0).color(theme::text()),
+                        )
+                        .fill(theme::selected_bg())
+                        .corner_radius(4),
+                    )
+                    .clicked()
+                {
+                    action = Some(MaskPanelAction::Apply);
+                }
+            });
+        });
     }
-    // 面板打开期间整窗占用：画布与其余面板都收不到点击（与全屏 backdrop 同义）。
-    crate::chrome::menu::extend_blocked(ui.ctx(), [full]);
     action
 }
 

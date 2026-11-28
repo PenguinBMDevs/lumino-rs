@@ -87,10 +87,24 @@ pub(super) fn show(
         palette.text,
     );
 
+    log_retention_row(ui, rect, &log_label, state, palette);
+}
+
+/// 日志保留行：标签（按卡片右缘截断）+ 数字输入框，改动时回传动作。
+fn log_retention_row(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    label: &str,
+    state: &mut SettingsState,
+    palette: &SettingsPalette,
+) {
+    let pad = layout::SETTINGS_PADDING;
+    let label_x = rect.left() + pad;
+    let base = rect.top();
     // 输入框 80 宽：标签必须收在「卡片右缘 − 80 − 间距」之内。
     let log_label = crate::text::truncate_to_width(
         ui,
-        &log_label,
+        label,
         theme::font::LABEL,
         (rect.right() - pad - 80.0 - 32.0 - label_x).max(1.0),
     );

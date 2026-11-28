@@ -14,7 +14,9 @@ use egui::{
 
 mod ctx;
 
-use super::super::model::{MaterialItemModel, MaterialMenuKind, MaterialsPanelModel};
+use super::super::model::{
+    MaterialItemModel, MaterialMenuEntryModel, MaterialMenuKind, MaterialsPanelModel,
+};
 use super::widgets;
 use super::{RightSidebarAction, push_action, record_rect};
 use crate::icons::IconCache;
@@ -77,16 +79,41 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
     let mut y = rect.top() + PAD;
 
     // 标题。
-    ui.painter().text(
-        Pos2::new(left, y + HEADER_H / 2.0),
-        Align2::LEFT_CENTER,
-        crate::text::truncate_to_width(ui, &model.title, theme::font::LABEL, width),
-        FontId::proportional(theme::font::LABEL),
-        theme::text_on_weak(),
-    );
+    draw_header(ui, left, y, width, &model.title);
     y += HEADER_H + GAP;
 
     // 添加素材按钮。
+    draw_add_button(ui, left, y, width, &model.add_label);
+    y += BUTTON_H;
+
+    // 添加下拉菜单（贴着按钮、面板底色）。
+    if let Some(items) = &model.add_menu {
+        y += MENU_GAP;
+        y += draw_add_menu(ui, left, y, width, items);
+    }
+    y += GAP;
+
+    // 列表占位 / 分区。
+    draw_sections(ui, rect, model, y, left, width);
+
+    if let Some(menu) = &model.context_menu {
+        ctx::draw(ui, rect, menu, model, icons);
+    }
+}
+
+/// 面板标题。
+fn draw_header(ui: &mut egui::Ui, left: f32, y: f32, width: f32, title: &str) {
+    ui.painter().text(
+        Pos2::new(left, y + HEADER_H / 2.0),
+        Align2::LEFT_CENTER,
+        crate::text::truncate_to_width(ui, title, theme::font::LABEL, width),
+        FontId::proportional(theme::font::LABEL),
+        theme::text_on_weak(),
+    );
+}
+
+/// 「添加素材」按钮。
+fn draw_add_button(ui: &mut egui::Ui, left: f32, y: f32, width: f32, label: &str) {
     let add = Rect::from_min_size(Pos2::new(left, y), Vec2::new(width, BUTTON_H));
     record_rect(ui.ctx(), "material:add".to_owned(), add);
     let response = ui.interact(add, Id::unique("material-add"), Sense::click());
@@ -102,67 +129,70 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
     ui.painter().text(
         add.center(),
         Align2::CENTER_CENTER,
-        crate::text::truncate_to_width(
-            ui,
-            &model.add_label,
-            theme::font::BODY,
-            (add.width() - 12.0).max(1.0),
-        ),
+        crate::text::truncate_to_width(ui, label, theme::font::BODY, (add.width() - 12.0).max(1.0)),
         FontId::proportional(theme::font::BODY),
         theme::text(),
     );
     if response.clicked() {
         push_action(ui.ctx(), RightSidebarAction::MaterialAdd);
     }
-    y += BUTTON_H;
+}
 
-    // 添加下拉菜单（贴着按钮、面板底色）。
-    if let Some(items) = &model.add_menu {
-        y += MENU_GAP;
-        let panel_h = MENU_PAD * 2.0
-            + items.len() as f32 * MENU_ITEM_H
-            + items.len().saturating_sub(1) as f32 * MENU_GAP;
-        let panel = Rect::from_min_size(Pos2::new(left, y), Vec2::new(width, panel_h));
-        ui.painter()
-            .rect_filled(panel, CornerRadius::same(4), theme::toolbar_bg());
-        let mut item_y = panel.top() + MENU_PAD;
-        for entry in items {
-            let inner = Rect::from_min_size(
-                Pos2::new(left + MENU_PAD, item_y),
-                Vec2::new(width - MENU_PAD * 2.0, MENU_ITEM_H),
-            );
-            let key = match entry.kind {
-                MaterialMenuKind::DownloadFromWeb => "material:menu:download",
-                MaterialMenuKind::ImportFromLocal => "material:menu:local",
-            };
-            record_rect(ui.ctx(), key.to_owned(), inner);
-            let response = ui.interact(inner, Id::unique(key), Sense::click());
-            if response.hovered() {
-                ui.painter()
-                    .rect_filled(inner, CornerRadius::same(4), theme::base_bg());
-            }
-            ui.painter().text(
-                Pos2::new(inner.left() + 6.0, inner.center().y),
-                Align2::LEFT_CENTER,
-                crate::text::truncate_to_width(
-                    ui,
-                    &entry.label,
-                    12.0,
-                    (inner.width() - 12.0).max(1.0),
-                ),
-                FontId::proportional(12.0),
-                theme::text(),
-            );
-            if response.clicked() {
-                push_action(ui.ctx(), RightSidebarAction::MaterialMenu(entry.kind));
-            }
-            item_y += MENU_ITEM_H + MENU_GAP;
+/// 添加下拉菜单（贴着按钮、面板底色）；返回菜单面板高度。
+fn draw_add_menu(
+    ui: &mut egui::Ui,
+    left: f32,
+    y: f32,
+    width: f32,
+    items: &[MaterialMenuEntryModel],
+) -> f32 {
+    let panel_h = MENU_PAD * 2.0
+        + items.len() as f32 * MENU_ITEM_H
+        + items.len().saturating_sub(1) as f32 * MENU_GAP;
+    let panel = Rect::from_min_size(Pos2::new(left, y), Vec2::new(width, panel_h));
+    ui.painter()
+        .rect_filled(panel, CornerRadius::same(4), theme::toolbar_bg());
+    let mut item_y = panel.top() + MENU_PAD;
+    for entry in items {
+        let inner = Rect::from_min_size(
+            Pos2::new(left + MENU_PAD, item_y),
+            Vec2::new(width - MENU_PAD * 2.0, MENU_ITEM_H),
+        );
+        let key = match entry.kind {
+            MaterialMenuKind::DownloadFromWeb => "material:menu:download",
+            MaterialMenuKind::ImportFromLocal => "material:menu:local",
+        };
+        record_rect(ui.ctx(), key.to_owned(), inner);
+        let response = ui.interact(inner, Id::unique(key), Sense::click());
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(inner, CornerRadius::same(4), theme::base_bg());
         }
-        y += panel_h;
+        ui.painter().text(
+            Pos2::new(inner.left() + 6.0, inner.center().y),
+            Align2::LEFT_CENTER,
+            crate::text::truncate_to_width(ui, &entry.label, 12.0, (inner.width() - 12.0).max(1.0)),
+            FontId::proportional(12.0),
+            theme::text(),
+        );
+        if response.clicked() {
+            push_action(ui.ctx(), RightSidebarAction::MaterialMenu(entry.kind));
+        }
+        item_y += MENU_ITEM_H + MENU_GAP;
     }
-    y += GAP;
+    panel_h
+}
 
-    // 列表占位 / 分区。
+/// 列表占位与各分区条目。
+fn draw_sections(
+    ui: &mut egui::Ui,
+    content: Rect,
+    model: &MaterialsPanelModel,
+    top: f32,
+    left: f32,
+    width: f32,
+) {
+    let mut y = top;
     if let Some(placeholder) = &model.placeholder {
         ui.painter().text(
             Pos2::new(left, y + 9.0),
@@ -185,7 +215,7 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
         for item in &section.entries {
             draw_item(
                 ui,
-                rect,
+                content,
                 left,
                 y,
                 width,
@@ -196,10 +226,6 @@ fn draw_panel(ui: &mut egui::Ui, rect: Rect, model: &MaterialsPanelModel, icons:
             y += ITEM_H + ITEM_GAP;
         }
         y += GAP;
-    }
-
-    if let Some(menu) = &model.context_menu {
-        ctx::draw(ui, rect, menu, model, icons);
     }
 }
 
@@ -221,48 +247,7 @@ fn draw_item(
         .rect_filled(rect, CornerRadius::same(4), theme::route_bar_bg());
 
     if let Some(buffer) = &item.renaming {
-        let input_rect = rect.shrink2(Vec2::new(ITEM_PAD_X, 3.0));
-        record_rect(
-            ui.ctx(),
-            format!("material:rename:{}", item.index),
-            input_rect,
-        );
-        ui.painter().rect(
-            input_rect,
-            CornerRadius::same(2),
-            theme::base_bg(),
-            Stroke::new(1.0, theme::selected_bg()),
-            egui::StrokeKind::Inside,
-        );
-        let mut text = buffer.clone();
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(input_rect.shrink2(Vec2::new(4.0, 0.0)))
-                .layout(Layout::left_to_right(egui::Align::Center)),
-        );
-        let response = child
-            .push_id(("material-rename", item.index), |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut text)
-                        .frame(egui::Frame::NONE)
-                        .margin(Margin::ZERO)
-                        .font(FontId::proportional(12.0))
-                        .text_color(theme::text())
-                        .hint_text(
-                            egui::RichText::new(rename_placeholder)
-                                .size(12.0)
-                                .color(theme::text_dim()),
-                        )
-                        .desired_width(f32::INFINITY),
-                )
-            })
-            .inner;
-        if response.changed() {
-            push_action(ui.ctx(), RightSidebarAction::MaterialRenameInput(text));
-        }
-        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            push_action(ui.ctx(), RightSidebarAction::MaterialRenameConfirmed);
-        }
+        draw_rename(ui, rect, item.index, buffer, rename_placeholder);
         return;
     }
 
@@ -317,5 +302,53 @@ fn draw_item(
                 y: pointer.y - content.top(),
             },
         );
+    }
+}
+
+/// 重命名编辑态：输入框、占位提示与提交 / 取消。
+fn draw_rename(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    index: usize,
+    buffer: &str,
+    rename_placeholder: &str,
+) {
+    let input_rect = rect.shrink2(Vec2::new(ITEM_PAD_X, 3.0));
+    record_rect(ui.ctx(), format!("material:rename:{}", index), input_rect);
+    ui.painter().rect(
+        input_rect,
+        CornerRadius::same(2),
+        theme::base_bg(),
+        Stroke::new(1.0, theme::selected_bg()),
+        egui::StrokeKind::Inside,
+    );
+    let mut text = buffer.to_owned();
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(input_rect.shrink2(Vec2::new(4.0, 0.0)))
+            .layout(Layout::left_to_right(egui::Align::Center)),
+    );
+    let response = child
+        .push_id(("material-rename", index), |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .frame(egui::Frame::NONE)
+                    .margin(Margin::ZERO)
+                    .font(FontId::proportional(12.0))
+                    .text_color(theme::text())
+                    .hint_text(
+                        egui::RichText::new(rename_placeholder)
+                            .size(12.0)
+                            .color(theme::text_dim()),
+                    )
+                    .desired_width(f32::INFINITY),
+            )
+        })
+        .inner;
+    if response.changed() {
+        push_action(ui.ctx(), RightSidebarAction::MaterialRenameInput(text));
+    }
+    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        push_action(ui.ctx(), RightSidebarAction::MaterialRenameConfirmed);
     }
 }

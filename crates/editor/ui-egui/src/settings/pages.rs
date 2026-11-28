@@ -92,7 +92,54 @@ pub(super) fn onion_skin(
         .x;
     // 生产 `row![label, space(16), pick_list].spacing(8)` → 标签与控件间 32。
     let field_x = x + label_w + 32.0;
-    let mut below = base + 77.0 + 32.0 + GAP + 6.0;
+    let below = backend_control(
+        ui,
+        rect,
+        RowAnchor {
+            x,
+            field_x,
+            row_center,
+            wrap,
+        },
+        base + 77.0 + 32.0 + GAP + 6.0,
+        model,
+        palette,
+    );
+
+    crate::text::paint_wrapped(
+        ui,
+        Pos2::new(x, below - crate::text::line_height(ui, HINT) * 0.5),
+        &model.hint,
+        HINT,
+        palette.text_dim,
+        wrap,
+    );
+}
+
+/// 洋葱皮后端行的绘制锚点（标签列起点 / 控件起点 / 行中心 / 折行宽度）。
+#[derive(Debug, Clone, Copy)]
+struct RowAnchor {
+    x: f32,
+    field_x: f32,
+    row_center: f32,
+    wrap: f32,
+}
+
+/// 后端控件：锁定态只读值 + 原因，未锁定态下拉框；返回能力提示的起点 y。
+fn backend_control(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    anchor: RowAnchor,
+    mut below: f32,
+    model: &OnionSkinPageModel,
+    palette: &SettingsPalette,
+) -> f32 {
+    let RowAnchor {
+        x,
+        field_x,
+        row_center,
+        wrap,
+    } = anchor;
 
     if model.locked {
         crate::text::paint_truncated(
@@ -153,14 +200,7 @@ pub(super) fn onion_skin(
         }
     }
 
-    crate::text::paint_wrapped(
-        ui,
-        Pos2::new(x, below - crate::text::line_height(ui, HINT) * 0.5),
-        &model.hint,
-        HINT,
-        palette.text_dim,
-        wrap,
-    );
+    below
 }
 
 /// 兼容性页：检查 / 复制按钮、结果区、三个开关。
