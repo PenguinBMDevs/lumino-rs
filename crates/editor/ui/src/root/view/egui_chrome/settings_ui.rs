@@ -1,7 +1,7 @@
 //! 设置「界面」页：模型构建（语言 / 主题卡片 / 字体 / 交互 / 自动滚动）。
 
 use egui::Color32;
-use lumino_core::i18n::{Language, settings_translations};
+use lumino_core::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SelectionBoxMode};
 use lumino_core::tr;
@@ -10,18 +10,36 @@ use lumino_ui_core::theme::{HIGH_CONTRAST_DISPLAY, hc_theme};
 use lumino_ui_egui::chrome::{ThemeCardModel, UiField, UiPageModel, UiRow};
 
 use crate::root::Root;
+use crate::settings::SettingsPanel;
 
 mod actions;
 
 pub(super) use actions::action_message;
 
-/// 构造界面页模型。
+/// 构造界面页模型：按原顺序把各分区行追加进 `rows`，最后组装页模型。
 pub(super) fn page(root: &Root) -> UiPageModel {
     let settings = &root.settings;
     let language = settings.display.language;
     let t = settings_translations(language);
     let mut rows = Vec::new();
 
+    push_language_rows(&mut rows, settings, t);
+    push_theme_rows(&mut rows, root, t);
+    push_font_rows(&mut rows, settings, t);
+    push_titlebar_rows(&mut rows, settings, t);
+    push_note_count_row(&mut rows, settings, t);
+    push_auto_scroll_rows(&mut rows, settings, t);
+    push_interaction_rows(&mut rows, settings, t, language);
+    push_slider_rows(&mut rows, settings, t);
+
+    UiPageModel {
+        title: t.ui_title.to_owned(),
+        rows,
+    }
+}
+
+/// 语言偏好下拉行。
+fn push_language_rows(rows: &mut Vec<UiRow>, settings: &SettingsPanel, t: &SettingsTranslations) {
     // 语言偏好。
     let mut languages = vec![t.language_follow_system.to_owned()];
     languages.extend(Language::all().iter().map(ToString::to_string));
@@ -41,7 +59,10 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         selected: language_selected,
         width: 200.0,
     });
+}
 
+/// 主题卡片行（高对比度 + 注册表全部主题）。
+fn push_theme_rows(rows: &mut Vec<UiRow>, root: &Root, t: &SettingsTranslations) {
     // 主题卡片：高对比度 + 注册表全部主题。
     let current = root.window.theme.to_string();
     let mut cards = Vec::with_capacity(Theme::ALL.len() + 1);
@@ -59,7 +80,10 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         label: t.theme.to_owned(),
         cards,
     });
+}
 
+/// 字体相关行：字体名 / 路径 / 浏览 / 应用提示。
+fn push_font_rows(rows: &mut Vec<UiRow>, settings: &SettingsPanel, t: &SettingsTranslations) {
     // 字体：系统字体名 / 自定义路径 / 浏览。
     let font_list = lumino_note_core::font_scanner::get_cached_fonts();
     let font_names: Vec<String> = font_list.iter().map(|font| font.name.clone()).collect();
@@ -99,7 +123,10 @@ pub(super) fn page(root: &Root) -> UiPageModel {
     rows.push(UiRow::Static {
         text: t.font_apply_hint.to_owned(),
     });
+}
 
+/// 原生标题栏与图标高清开关行。
+fn push_titlebar_rows(rows: &mut Vec<UiRow>, settings: &SettingsPanel, t: &SettingsTranslations) {
     // 原生标题栏（macOS 不需要）。
     if !cfg!(target_os = "macos") {
         rows.push(UiRow::Checkbox {
@@ -115,7 +142,10 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         hint: t.hidpi_icon_hint.to_owned(),
         checked: settings.display.icon_hidpi,
     });
+}
 
+/// 音符总量显示位置下拉行。
+fn push_note_count_row(rows: &mut Vec<UiRow>, settings: &SettingsPanel, t: &SettingsTranslations) {
     // 音符总量显示位置。
     let note_options = vec![
         t.note_count_display_project_settings.to_owned(),
@@ -131,7 +161,14 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         selected: note_selected,
         width: 200.0,
     });
+}
 
+/// 自动滚动分区及其三个数值输入行。
+fn push_auto_scroll_rows(
+    rows: &mut Vec<UiRow>,
+    settings: &SettingsPanel,
+    t: &SettingsTranslations,
+) {
     // 自动滚动。
     rows.push(UiRow::Section {
         title: t.auto_scroll.to_owned(),
@@ -164,7 +201,15 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         width: 80.0,
         suffix: t.from_left.to_owned(),
     });
+}
 
+/// 交互分区：选择框模式 / 钢琴键盘开关 / 默认第一屏。
+fn push_interaction_rows(
+    rows: &mut Vec<UiRow>,
+    settings: &SettingsPanel,
+    t: &SettingsTranslations,
+    language: Language,
+) {
     // 交互。
     rows.push(UiRow::Section {
         title: t.interaction.to_owned(),
@@ -222,7 +267,10 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         step: 0.01,
         value_text: format!("{:.0}%", settings.display.first_screen_opacity * 100.0),
     });
+}
 
+/// 自动化曲线粗细与监控刷新间隔滑杆。
+fn push_slider_rows(rows: &mut Vec<UiRow>, settings: &SettingsPanel, t: &SettingsTranslations) {
     // 自动化曲线粗细 / 监控刷新间隔。
     rows.push(UiRow::Slider {
         field: UiField::AutomationLineThickness,
@@ -244,11 +292,6 @@ pub(super) fn page(root: &Root) -> UiPageModel {
         step: 1.0,
         value_text: format!("{:.0} ms", settings.logging.monitor_refresh_interval_ms),
     });
-
-    UiPageModel {
-        title: t.ui_title.to_owned(),
-        rows,
-    }
 }
 
 fn card(display: &str, value: &str, theme: &Theme, current: &str) -> ThemeCardModel {

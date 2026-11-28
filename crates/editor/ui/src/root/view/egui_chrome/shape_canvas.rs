@@ -16,7 +16,7 @@ use crate::shape_drawer::canvas::draw::{
     ROW_GAP, ROW_HEIGHT, TOOLBAR_TOP, TOOLBAR_WIDTH, unit_rect, unit_to_local,
 };
 use crate::shape_drawer::canvas::input;
-use crate::shape_drawer::doc::DrawerTool;
+use crate::shape_drawer::doc::{DrawerDoc, DrawerTool};
 use crate::state::root_state::ShapeDrawerState;
 
 /// 面积色（与 上一代 画布同一张表，alpha 0.32）。
@@ -71,6 +71,51 @@ pub(crate) fn canvas_model(
     };
 
     // 工具栏按钮。
+    push_toolbar_buttons(&mut model, &doc, palette);
+
+    // 网格 + 单位框。
+    let unit = unit_rect(bounds, doc.view);
+    push_grid(&mut model, unit, grid, text);
+
+    // 面积填充。
+    if let Some(area) = doc.area_map_cached() {
+        push_areas(&mut model, Some(area.as_ref()), unit);
+    }
+
+    // 描边 + 选中高亮。
+    let selected_color = Color32::from_rgb(255, 184, 51);
+    for (index, stroke) in doc.strokes.iter().enumerate() {
+        let selected = doc.is_selected(index);
+        push_stroke(
+            &mut model,
+            stroke,
+            bounds,
+            doc.view,
+            if selected { selected_color } else { text },
+            if selected { 3.0 } else { 2.0 },
+        );
+    }
+
+    // 锚点（仅 Select 工具）。
+    if doc.tool == DrawerTool::Select {
+        push_anchors(&mut model, &doc, bounds, text, selected_color);
+    }
+
+    // 提示与库路径。
+    push_hints(&mut model, &doc, state, rect, unit, palette);
+
+    // 草稿预览。
+    if let Some(draft) = state.interaction.borrow().draft.as_ref()
+        && let Some(stroke) = draft.to_stroke()
+    {
+        push_stroke(&mut model, &stroke, bounds, doc.view, text, 2.0);
+    }
+
+    model
+}
+
+/// 工具栏按钮：工具选择 + 撤销 / 重做 / 删除。
+fn push_toolbar_buttons(model: &mut ShapeCanvasModel, doc: &DrawerDoc, palette: &Palette) {
     let tools = DrawerTool::ALL;
     for (index, tool) in tools.iter().enumerate() {
         let top = TOOLBAR_TOP + index as f32 * (ROW_HEIGHT + ROW_GAP);
@@ -125,9 +170,10 @@ pub(crate) fn canvas_model(
             index: tools.len() + offset,
         });
     }
+}
 
-    // 网格 + 单位框。
-    let unit = unit_rect(bounds, doc.view);
+/// 单位框内的参考网格与四条边框线。
+fn push_grid(model: &mut ShapeCanvasModel, unit: Rectangle, grid: Color32, text: Color32) {
     for step in 0..=4 {
         let t = step as f32 / 4.0;
         let x = unit.x + unit.width * t;
@@ -170,70 +216,66 @@ pub(crate) fn canvas_model(
             width: 1.0,
         });
     }
+}
 
-    // 面积填充。
-    if let Some(area) = doc.area_map_cached() {
-        push_areas(&mut model, Some(area.as_ref()), unit);
-    }
-
-    // 描边 + 选中高亮。
-    let selected_color = Color32::from_rgb(255, 184, 51);
-    for (index, stroke) in doc.strokes.iter().enumerate() {
-        let selected = doc.is_selected(index);
-        push_stroke(
-            &mut model,
-            stroke,
-            bounds,
-            doc.view,
-            if selected { selected_color } else { text },
-            if selected { 3.0 } else { 2.0 },
-        );
-    }
-
-    // 锚点（仅 Select 工具）。
-    if doc.tool == DrawerTool::Select {
-        let handle_color = Color32::from_rgba_unmultiplied(204, 217, 242, 217);
-        for &stroke_index in &doc.selection {
-            let Some(stroke) = doc.strokes.get(stroke_index) else {
-                continue;
-            };
-            for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
-                if stroke.kind == StrokeKind::Curve && anchor.bend != AnchorBend::Corner {
-                    for handle in [anchor.in_handle_abs(), anchor.out_handle_abs()] {
-                        if handle == anchor.pos {
-                            continue;
-                        }
-                        let from = unit_to_local(anchor.pos, bounds, doc.view);
-                        let to = unit_to_local(handle, bounds, doc.view);
-                        model.lines.push(ShapeCanvasLine {
-                            from: Pos2::new(from.x, from.y),
-                            to: Pos2::new(to.x, to.y),
-                            color: handle_color,
-                            width: 1.0,
-                        });
-                        model.squares.push(ShapeCanvasSquare {
-                            center: Pos2::new(to.x, to.y),
-                            half: 2.0,
-                            fill: handle_color,
-                        });
+/// 选中描边的锚点与曲线控制柄。
+fn push_anchors(
+    model: &mut ShapeCanvasModel,
+    doc: &DrawerDoc,
+    bounds: Rectangle,
+    text: Color32,
+    selected_color: Color32,
+) {
+    let handle_color = Color32::from_rgba_unmultiplied(204, 217, 242, 217);
+    for &stroke_index in &doc.selection {
+        let Some(stroke) = doc.strokes.get(stroke_index) else {
+            continue;
+        };
+        for (anchor_index, anchor) in stroke.anchors.iter().enumerate() {
+            if stroke.kind == StrokeKind::Curve && anchor.bend != AnchorBend::Corner {
+                for handle in [anchor.in_handle_abs(), anchor.out_handle_abs()] {
+                    if handle == anchor.pos {
+                        continue;
                     }
+                    let from = unit_to_local(anchor.pos, bounds, doc.view);
+                    let to = unit_to_local(handle, bounds, doc.view);
+                    model.lines.push(ShapeCanvasLine {
+                        from: Pos2::new(from.x, from.y),
+                        to: Pos2::new(to.x, to.y),
+                        color: handle_color,
+                        width: 1.0,
+                    });
+                    model.squares.push(ShapeCanvasSquare {
+                        center: Pos2::new(to.x, to.y),
+                        half: 2.0,
+                        fill: handle_color,
+                    });
                 }
-                let pos = unit_to_local(anchor.pos, bounds, doc.view);
-                let color = if doc.selected_anchor == Some((stroke_index, anchor_index)) {
-                    selected_color
-                } else {
-                    text
-                };
-                model.squares.push(ShapeCanvasSquare {
-                    center: Pos2::new(pos.x, pos.y),
-                    half: 3.0,
-                    fill: color,
-                });
             }
+            let pos = unit_to_local(anchor.pos, bounds, doc.view);
+            let color = if doc.selected_anchor == Some((stroke_index, anchor_index)) {
+                selected_color
+            } else {
+                text
+            };
+            model.squares.push(ShapeCanvasSquare {
+                center: Pos2::new(pos.x, pos.y),
+                half: 3.0,
+                fill: color,
+            });
         }
     }
+}
 
-    // 提示与库路径。
+/// 空画布提示与形状库路径文本。
+fn push_hints(
+    model: &mut ShapeCanvasModel,
+    doc: &DrawerDoc,
+    state: &ShapeDrawerState,
+    rect: egui::Rect,
+    unit: Rectangle,
+    palette: &Palette,
+) {
     if doc.strokes.is_empty() {
         model.texts.push(ShapeCanvasText {
             pos: Pos2::new(unit.x + 16.0, unit.y + 16.0),
@@ -253,15 +295,6 @@ pub(crate) fn canvas_model(
         size: 11.0,
         color: palette.text_on_weak,
     });
-
-    // 草稿预览。
-    if let Some(draft) = state.interaction.borrow().draft.as_ref()
-        && let Some(stroke) = draft.to_stroke()
-    {
-        push_stroke(&mut model, &stroke, bounds, doc.view, text, 2.0);
-    }
-
-    model
 }
 
 /// 面积图元（同行同色合并成矩形）。

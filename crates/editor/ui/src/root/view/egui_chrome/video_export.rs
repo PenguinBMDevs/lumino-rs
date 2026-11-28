@@ -194,7 +194,40 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     let mut sections = Vec::new();
 
     // MIDI 数据源。
-    sections.push(VideoSection {
+    sections.push(midi_source_section(state));
+
+    // 渲染设置。
+    sections.push(render_settings_section(state));
+
+    // 计数器 / 数据曲线附加设置（各自独立分区，与 上一代 顺序一致）。
+    if state.basic.render_mode == "计数器" {
+        sections.push(counter::section(state));
+    }
+    if state.basic.render_mode == "数据曲线" {
+        sections.push(data_curve::section(state));
+    }
+
+    // MidiConsole 附加设置。
+    if state.basic.render_mode == "MidiConsole" {
+        sections.push(midi_console_section(state));
+    }
+
+    // 导出位置。
+    sections.push(export_location_section(state));
+
+    VideoExportModel {
+        title: tr!("视频导出").to_string(),
+        sections,
+        buttons: vec![
+            button(tr!("关闭"), 17, VideoButtonFill::Neutral, 100.0),
+            button(tr!("开始导出"), 18, VideoButtonFill::Primary, 120.0),
+        ],
+    }
+}
+
+/// MIDI 数据源分区。
+fn midi_source_section(state: &VideoExportDialogState) -> VideoSection {
+    VideoSection {
         title: tr!("MIDI 数据源").to_string(),
         rows: vec![
             text("", 0.0, &state.basic.midi_path, "", 0.0, 14),
@@ -211,9 +244,11 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
                 buttons: vec![button(tr!("浏览..."), 15, VideoButtonFill::Primary, 0.0)],
             },
         ],
-    });
+    }
+}
 
-    // 渲染设置。
+/// 渲染设置分区：基础控件 → MIDITrail 可选行 → 分辨率与帧率。
+fn render_settings_section(state: &VideoExportDialogState) -> VideoSection {
     let is_miditrail = state.basic.render_mode == "MIDITrail";
     let is_top = state.miditrail.view_mode == "Top";
     let speed = if is_miditrail {
@@ -225,7 +260,20 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
     } else {
         state.basic.waterfall_speed
     };
-    let mut settings = vec![
+    let mut settings = render_base_rows(state, speed);
+    if is_miditrail {
+        push_miditrail_rows(&mut settings, state, is_top);
+    }
+    push_tail_rows(&mut settings, state);
+    VideoSection {
+        title: tr!("渲染设置").to_string(),
+        rows: settings,
+    }
+}
+
+/// 渲染设置的基础控件行：格式 / 编码器 / 加速 / 质量 / 风格 / 下落速度。
+fn render_base_rows(state: &VideoExportDialogState, speed: f32) -> Vec<VideoRow> {
+    vec![
         pick(
             tr!("渲染格式:"),
             100.0,
@@ -298,35 +346,41 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             value_text: format!("{speed:.1}x"),
             id: 6.into(),
         },
-    ];
-    if is_miditrail {
-        settings.push(pick(
-            tr!("视图模式:"),
-            100.0,
-            vec!["Normal".to_string(), "Top".to_string()],
-            if is_top { 1 } else { 0 },
-            200.0,
-            7,
-        ));
-        settings.push(VideoRow::Slider {
-            label: tr!("Z 显示距离:").to_string(),
-            label_width: 100.0,
-            value: state.miditrail.z_far,
-            min: 0.1,
-            max: MIDITRAIL_Z_FAR_MAX,
-            step: 0.1,
-            slider_width: 200.0,
-            value_text: format!("{:.1}", state.miditrail.z_far),
-            id: 8.into(),
-        });
-        settings.push(VideoRow::Toggle {
-            label: tr!("3D 音符（盒子，关闭则为平面）").to_string(),
-            checked: state.miditrail.notes_3d,
-            id: 9.into(),
-        });
-    }
-    settings.push(VideoRow::Buttons { buttons: vec![] });
-    settings.push(VideoRow::TextPair {
+    ]
+}
+
+/// MIDITrail 模式下的附加行：视图模式 / Z 显示距离 / 3D 音符。
+fn push_miditrail_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState, is_top: bool) {
+    rows.push(pick(
+        tr!("视图模式:"),
+        100.0,
+        vec!["Normal".to_string(), "Top".to_string()],
+        if is_top { 1 } else { 0 },
+        200.0,
+        7,
+    ));
+    rows.push(VideoRow::Slider {
+        label: tr!("Z 显示距离:").to_string(),
+        label_width: 100.0,
+        value: state.miditrail.z_far,
+        min: 0.1,
+        max: MIDITRAIL_Z_FAR_MAX,
+        step: 0.1,
+        slider_width: 200.0,
+        value_text: format!("{:.1}", state.miditrail.z_far),
+        id: 8.into(),
+    });
+    rows.push(VideoRow::Toggle {
+        label: tr!("3D 音符（盒子，关闭则为平面）").to_string(),
+        checked: state.miditrail.notes_3d,
+        id: 9.into(),
+    });
+}
+
+/// 渲染设置的尾部行：空按钮行 / 分辨率输入对 / 帧率。
+fn push_tail_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState) {
+    rows.push(VideoRow::Buttons { buttons: vec![] });
+    rows.push(VideoRow::TextPair {
         left: TextPairCell {
             label: tr!("分辨率:").to_string(),
             label_width: 100.0,
@@ -345,7 +399,7 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         },
         separator: "x".to_string(),
     });
-    settings.push(pick(
+    rows.push(pick(
         tr!("帧率:"),
         100.0,
         [24u32, 30, 60, 120].iter().map(|v| v.to_string()).collect(),
@@ -356,40 +410,30 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
         200.0,
         12,
     ));
-    sections.push(VideoSection {
-        title: tr!("渲染设置").to_string(),
-        rows: settings,
-    });
+}
 
-    // 计数器 / 数据曲线附加设置（各自独立分区，与 上一代 顺序一致）。
-    if state.basic.render_mode == "计数器" {
-        sections.push(counter::section(state));
+/// MidiConsole 附加设置分区。
+fn midi_console_section(state: &VideoExportDialogState) -> VideoSection {
+    VideoSection {
+        title: tr!("MidiConsole 设置").to_string(),
+        rows: vec![pick(
+            tr!("渲染后端:"),
+            100.0,
+            vec!["GPU".to_string(), "CPU".to_string()],
+            if state.basic.midi_console_backend == "CPU" {
+                1
+            } else {
+                0
+            },
+            200.0,
+            13,
+        )],
     }
-    if state.basic.render_mode == "数据曲线" {
-        sections.push(data_curve::section(state));
-    }
+}
 
-    // MidiConsole 附加设置。
-    if state.basic.render_mode == "MidiConsole" {
-        sections.push(VideoSection {
-            title: tr!("MidiConsole 设置").to_string(),
-            rows: vec![pick(
-                tr!("渲染后端:"),
-                100.0,
-                vec!["GPU".to_string(), "CPU".to_string()],
-                if state.basic.midi_console_backend == "CPU" {
-                    1
-                } else {
-                    0
-                },
-                200.0,
-                13,
-            )],
-        });
-    }
-
-    // 导出位置。
-    sections.push(VideoSection {
+/// 导出位置分区。
+fn export_location_section(state: &VideoExportDialogState) -> VideoSection {
+    VideoSection {
         title: tr!("导出位置").to_string(),
         rows: vec![
             text(
@@ -403,15 +447,6 @@ fn video_export_model(state: &VideoExportDialogState) -> VideoExportModel {
             VideoRow::Buttons {
                 buttons: vec![button(tr!("浏览..."), 16, VideoButtonFill::Primary, 0.0)],
             },
-        ],
-    });
-
-    VideoExportModel {
-        title: tr!("视频导出").to_string(),
-        sections,
-        buttons: vec![
-            button(tr!("关闭"), 17, VideoButtonFill::Neutral, 100.0),
-            button(tr!("开始导出"), 18, VideoButtonFill::Primary, 120.0),
         ],
     }
 }
