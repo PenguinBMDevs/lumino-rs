@@ -13,17 +13,8 @@ use crate::interaction::{
 };
 use crate::viewport::ArrangementViewport;
 
-/// Pointer 工具事件入口。
-pub fn handle_pointer_event(
-    state: &mut ArrangementInteractionState,
-    viewport: &mut ArrangementViewport,
-    ctx: &ArrangementInteractionContext<'_>,
-) -> InteractionOutput {
-    let mut output = InteractionOutput::new();
-
-    // ctrl_pressed 已废弃：Ctrl 多选功能已移除，保留字段以兼容上下文。
-    let _ = ctx.ctrl_pressed;
-
+/// 清理丢失释放事件留下的拖拽状态（`handle_pointer_event` 的前置逻辑）。
+fn clear_stale_drag(state: &mut ArrangementInteractionState, output: &mut InteractionOutput) {
     // 状态清理：若丢失释放事件（如窗口失焦），当检测到主键未按下时重置拖拽。
     if !state.primary_down {
         if state.drag.is_some() {
@@ -37,194 +28,248 @@ pub fn handle_pointer_event(
             output.push(ArrangementAction::DragSelectionRect(None));
         }
     }
+}
+
+/// 左键按下：在已有选择内开始移动，否则开始新的框选。
+fn on_left_pressed(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+    output: &mut InteractionOutput,
+) {
+    state.primary_down = true;
+    if let Some(pos) = ctx.cursor.position() {
+        let local = local_pos(pos, ctx.bounds);
+        if !ctx.bounds.contains(pos) {
+            return;
+        }
+
+        let click_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
+        let click_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
+
+        if state.hover_inside_selection {
+            // 在已有选择内开始移动
+            state.move_orig_sel = ctx.arr_sel_rect;
+            let origin = (click_tick, click_track_f);
+            state.move_drag = Some((origin, origin));
+            state.drag = None;
+            output.push(ArrangementAction::GhostNotes(Vec::new()));
+        } else {
+            // 开始新的框选
+            let start_track_y = (local.y + viewport.scroll_y) / viewport.lane_height();
+            state.drag = Some(((click_tick, start_track_y), local));
+            output.push(ArrangementAction::SelectionCleared);
+        }
+    }
+}
+
+/// 更新 move_drag 当前位置并生成 ghost 预览与偏移选择矩形。
+fn update_move_drag(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+    output: &mut InteractionOutput,
+) {
+    if let Some((origin, _)) = state.move_drag
+        && let Some(pos) = ctx.cursor.position()
+    {
+        let local = local_pos(pos, ctx.bounds);
+        let current_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
+        let current_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
+        state.move_drag = Some((origin, (current_tick, current_track_f)));
+        let ghosts = compute_ghost_notes(
+            state,
+            ctx.selected_notes,
+            ctx.ppq,
+            ctx.precision,
+            ctx.time_signatures,
+        );
+        output.push(ArrangementAction::GhostNotes(ghosts));
+
+        // 计算移动拖拽中的偏移选择矩形（GPU 渲染用）
+        let snapped_origin = snap_tick(origin.0, ctx.precision, ctx.ppq, ctx.time_signatures);
+        let snapped_current = snap_tick(current_tick, ctx.precision, ctx.ppq, ctx.time_signatures);
+        let dt = (snapped_current - snapped_origin).round() as i64;
+        let dtr = (current_track_f - origin.1).round() as i32;
+        if let Some((t_start, t_end, track_lo, track_hi)) = state.move_orig_sel {
+            let new_lo = (track_lo as i32 + dtr).max(0) as usize;
+            let new_hi = (track_hi as i32 + dtr).max(0) as usize;
+            if dt != 0 || dtr != 0 {
+                output.push(ArrangementAction::DragSelectionRect(Some((
+                    t_start + dt as f64,
+                    t_end + dt as f64,
+                    new_lo,
+                    new_hi,
+                ))));
+            } else {
+                output.push(ArrangementAction::DragSelectionRect(None));
+            }
+        }
+
+        // 边缘自动滚动
+        auto_scroll_on_drag(
+            pos,
+            ctx.bounds,
+            viewport,
+            ctx.track_count,
+            &mut state.last_auto_scroll_time,
+            output,
+        );
+    }
+}
+
+/// 更新 marquee 当前位置与拖拽中的框选矩形（含边缘自动滚动）。
+fn update_marquee(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+    output: &mut InteractionOutput,
+) {
+    if let Some((start_music, _)) = state.drag
+        && let Some(pos) = ctx.cursor.position()
+    {
+        let local = clamped_local(pos, ctx.bounds);
+        state.drag = Some((start_music, local));
+
+        // 计算拖拽中的框选矩形（GPU 渲染用）
+        let start_pixel = Point2::new(
+            viewport.tick_to_x(start_music.0) - viewport.scroll_x,
+            start_music.1 * viewport.lane_height() - viewport.scroll_y,
+        );
+        let drag_dist = {
+            let v = local - start_pixel;
+            (v.x * v.x + v.y * v.y).sqrt()
+        };
+        if drag_dist >= 3.0 {
+            let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
+                start_pixel,
+                local,
+                viewport,
+                ctx.precision,
+                ctx.ppq,
+                ctx.time_signatures,
+            );
+            output.push(ArrangementAction::DragSelectionRect(Some((
+                t_start, t_end, track_lo, track_hi,
+            ))));
+        } else {
+            output.push(ArrangementAction::DragSelectionRect(None));
+        }
+
+        // 框选时同样支持边缘自动滚动
+        auto_scroll_on_drag(
+            pos,
+            ctx.bounds,
+            viewport,
+            ctx.track_count,
+            &mut state.last_auto_scroll_time,
+            output,
+        );
+    }
+}
+
+/// 光标移动：先更新移动拖拽，再更新 marquee（保持原判定顺序）。
+fn on_cursor_moved(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+    output: &mut InteractionOutput,
+) {
+    update_move_drag(state, viewport, ctx, output);
+    update_marquee(state, viewport, ctx, output);
+}
+
+/// 左键释放：先提交移动，再提交框选（保留原提前返回顺序）。
+fn on_left_released(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+    output: &mut InteractionOutput,
+) {
+    state.primary_down = false;
+    // 移动释放
+    if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag.take() {
+        state.move_drag = None;
+        output.push(ArrangementAction::GhostNotes(Vec::new()));
+        output.push(ArrangementAction::DragSelectionRect(None));
+        let snapped_origin = snap_tick(origin_t, ctx.precision, ctx.ppq, ctx.time_signatures);
+        let snapped_current = snap_tick(current_t, ctx.precision, ctx.ppq, ctx.time_signatures);
+        let delta_ticks = (snapped_current - snapped_origin).round() as i64;
+        let delta_tracks = (current_tr - origin_tr).round() as i32;
+
+        if delta_ticks != 0 || delta_tracks != 0 {
+            // 选择在拖拽期间未被清空，arrange_move_notes 可直接找到音符并偏移。
+            // 移动提交后由 arrange_move_notes 把选择集冻结为本次移动的音符
+            // （精确集合，落点区域内既有音符不进入选择——框选误伤修复）。
+            output.push(ArrangementAction::MoveNotes {
+                delta_ticks,
+                delta_tracks,
+            });
+        }
+        state.move_orig_sel = None;
+        return;
+    }
+
+    // 框选释放
+    if let Some((start_music, end_local)) = state.drag.take() {
+        state.drag = None;
+        output.push(ArrangementAction::DragSelectionRect(None));
+        let start_pixel = Point2::new(
+            viewport.tick_to_x(start_music.0) - viewport.scroll_x,
+            start_music.1 * viewport.lane_height() - viewport.scroll_y,
+        );
+        let drag_dist = {
+            let v = end_local - start_pixel;
+            (v.x * v.x + v.y * v.y).sqrt()
+        };
+
+        if drag_dist < 3.0 {
+            // 点击：设置光标、清空选择并选中对应音轨
+            let tick = viewport.x_to_tick(start_pixel.x + viewport.scroll_x);
+            let snapped = snap_tick(tick, ctx.precision, ctx.ppq, ctx.time_signatures).max(0.0);
+            output.push(ArrangementAction::SelectionCleared);
+            output.push(ArrangementAction::CursorSet(snapped));
+
+            let track_idx = start_music.1.floor() as usize;
+            if track_idx < ctx.track_count {
+                output.push(ArrangementAction::SelectTrack(track_idx));
+            }
+        } else {
+            let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
+                start_pixel,
+                end_local,
+                viewport,
+                ctx.precision,
+                ctx.ppq,
+                ctx.time_signatures,
+            );
+            output.push(ArrangementAction::SelectionChanged(Some((
+                t_start, t_end, track_lo, track_hi,
+            ))));
+        }
+    }
+}
+
+/// Pointer 工具事件入口。
+pub fn handle_pointer_event(
+    state: &mut ArrangementInteractionState,
+    viewport: &mut ArrangementViewport,
+    ctx: &ArrangementInteractionContext<'_>,
+) -> InteractionOutput {
+    let mut output = InteractionOutput::new();
+
+    // ctrl_pressed 已废弃：Ctrl 多选功能已移除，保留字段以兼容上下文。
+    let _ = ctx.ctrl_pressed;
+
+    clear_stale_drag(state, &mut output);
 
     match ctx.event {
         ArrangementEvent::ButtonPressed(ArrangementPointerButton::Left) => {
-            state.primary_down = true;
-            if let Some(pos) = ctx.cursor.position() {
-                let local = local_pos(pos, ctx.bounds);
-                if !ctx.bounds.contains(pos) {
-                    return output;
-                }
-
-                let click_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
-                let click_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
-
-                if state.hover_inside_selection {
-                    // 在已有选择内开始移动
-                    state.move_orig_sel = ctx.arr_sel_rect;
-                    let origin = (click_tick, click_track_f);
-                    state.move_drag = Some((origin, origin));
-                    state.drag = None;
-                    output.push(ArrangementAction::GhostNotes(Vec::new()));
-                } else {
-                    // 开始新的框选
-                    let start_track_y = (local.y + viewport.scroll_y) / viewport.lane_height();
-                    state.drag = Some(((click_tick, start_track_y), local));
-                    output.push(ArrangementAction::SelectionCleared);
-                }
-            }
+            on_left_pressed(state, viewport, ctx, &mut output)
         }
-        ArrangementEvent::CursorMoved => {
-            // 更新 move_drag 当前位置并生成 ghost 预览
-            if let Some((origin, _)) = state.move_drag
-                && let Some(pos) = ctx.cursor.position()
-            {
-                let local = local_pos(pos, ctx.bounds);
-                let current_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
-                let current_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
-                state.move_drag = Some((origin, (current_tick, current_track_f)));
-                let ghosts = compute_ghost_notes(
-                    state,
-                    ctx.selected_notes,
-                    ctx.ppq,
-                    ctx.precision,
-                    ctx.time_signatures,
-                );
-                output.push(ArrangementAction::GhostNotes(ghosts));
-
-                // 计算移动拖拽中的偏移选择矩形（GPU 渲染用）
-                let snapped_origin =
-                    snap_tick(origin.0, ctx.precision, ctx.ppq, ctx.time_signatures);
-                let snapped_current =
-                    snap_tick(current_tick, ctx.precision, ctx.ppq, ctx.time_signatures);
-                let dt = (snapped_current - snapped_origin).round() as i64;
-                let dtr = (current_track_f - origin.1).round() as i32;
-                if let Some((t_start, t_end, track_lo, track_hi)) = state.move_orig_sel {
-                    let new_lo = (track_lo as i32 + dtr).max(0) as usize;
-                    let new_hi = (track_hi as i32 + dtr).max(0) as usize;
-                    if dt != 0 || dtr != 0 {
-                        output.push(ArrangementAction::DragSelectionRect(Some((
-                            t_start + dt as f64,
-                            t_end + dt as f64,
-                            new_lo,
-                            new_hi,
-                        ))));
-                    } else {
-                        output.push(ArrangementAction::DragSelectionRect(None));
-                    }
-                }
-
-                // 边缘自动滚动
-                auto_scroll_on_drag(
-                    pos,
-                    ctx.bounds,
-                    viewport,
-                    ctx.track_count,
-                    &mut state.last_auto_scroll_time,
-                    &mut output,
-                );
-            }
-            // 更新 marquee 当前位置
-            if let Some((start_music, _)) = state.drag
-                && let Some(pos) = ctx.cursor.position()
-            {
-                let local = clamped_local(pos, ctx.bounds);
-                state.drag = Some((start_music, local));
-
-                // 计算拖拽中的框选矩形（GPU 渲染用）
-                let start_pixel = Point2::new(
-                    viewport.tick_to_x(start_music.0) - viewport.scroll_x,
-                    start_music.1 * viewport.lane_height() - viewport.scroll_y,
-                );
-                let drag_dist = {
-                    let v = local - start_pixel;
-                    (v.x * v.x + v.y * v.y).sqrt()
-                };
-                if drag_dist >= 3.0 {
-                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
-                        start_pixel,
-                        local,
-                        viewport,
-                        ctx.precision,
-                        ctx.ppq,
-                        ctx.time_signatures,
-                    );
-                    output.push(ArrangementAction::DragSelectionRect(Some((
-                        t_start, t_end, track_lo, track_hi,
-                    ))));
-                } else {
-                    output.push(ArrangementAction::DragSelectionRect(None));
-                }
-
-                // 框选时同样支持边缘自动滚动
-                auto_scroll_on_drag(
-                    pos,
-                    ctx.bounds,
-                    viewport,
-                    ctx.track_count,
-                    &mut state.last_auto_scroll_time,
-                    &mut output,
-                );
-            }
-        }
+        ArrangementEvent::CursorMoved => on_cursor_moved(state, viewport, ctx, &mut output),
         ArrangementEvent::ButtonReleased(ArrangementPointerButton::Left) => {
-            state.primary_down = false;
-            // 移动释放
-            if let Some(((origin_t, origin_tr), (current_t, current_tr))) = state.move_drag.take() {
-                state.move_drag = None;
-                output.push(ArrangementAction::GhostNotes(Vec::new()));
-                output.push(ArrangementAction::DragSelectionRect(None));
-                let snapped_origin =
-                    snap_tick(origin_t, ctx.precision, ctx.ppq, ctx.time_signatures);
-                let snapped_current =
-                    snap_tick(current_t, ctx.precision, ctx.ppq, ctx.time_signatures);
-                let delta_ticks = (snapped_current - snapped_origin).round() as i64;
-                let delta_tracks = (current_tr - origin_tr).round() as i32;
-
-                if delta_ticks != 0 || delta_tracks != 0 {
-                    // 选择在拖拽期间未被清空，arrange_move_notes 可直接找到音符并偏移。
-                    // 移动提交后由 arrange_move_notes 把选择集冻结为本次移动的音符
-                    // （精确集合，落点区域内既有音符不进入选择——框选误伤修复）。
-                    output.push(ArrangementAction::MoveNotes {
-                        delta_ticks,
-                        delta_tracks,
-                    });
-                }
-                state.move_orig_sel = None;
-                return output;
-            }
-
-            // 框选释放
-            if let Some((start_music, end_local)) = state.drag.take() {
-                state.drag = None;
-                output.push(ArrangementAction::DragSelectionRect(None));
-                let start_pixel = Point2::new(
-                    viewport.tick_to_x(start_music.0) - viewport.scroll_x,
-                    start_music.1 * viewport.lane_height() - viewport.scroll_y,
-                );
-                let drag_dist = {
-                    let v = end_local - start_pixel;
-                    (v.x * v.x + v.y * v.y).sqrt()
-                };
-
-                if drag_dist < 3.0 {
-                    // 点击：设置光标、清空选择并选中对应音轨
-                    let tick = viewport.x_to_tick(start_pixel.x + viewport.scroll_x);
-                    let snapped =
-                        snap_tick(tick, ctx.precision, ctx.ppq, ctx.time_signatures).max(0.0);
-                    output.push(ArrangementAction::SelectionCleared);
-                    output.push(ArrangementAction::CursorSet(snapped));
-
-                    let track_idx = start_music.1.floor() as usize;
-                    if track_idx < ctx.track_count {
-                        output.push(ArrangementAction::SelectTrack(track_idx));
-                    }
-                } else {
-                    let (_, _, _, _, t_start, t_end, track_lo, track_hi) = arrange_snapped_bounds(
-                        start_pixel,
-                        end_local,
-                        viewport,
-                        ctx.precision,
-                        ctx.ppq,
-                        ctx.time_signatures,
-                    );
-                    output.push(ArrangementAction::SelectionChanged(Some((
-                        t_start, t_end, track_lo, track_hi,
-                    ))));
-                }
-                return output;
-            }
+            on_left_released(state, viewport, ctx, &mut output)
         }
         _ => {}
     }

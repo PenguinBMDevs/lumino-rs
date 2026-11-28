@@ -55,6 +55,208 @@ struct TrackBuild {
     timing: midly::loader::TrackTiming,
 }
 
+/// 逐轨产物按轨序归并后的累加器（只含最终落进文档的数据）。
+struct MergedTracks {
+    notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>>,
+    track_ports: Vec<u8>,
+    track_names: Vec<Option<String>>,
+    all_tempo_changes: Vec<(u32, f32)>,
+    all_time_signatures: Vec<(u32, u8, u8)>,
+    all_key_signatures: Vec<(u32, i8, bool)>,
+    control_events: Vec<midly::loader::PackedControlEvent>,
+    lyrics: Vec<(u32, u16, Vec<u8>)>,
+    markers: Vec<(u32, u16, Vec<u8>)>,
+    text_events: Vec<(u32, u16, u8, Vec<u8>)>,
+    sys_ex: Vec<(u32, u16, Vec<u8>)>,
+    total_notes: u64,
+    total_ticks: u32,
+    track_timings: Vec<midly::loader::TrackTiming>,
+}
+
+/// 把 midly 单轨事件物化为 `TrackBuild`（逐轨并行回调的函数体）。
+fn track_build_from_events(mut events: midly::loader::TrackAllEvents<'_>) -> TrackBuild {
+    let note_count = events.notes.len() as u64;
+    // midly 的 TrackAllEvents 按「NoteOff 到达顺序」产出音符（重叠音符中
+    // 先结束后开始的会排在先开始音符之前），并不保证按 start_tick 升序——
+    // 其文档注释「sorted by start tick」对该流式路径并不成立。
+    // ChunkedList 依赖 start_tick 升序做区间查询（range / 走带视图），
+    // 必须在转换前显式排序。仅对 midly 已物化的本轨 Vec<PackedNote>
+    // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
+    // 巨轨用稳定基数排序（8.8M 音符 330→80ms）；小轨/已排序轨走标准库。
+    crate::note_sort::sort_by_start_tick(&mut events.notes);
+    TrackBuild {
+        notes: crate::chunked_list::ChunkedList::from_sorted_iter(
+            events.notes.into_iter().map(NoteEvent::from),
+        ),
+        // MidiPort meta (FF 21)：首个出现值（与旧 Smf::parse 语义一致）。
+        port: events.midi_port.unwrap_or(0),
+        // TrackName meta (FF 03)：快路径直接带出，免掉第二次全量扫描
+        // （无名字的轨此前必须走完整条轨；164M 实测占端到端 ~57%）。
+        name: events
+            .track_name
+            .map(scan::decode_midi_text)
+            .filter(|n| !n.is_empty()),
+        note_count,
+        tempo_changes: events.tempo_changes,
+        control_events: events.control_events,
+        time_signatures: events
+            .time_signatures
+            .into_iter()
+            .map(|ts| {
+                (
+                    ts.tick,
+                    ts.numerator,
+                    1u32.wrapping_shl(ts.denominator as u32) as u8,
+                )
+            })
+            .collect(),
+        key_signatures: events
+            .key_signatures
+            .into_iter()
+            .map(|ks| (ks.tick, ks.sharps, ks.is_minor))
+            .collect(),
+        lyrics: events
+            .lyrics
+            .into_iter()
+            .map(|ev| (ev.tick, ev.track, ev.text.to_vec()))
+            .collect(),
+        markers: events
+            .markers
+            .into_iter()
+            .map(|ev| (ev.tick, ev.track, ev.text.to_vec()))
+            .collect(),
+        text_events: events
+            .text_events
+            .into_iter()
+            .map(|ev| (ev.tick, ev.track, ev.meta_type, ev.text.to_vec()))
+            .collect(),
+        sys_ex: events
+            .sys_ex
+            .into_iter()
+            .map(|ev| (ev.tick, ev.track, ev.data.to_vec()))
+            .collect(),
+        timing: events.timing,
+    }
+}
+
+/// 逐轨无锁并行地提取并物化全部事件（保留回调的并行契约与轨序）。
+fn extract_track_builds(file_bytes: &[u8]) -> LoaderResult<Vec<TrackBuild>> {
+    // Tier2：逐轨无锁并行——排序 / ChunkedList 构建 / 文本复制都在工作线程内完成，
+    // 仅最终按轨序归并串行。旧实现用全局 Mutex 串行执行这些逐轨工作，
+    // 实测占 Pi.mid 端到端墙钟 ~80%（见 docs/research 指导书 §P3 与 fork 的 perf 数据）。
+    midly::loader::extract_all_events_per_track_collect_from_bytes(
+        file_bytes,
+        |_track_idx, events| track_build_from_events(events),
+    )
+    .map_err(|e| LoaderError::MidiParse(trf!("提取音符失败: {e}", e = e)))
+}
+
+/// 按轨序归并逐轨产物。
+fn merge_track_builds(track_builds: Vec<TrackBuild>) -> MergedTracks {
+    // 按轨序归并。顺序确定：不再依赖并行回调的到达顺序
+    // （旧实现在跨轨同 tick 事件上的相对顺序随线程调度变化）。
+    // 归并前按精确总量预分配，避免串行归并阶段的倍增重分配抖动。
+    let capacity = |f: fn(&TrackBuild) -> usize| track_builds.iter().map(f).sum::<usize>();
+    let mut notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>> =
+        Vec::with_capacity(track_builds.len());
+    let mut track_ports: Vec<u8> = Vec::with_capacity(track_builds.len());
+    // TrackName 由快路径逐轨带出（不再做第二次全量扫描），按轨序归并。
+    let mut track_names: Vec<Option<String>> = Vec::with_capacity(track_builds.len());
+    let mut all_tempo_changes: Vec<(u32, f32)> =
+        Vec::with_capacity(capacity(|t| t.tempo_changes.len()));
+    let mut all_time_signatures: Vec<(u32, u8, u8)> =
+        Vec::with_capacity(capacity(|t| t.time_signatures.len()));
+    let mut all_key_signatures: Vec<(u32, i8, bool)> =
+        Vec::with_capacity(capacity(|t| t.key_signatures.len()));
+    let mut control_events: Vec<midly::loader::PackedControlEvent> =
+        Vec::with_capacity(capacity(|t| t.control_events.len()));
+    let mut lyrics: Vec<(u32, u16, Vec<u8>)> = Vec::with_capacity(capacity(|t| t.lyrics.len()));
+    let mut markers: Vec<(u32, u16, Vec<u8>)> = Vec::with_capacity(capacity(|t| t.markers.len()));
+    let mut text_events: Vec<(u32, u16, u8, Vec<u8>)> =
+        Vec::with_capacity(capacity(|t| t.text_events.len()));
+    let mut sys_ex: Vec<(u32, u16, Vec<u8>)> = Vec::with_capacity(capacity(|t| t.sys_ex.len()));
+    let mut total_notes: u64 = 0;
+    let mut total_ticks: u32 = 0;
+    let mut track_timings: Vec<midly::loader::TrackTiming> = Vec::with_capacity(track_builds.len());
+
+    for track in track_builds {
+        total_notes += track.note_count;
+        // 时间线语义（产品决策）：取各轨**声明结尾（EOT）的最大值**，
+        // 而不是音符结束 tick 的最大值——畸形尾部（EOT 之后的事件）
+        // 不得把文件时长拉长。缺 EOT 的轨退化为物理末尾（TrackTiming 内处理）。
+        total_ticks = total_ticks.max(track.timing.declared_end_tick());
+        track_ports.push(track.port);
+        track_names.push(track.name);
+        notes.push(track.notes);
+        all_tempo_changes.extend(track.tempo_changes);
+        control_events.extend(track.control_events);
+        all_time_signatures.extend(track.time_signatures);
+        all_key_signatures.extend(track.key_signatures);
+        lyrics.extend(track.lyrics);
+        markers.extend(track.markers);
+        text_events.extend(track.text_events);
+        sys_ex.extend(track.sys_ex);
+        track_timings.push(track.timing);
+    }
+
+    MergedTracks {
+        notes,
+        track_ports,
+        track_names,
+        all_tempo_changes,
+        all_time_signatures,
+        all_key_signatures,
+        control_events,
+        lyrics,
+        markers,
+        text_events,
+        sys_ex,
+        total_notes,
+        total_ticks,
+        track_timings,
+    }
+}
+
+/// 对归并后的事件做终局排序与默认事件补齐（保持文件序语义）。
+fn finalize_event_order(merged: &mut MergedTracks) {
+    finalize_sorted_events(&mut merged.all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
+    finalize_sorted_events(
+        &mut merged.all_time_signatures,
+        |&(t, _, _)| t,
+        (0u32, 4u8, 4u8),
+    );
+    finalize_sorted_events(
+        &mut merged.all_key_signatures,
+        |&(t, _, _)| t,
+        (0u32, 0i8, false),
+    );
+
+    // 稳定排序**只按 tick**：同 tick 内完全保留文件序，不做任何二级重排。
+    //
+    // 这依赖素材本身把 RPN 选择(CC101/100) 写在数据(CC6/38) 之前、并把 RPN 写在
+    // 同 tick 的 PitchBend 之前——否则 PB 会用旧的 bend_sensitivity（默认 2 半音）
+    // 而非 RPN 设定的值（如 24）。复刻 yinhe 2026-06-27 13:22 fix(audio)。
+    //
+    // 【已决策 2026-10-03：保持文件序】素材若把 RPN 的 DataEntry 写在选择之前
+    // （同 tick，审计 803 组），此处**有意不纠正**：MIDI 是顺序流，按文件序处理
+    // 才是规范语义，与参考实现一致；「修复素材」属素材侧责任，不在解析层做。
+    // 加二级序会同时威胁 PB 的相对次序，回归 426d5b2d 修好的弯音偏差
+    // （98k 个 PB 中 7 个偏差 >1 半音、最大 62 半音）。
+    // 该决策由 `lumino_export::audio::event_stream` 的
+    // `test_same_tick_rpn_data_before_select_is_preserved_as_is` 锁死：
+    // 改语义必须先让那条变红。
+    //
+    // 与 `chase.rs` 追齐路径的差异是**有意为之**，不是口径不一致缺陷：追齐不是在
+    // 重放文件流，而是把「某 tick 的最终状态」重新下发一遍，那批消息的次序由代码
+    // 语义决定（选择必须先于数据，否则数据落到错误参数），故那边用
+    // 「选择→其他→DataEntry」rank；本路径只负责忠实还原文件顺序。
+    merged.control_events.sort_by_key(|e| e.tick);
+    merged.lyrics.sort_by_key(|e| e.0);
+    merged.markers.sort_by_key(|e| e.0);
+    merged.text_events.sort_by_key(|e| e.0);
+    merged.sys_ex.sort_by_key(|e| e.0);
+}
+
 impl MidiDocument {
     /// 构造空白文档（N 条空轨道，供新建工程初始化为可编辑空白工程）。
     ///
@@ -163,192 +365,47 @@ impl MidiDocument {
                 (cb)(0.15);
             }
 
-            // Tier2：逐轨无锁并行——排序 / ChunkedList 构建 / 文本复制都在工作线程内完成，
-            // 仅最终按轨序归并串行。旧实现用全局 Mutex 串行执行这些逐轨工作，
-            // 实测占 Pi.mid 端到端墙钟 ~80%（见 docs/research 指导书 §P3 与 fork 的 perf 数据）。
-            let track_builds: Vec<TrackBuild> =
-                midly::loader::extract_all_events_per_track_collect_from_bytes(
-                    file_bytes,
-                    |_track_idx, mut events| {
-                        let note_count = events.notes.len() as u64;
-                        // midly 的 TrackAllEvents 按「NoteOff 到达顺序」产出音符（重叠音符中
-                        // 先结束后开始的会排在先开始音符之前），并不保证按 start_tick 升序——
-                        // 其文档注释「sorted by start tick」对该流式路径并不成立。
-                        // ChunkedList 依赖 start_tick 升序做区间查询（range / 走带视图），
-                        // 必须在转换前显式排序。仅对 midly 已物化的本轨 Vec<PackedNote>
-                        // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
-                        // 巨轨用稳定基数排序（8.8M 音符 330→80ms）；小轨/已排序轨走标准库。
-                        crate::note_sort::sort_by_start_tick(&mut events.notes);
-                        TrackBuild {
-                            notes: crate::chunked_list::ChunkedList::from_sorted_iter(
-                                events.notes.into_iter().map(NoteEvent::from),
-                            ),
-                            // MidiPort meta (FF 21)：首个出现值（与旧 Smf::parse 语义一致）。
-                            port: events.midi_port.unwrap_or(0),
-                            // TrackName meta (FF 03)：快路径直接带出，免掉第二次全量扫描
-                            // （无名字的轨此前必须走完整条轨；164M 实测占端到端 ~57%）。
-                            name: events
-                                .track_name
-                                .map(scan::decode_midi_text)
-                                .filter(|n| !n.is_empty()),
-                            note_count,
-                            tempo_changes: events.tempo_changes,
-                            control_events: events.control_events,
-                            time_signatures: events
-                                .time_signatures
-                                .into_iter()
-                                .map(|ts| {
-                                    (
-                                        ts.tick,
-                                        ts.numerator,
-                                        1u32.wrapping_shl(ts.denominator as u32) as u8,
-                                    )
-                                })
-                                .collect(),
-                            key_signatures: events
-                                .key_signatures
-                                .into_iter()
-                                .map(|ks| (ks.tick, ks.sharps, ks.is_minor))
-                                .collect(),
-                            lyrics: events
-                                .lyrics
-                                .into_iter()
-                                .map(|ev| (ev.tick, ev.track, ev.text.to_vec()))
-                                .collect(),
-                            markers: events
-                                .markers
-                                .into_iter()
-                                .map(|ev| (ev.tick, ev.track, ev.text.to_vec()))
-                                .collect(),
-                            text_events: events
-                                .text_events
-                                .into_iter()
-                                .map(|ev| (ev.tick, ev.track, ev.meta_type, ev.text.to_vec()))
-                                .collect(),
-                            sys_ex: events
-                                .sys_ex
-                                .into_iter()
-                                .map(|ev| (ev.tick, ev.track, ev.data.to_vec()))
-                                .collect(),
-                            timing: events.timing,
-                        }
-                    },
-                )
-                .map_err(|e| LoaderError::MidiParse(trf!("提取音符失败: {e}", e = e)))?;
-
-            // 按轨序归并。顺序确定：不再依赖并行回调的到达顺序
-            // （旧实现在跨轨同 tick 事件上的相对顺序随线程调度变化）。
-            // 归并前按精确总量预分配，避免串行归并阶段的倍增重分配抖动。
-            let capacity = |f: fn(&TrackBuild) -> usize| track_builds.iter().map(f).sum::<usize>();
-            let mut notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>> =
-                Vec::with_capacity(track_builds.len());
-            let mut track_ports: Vec<u8> = Vec::with_capacity(track_builds.len());
-            // TrackName 由快路径逐轨带出（不再做第二次全量扫描），按轨序归并。
-            let mut track_names: Vec<Option<String>> = Vec::with_capacity(track_builds.len());
-            let mut all_tempo_changes: Vec<(u32, f32)> =
-                Vec::with_capacity(capacity(|t| t.tempo_changes.len()));
-            let mut all_time_signatures: Vec<(u32, u8, u8)> =
-                Vec::with_capacity(capacity(|t| t.time_signatures.len()));
-            let mut all_key_signatures: Vec<(u32, i8, bool)> =
-                Vec::with_capacity(capacity(|t| t.key_signatures.len()));
-            let mut control_events: Vec<midly::loader::PackedControlEvent> =
-                Vec::with_capacity(capacity(|t| t.control_events.len()));
-            let mut lyrics: Vec<(u32, u16, Vec<u8>)> =
-                Vec::with_capacity(capacity(|t| t.lyrics.len()));
-            let mut markers: Vec<(u32, u16, Vec<u8>)> =
-                Vec::with_capacity(capacity(|t| t.markers.len()));
-            let mut text_events: Vec<(u32, u16, u8, Vec<u8>)> =
-                Vec::with_capacity(capacity(|t| t.text_events.len()));
-            let mut sys_ex: Vec<(u32, u16, Vec<u8>)> =
-                Vec::with_capacity(capacity(|t| t.sys_ex.len()));
-            let mut total_notes: u64 = 0;
-            let mut total_ticks: u32 = 0;
-            let mut track_timings: Vec<midly::loader::TrackTiming> =
-                Vec::with_capacity(track_builds.len());
-
-            for track in track_builds {
-                total_notes += track.note_count;
-                // 时间线语义（产品决策）：取各轨**声明结尾（EOT）的最大值**，
-                // 而不是音符结束 tick 的最大值——畸形尾部（EOT 之后的事件）
-                // 不得把文件时长拉长。缺 EOT 的轨退化为物理末尾（TrackTiming 内处理）。
-                total_ticks = total_ticks.max(track.timing.declared_end_tick());
-                track_ports.push(track.port);
-                track_names.push(track.name);
-                notes.push(track.notes);
-                all_tempo_changes.extend(track.tempo_changes);
-                control_events.extend(track.control_events);
-                all_time_signatures.extend(track.time_signatures);
-                all_key_signatures.extend(track.key_signatures);
-                lyrics.extend(track.lyrics);
-                markers.extend(track.markers);
-                text_events.extend(track.text_events);
-                sys_ex.extend(track.sys_ex);
-                track_timings.push(track.timing);
-            }
-
-            finalize_sorted_events(&mut all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
-            finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));
-            finalize_sorted_events(&mut all_key_signatures, |&(t, _, _)| t, (0u32, 0i8, false));
-
-            // 稳定排序**只按 tick**：同 tick 内完全保留文件序，不做任何二级重排。
-            //
-            // 这依赖素材本身把 RPN 选择(CC101/100) 写在数据(CC6/38) 之前、并把 RPN 写在
-            // 同 tick 的 PitchBend 之前——否则 PB 会用旧的 bend_sensitivity（默认 2 半音）
-            // 而非 RPN 设定的值（如 24）。复刻 yinhe 2026-06-27 13:22 fix(audio)。
-            //
-            // 【已决策 2026-10-03：保持文件序】素材若把 RPN 的 DataEntry 写在选择之前
-            // （同 tick，审计 803 组），此处**有意不纠正**：MIDI 是顺序流，按文件序处理
-            // 才是规范语义，与参考实现一致；「修复素材」属素材侧责任，不在解析层做。
-            // 加二级序会同时威胁 PB 的相对次序，回归 426d5b2d 修好的弯音偏差
-            // （98k 个 PB 中 7 个偏差 >1 半音、最大 62 半音）。
-            // 该决策由 `lumino_export::audio::event_stream` 的
-            // `test_same_tick_rpn_data_before_select_is_preserved_as_is` 锁死：
-            // 改语义必须先让那条变红。
-            //
-            // 与 `chase.rs` 追齐路径的差异是**有意为之**，不是口径不一致缺陷：追齐不是在
-            // 重放文件流，而是把「某 tick 的最终状态」重新下发一遍，那批消息的次序由代码
-            // 语义决定（选择必须先于数据，否则数据落到错误参数），故那边用
-            // 「选择→其他→DataEntry」rank；本路径只负责忠实还原文件顺序。
-            control_events.sort_by_key(|e| e.tick);
-            lyrics.sort_by_key(|e| e.0);
-            markers.sort_by_key(|e| e.0);
-            text_events.sort_by_key(|e| e.0);
-            sys_ex.sort_by_key(|e| e.0);
+            let track_builds = extract_track_builds(file_bytes)?;
+            let mut merged = merge_track_builds(track_builds);
+            finalize_event_order(&mut merged);
 
             if let Some(cb) = progress {
                 (cb)(0.75);
             }
 
-            let track_count = notes.len() as u16;
+            let track_count = merged.notes.len() as u16;
             let tracks_manager = TrackManager::new(track_count);
 
             if let Some(cb) = progress {
                 (cb)(0.90);
             }
 
+            let timing_report = crate::eot::LoadTimingReport::from_tracks(merged.track_timings);
             Ok((
                 Self {
-                    notes,
-                    tempo_changes: all_tempo_changes,
-                    time_signatures: all_time_signatures,
-                    key_signatures: all_key_signatures,
-                    control_events: crate::chunked_list::ChunkedList::from_sorted(control_events),
-                    lyrics,
-                    markers,
-                    text_events,
-                    sys_ex,
-                    track_names,
-                    total_ticks,
+                    notes: merged.notes,
+                    tempo_changes: merged.all_tempo_changes,
+                    time_signatures: merged.all_time_signatures,
+                    key_signatures: merged.all_key_signatures,
+                    control_events: crate::chunked_list::ChunkedList::from_sorted(
+                        merged.control_events,
+                    ),
+                    lyrics: merged.lyrics,
+                    markers: merged.markers,
+                    text_events: merged.text_events,
+                    sys_ex: merged.sys_ex,
+                    track_names: merged.track_names,
+                    total_ticks: merged.total_ticks,
                     track_count,
                     tracks: tracks_manager,
                     division,
-                    track_ports,
+                    track_ports: merged.track_ports,
                     // max_end_tick 缓存：初始 None（脏），首次查询惰性重算
                     track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
                 },
                 division,
-                total_notes,
-                crate::eot::LoadTimingReport::from_tracks(track_timings),
+                merged.total_notes,
+                timing_report,
             ))
         })
     }

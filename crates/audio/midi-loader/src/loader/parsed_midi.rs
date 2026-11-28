@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lumino_core::{tr, trf};
@@ -18,43 +18,20 @@ fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> LoaderResult<T> 
     bincode::deserialize(&decoded).map_err(LoaderError::from)
 }
 
-/// 从磁盘加载 MIDI / LMPJ 文件并解析为 `ParsedMidi`。
-///
-/// 自动识别文件类型：压缩包会被解压后查找内部 MIDI 文件，`.lmpj` 为
-/// Lumino 工程文件，其余按标准 MIDI 解析。
-///
-/// # 参数
-/// * `path` — 待加载的文件路径
-/// * `progress` — 可选的进度回调 `(阶段说明, 进度 0.0–1.0)`，`None` 表示不回调
-///
-/// # 错误
-/// 当文件不存在、无法解压或解析失败时返回 [`LoaderError`]。
-pub async fn load_parsed_midi(
-    path: PathBuf,
-    progress: Option<&ProgressCallback>,
-) -> LoaderResult<ParsedMidi> {
-    // 大分配前检查内存，防止 OOM 导致系统无响应
-    MemoryMonitor::global().check();
+/// 上报初始内存占用（大分配检查之后的第一个进度事件）。
+fn report_initial_memory(cb: &(dyn Fn(&str, f64) + Sync)) {
+    let initial_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+    cb(
+        &trf!(
+            "正在准备加载文件 (内存: {initial_rss} MB)",
+            initial_rss = initial_rss
+        ),
+        0.0,
+    );
+}
 
-    let cb = |msg: &str, val: f64| {
-        if let Some(p) = progress {
-            p(msg, val);
-        }
-    };
-
-    {
-        let initial_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
-        cb(
-            &trf!(
-                "正在准备加载文件 (内存: {initial_rss} MB)",
-                initial_rss = initial_rss
-            ),
-            0.0,
-        );
-    }
-
-    // ── 文件格式验证 ──
-    // 检查扩展名是否为支持的格式（MIDI / LMPJ 或压缩包）
+/// 校验扩展名并返回小写形式；非 MIDI/LMPJ 的压缩包给出明确错误。
+fn validated_extension(path: &Path) -> LoaderResult<String> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -69,7 +46,7 @@ pub async fn load_parsed_midi(
     if !is_midi_ext {
         // 检查是否为已知的压缩包格式
         use crate::archive::is_archive;
-        if is_archive(&path) {
+        if is_archive(path) {
             return Err(LoaderError::FileFormat(
                 tr!("文件是压缩包格式，请先解压后再加载。").to_string(),
             ));
@@ -78,66 +55,99 @@ pub async fn load_parsed_midi(
             tr!("本文件不支持加载，请检查文件格式！支持的格式：.mid / .midi / .lmpj").to_string(),
         ));
     }
+    Ok(extension)
+}
 
-    if extension == "lmpj" {
-        cb(tr!("正在加载 Lumino 工程文件"), 0.1);
-        let data = tokio::fs::read(&path).await.map_err(|e| {
-            let err = LoaderError::Io(e);
-            cb(&err.to_string(), 1.0);
-            err
-        })?;
-        cb(tr!("解析 Lumino 工程文件"), 0.5);
+/// 加载 Lumino 工程文件（.lmpj）：解压 + 内嵌 MIDI 文档构建。
+async fn load_lmpj_file(path: &Path, cb: &(dyn Fn(&str, f64) + Sync)) -> LoaderResult<ParsedMidi> {
+    cb(tr!("正在加载 Lumino 工程文件"), 0.1);
+    let data = tokio::fs::read(path).await.map_err(|e| {
+        let err = LoaderError::Io(e);
+        cb(&err.to_string(), 1.0);
+        err
+    })?;
+    cb(tr!("解析 Lumino 工程文件"), 0.5);
 
-        let parsed = tokio::task::spawn_blocking(move || {
-            let mut lmpj_data: LmpjData = decode_lmpj(&data)
-                .map_err(|e| LoaderError::FileFormat(trf!("解析 LMPJ 失败: {e}", e = e)))?;
+    let parsed = tokio::task::spawn_blocking(move || {
+        let mut lmpj_data: LmpjData = decode_lmpj(&data)
+            .map_err(|e| LoaderError::FileFormat(trf!("解析 LMPJ 失败: {e}", e = e)))?;
 
-            tracing::info!(
-                "LMPJ 解析成功: info.path={:?}, midi_data 存在={}",
-                lmpj_data.info.path,
-                lmpj_data.midi_data.is_some()
-            );
+        tracing::info!(
+            "LMPJ 解析成功: info.path={:?}, midi_data 存在={}",
+            lmpj_data.info.path,
+            lmpj_data.midi_data.is_some()
+        );
 
-            // LMPJ 加载时直接构建 MidiDocument，避免中间态 midi_data 常驻内存
-            let track_count = lmpj_data.info.track_count;
-            let midi_bytes = lmpj_data.midi_data.take();
-            let mut parsed = lmpj_data.to_parsed_midi();
-            if let Some(midi_bytes) = midi_bytes {
-                match build_document_from_midi_bytes(&midi_bytes, track_count) {
-                    Ok((doc, report)) => {
-                        let total_notes: u64 = (0..doc.track_count())
-                            .map(|t| doc.track_note_count(t as u16))
-                            .sum();
-                        parsed.info.total_notes = total_notes;
-                        parsed.info.duration_ticks = doc.total_ticks();
-                        parsed.timing_report = report;
-                        parsed.document = Some(std::sync::Arc::new(doc));
-                    }
-                    Err(e) => {
-                        tracing::warn!("LMPJ 内嵌 MIDI 构建文档失败: {e}，将回退到重新加载");
-                    }
+        // LMPJ 加载时直接构建 MidiDocument，避免中间态 midi_data 常驻内存
+        let track_count = lmpj_data.info.track_count;
+        let midi_bytes = lmpj_data.midi_data.take();
+        let mut parsed = lmpj_data.to_parsed_midi();
+        if let Some(midi_bytes) = midi_bytes {
+            match build_document_from_midi_bytes(&midi_bytes, track_count) {
+                Ok((doc, report)) => {
+                    let total_notes: u64 = (0..doc.track_count())
+                        .map(|t| doc.track_note_count(t as u16))
+                        .sum();
+                    parsed.info.total_notes = total_notes;
+                    parsed.info.duration_ticks = doc.total_ticks();
+                    parsed.timing_report = report;
+                    parsed.document = Some(std::sync::Arc::new(doc));
+                }
+                Err(e) => {
+                    tracing::warn!("LMPJ 内嵌 MIDI 构建文档失败: {e}，将回退到重新加载");
                 }
             }
+        }
 
-            Ok::<ParsedMidi, LoaderError>(parsed)
-        })
-        .await
-        .map_err(|e| {
-            let err = LoaderError::Other(trf!("解析 LMPJ 失败: {e}", e = e));
-            cb(&err.to_string(), 1.0);
-            err
-        })?
-        .inspect_err(|e| {
-            cb(&e.to_string(), 1.0);
-        })?;
+        Ok::<ParsedMidi, LoaderError>(parsed)
+    })
+    .await
+    .map_err(|e| {
+        let err = LoaderError::Other(trf!("解析 LMPJ 失败: {e}", e = e));
+        cb(&err.to_string(), 1.0);
+        err
+    })?
+    .inspect_err(|e| {
+        cb(&e.to_string(), 1.0);
+    })?;
 
-        cb(tr!("Lumino 工程文件加载完成"), 1.0);
-        // 解析临时数据（zstd 解压 + midly 中间态）已全部 drop，
-        // 主动回收 mimalloc 空闲页，避免峰值残留抬高 RSS
-        lumino_diagnostics::memtrace::purge_free_pages();
-        return Ok(parsed);
-    }
+    cb(tr!("Lumino 工程文件加载完成"), 1.0);
+    // 解析临时数据（zstd 解压 + midly 中间态）已全部 drop，
+    // 主动回收 mimalloc 空闲页，避免峰值残留抬高 RSS
+    lumino_diagnostics::memtrace::purge_free_pages();
+    Ok(parsed)
+}
 
+/// 桥接进度回调：将 from_notes_bytes 的 f64 进度映射到 ProgressCallback。
+fn build_cache_progress(
+    progress: Option<&ProgressCallback>,
+) -> Option<Arc<dyn Fn(f64) + Send + Sync>> {
+    progress.map(|p| {
+        let p = Arc::clone(p);
+        Arc::new(move |val: f64| {
+            let inner_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
+            p(
+                &trf!(
+                    "正在提取音符并构建缓存... (内存: {inner_rss} MB)",
+                    inner_rss = inner_rss
+                ),
+                0.10 + val * 0.85,
+            );
+        }) as Arc<dyn Fn(f64) + Send + Sync>
+    })
+}
+
+/// 只读映射 + from_notes_bytes 的统一加载路径，返回文档与诊断。
+async fn load_document(
+    path: &Path,
+    progress: Option<&ProgressCallback>,
+    cb: &(dyn Fn(&str, f64) + Sync),
+) -> LoaderResult<(
+    MidiDocument,
+    u16,
+    u64,
+    lumino_midi_model::eot::LoadTimingReport,
+)> {
     // ── 统一加载路径：只读映射 + from_notes_bytes ──
     // 不再把整份文件读成 Vec<u8>：黑乐谱（1.31GB / 1.64 亿音符）在加载期会多出
     // 一份与文件等大的私有堆副本。映射只活到解析结束，文档仍完整常驻内存。
@@ -150,7 +160,7 @@ pub async fn load_parsed_midi(
     }
 
     // 文件大小只用于进度文案；打开/映射/解析全部在阻塞线程内完成
-    let file_size = tokio::fs::metadata(&path)
+    let file_size = tokio::fs::metadata(path)
         .await
         .map(|m| m.len())
         .unwrap_or(0);
@@ -163,22 +173,10 @@ pub async fn load_parsed_midi(
     );
 
     // 桥接进度回调：将 from_notes_bytes 的 f64 进度映射到 ProgressCallback
-    let cache_progress: Option<Arc<dyn Fn(f64) + Send + Sync>> = progress.map(|p| {
-        let p = Arc::clone(p);
-        Arc::new(move |val: f64| {
-            let inner_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
-            p(
-                &trf!(
-                    "正在提取音符并构建缓存... (内存: {inner_rss} MB)",
-                    inner_rss = inner_rss
-                ),
-                0.10 + val * 0.85,
-            );
-        }) as Arc<dyn Fn(f64) + Send + Sync>
-    });
+    let cache_progress = build_cache_progress(progress);
 
-    let parse_path = path.clone();
-    let (document, division, total_notes, timing_report) = tokio::task::spawn_blocking(move || {
+    let parse_path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
         let p_ref = cache_progress.as_ref().map(|a| a.as_ref() as &dyn Fn(f64));
         super::mmap_file::load_document_from_path(&parse_path, p_ref)
     })
@@ -186,8 +184,18 @@ pub async fn load_parsed_midi(
     .map_err(|e| LoaderError::Other(trf!("加载线程 panic: {e}", e = e)))?
     .inspect_err(|e| {
         cb(&e.to_string(), 1.0);
-    })?;
+    })
+}
 
+/// 组装 MidiInfo / ParsedMidi 并回收内存（统一加载路径的收尾）。
+fn finalize_parsed(
+    document: MidiDocument,
+    division: u16,
+    total_notes: u64,
+    timing_report: lumino_midi_model::eot::LoadTimingReport,
+    path: PathBuf,
+    cb: &(dyn Fn(&str, f64) + Sync),
+) -> LoaderResult<ParsedMidi> {
     let info = MidiInfo {
         path: path.clone(),
         track_count: document.track_count,
@@ -238,6 +246,46 @@ pub async fn load_parsed_midi(
         port_soundfonts: PortSoundfontMap::default(),
         timing_report,
     })
+}
+
+/// 从磁盘加载 MIDI / LMPJ 文件并解析为 `ParsedMidi`。
+///
+/// 自动识别文件类型：压缩包会被解压后查找内部 MIDI 文件，`.lmpj` 为
+/// Lumino 工程文件，其余按标准 MIDI 解析。
+///
+/// # 参数
+/// * `path` — 待加载的文件路径
+/// * `progress` — 可选的进度回调 `(阶段说明, 进度 0.0–1.0)`，`None` 表示不回调
+///
+/// # 错误
+/// 当文件不存在、无法解压或解析失败时返回 [`LoaderError`]。
+pub async fn load_parsed_midi(
+    path: PathBuf,
+    progress: Option<&ProgressCallback>,
+) -> LoaderResult<ParsedMidi> {
+    // 大分配前检查内存，防止 OOM 导致系统无响应
+    MemoryMonitor::global().check();
+
+    let cb = |msg: &str, val: f64| {
+        if let Some(p) = progress {
+            p(msg, val);
+        }
+    };
+
+    report_initial_memory(&cb);
+
+    // ── 文件格式验证 ──
+    // 检查扩展名是否为支持的格式（MIDI / LMPJ 或压缩包）
+    let extension = validated_extension(&path)?;
+
+    if extension == "lmpj" {
+        return load_lmpj_file(&path, &cb).await;
+    }
+
+    let (document, division, total_notes, timing_report) =
+        load_document(&path, progress, &cb).await?;
+
+    finalize_parsed(document, division, total_notes, timing_report, path, &cb)
 }
 
 /// 从 MIDI 字节数据直接加载 ParsedMidi（无需文件路径）
