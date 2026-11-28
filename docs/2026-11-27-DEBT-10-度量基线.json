@@ -1,6 +1,6 @@
 {
-  "files_total": 2332,
-  "lines_total": 421057,
+  "files_total": 2344,
+  "lines_total": 422521,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -84,37 +84,9 @@
       "test": false
     },
     {
-      "path": "src/runner/menu/window/video_export_handler/memory_task/task.rs",
-      "name": "run_video_export_task",
-      "line": 15,
-      "lines": 360,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
-      "name": "execute_render_pass",
-      "line": 10,
-      "lines": 330,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/state_update.rs",
-      "name": "try_handle_simple_state",
-      "line": 12,
-      "lines": 310,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
       "name": "dispatch",
       "line": 16,
-      "lines": 303,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/arrangement_renderer/init.rs",
-      "name": "new_with_depth",
-      "line": 23,
       "lines": 303,
       "test": false
     },
@@ -123,55 +95,6 @@
       "name": "main",
       "line": 92,
       "lines": 299,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/collaboration.rs",
-      "name": "handle_collaboration_events",
-      "line": 30,
-      "lines": 299,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render.rs",
-      "name": "ensure_piano_waterfall_keyboard",
-      "line": 111,
-      "lines": 298,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/released.rs",
-      "name": "handle_released",
-      "line": 15,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-settings/src/panel.rs",
-      "name": "update",
-      "line": 35,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/video_export_handler/memory_task/enqueue.rs",
-      "name": "enqueue_memory_frame",
-      "line": 11,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/right_sidebar/piano_waterfall/keyboard_renderer/scene.rs",
-      "name": "render_scene",
-      "line": 26,
-      "lines": 291,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/video_export_handler.rs",
-      "name": "handle_start_video_export",
-      "line": 29,
-      "lines": 286,
       "test": false
     },
     {
@@ -1787,37 +1710,9 @@
       "test": false
     },
     {
-      "path": "src/runner/menu/window/video_export_handler/memory_task/task.rs",
-      "name": "run_video_export_task",
-      "line": 15,
-      "lines": 360,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
-      "name": "execute_render_pass",
-      "line": 10,
-      "lines": 330,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/state_update.rs",
-      "name": "try_handle_simple_state",
-      "line": 12,
-      "lines": 310,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
       "name": "dispatch",
       "line": 16,
-      "lines": 303,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/arrangement_renderer/init.rs",
-      "name": "new_with_depth",
-      "line": 23,
       "lines": 303,
       "test": false
     },
@@ -1826,55 +1721,6 @@
       "name": "main",
       "line": 92,
       "lines": 299,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/collaboration.rs",
-      "name": "handle_collaboration_events",
-      "line": 30,
-      "lines": 299,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render.rs",
-      "name": "ensure_piano_waterfall_keyboard",
-      "line": 111,
-      "lines": 298,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/released.rs",
-      "name": "handle_released",
-      "line": 15,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-settings/src/panel.rs",
-      "name": "update",
-      "line": 35,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/video_export_handler/memory_task/enqueue.rs",
-      "name": "enqueue_memory_frame",
-      "line": 11,
-      "lines": 292,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/right_sidebar/piano_waterfall/keyboard_renderer/scene.rs",
-      "name": "render_scene",
-      "line": 26,
-      "lines": 291,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/window/video_export_handler.rs",
-      "name": "handle_start_video_export",
-      "line": 29,
-      "lines": 286,
       "test": false
     },
     {
@@ -2141,15 +1987,15 @@
   "god_objects": [
     [
       "Editor",
-      382
+      398
     ],
     [
       "Root",
-      340
+      366
     ],
     [
       "Host",
-      275
+      280
     ],
     [
       "Event",
@@ -2157,11 +2003,11 @@
     ],
     [
       "RunnerInner",
-      172
+      191
     ],
     [
       "Default",
-      142
+      143
     ],
     [
       "EditorData",
