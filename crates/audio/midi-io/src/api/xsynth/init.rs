@@ -144,6 +144,55 @@ impl XSynth {
         //  - 占位预加载的 soundfont 从未经 SetSoundfonts 下发合成器，对「流启动防 underrun」
         //    零作用（流启动后本就静音，直到下方 SetSoundfonts 到达，与 Core 后端空 Group 一致）。
         // 故仅加载实际采样率一份，零冗余。
+        // 线程策略、NPS 限流与 `fade_out_killing` 的取舍随配置一起在 `realtime_config` 中说明。
+        let rt_config = Self::realtime_config(options, midi_max_port);
+        let synth = Self::open_realtime_synth(options, rt_config)?;
+
+        // 设备实际采样率（cpal 决定，可能与请求的不同）
+        let actual_sample_rate = synth.stream_params().sample_rate;
+
+        // 仅按设备实际采样率加载一次正式音色库（无占位预加载）。SampleSoundfont::new()
+        // 的预处理（采样率转换、包络时间等）与 AudioStreamParams.sample_rate 强相关，
+        // 混用会导致音高/速度错误（跑调），故无条件以 actual_sample_rate 加载。
+        let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
+        let load_start = Instant::now();
+        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
+            .map_err(Error::InitFailed)?;
+        tracing::info!(
+            "XSynth: 音色库已按设备实际采样率 {}Hz 加载，耗时: {:.2} 秒",
+            actual_sample_rate,
+            load_start.elapsed().as_secs_f64()
+        );
+
+        // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
+        let mut sender = synth.get_sender_ref().clone();
+
+        // REND-005：全局库 + 端口覆盖一次下发；空映射时事件序列与历史完全一致。
+        // 端口库加载失败只回退该端口（全局库已覆盖全部通道），并在日志中保留原因；
+        // 运行期会由 `apply_port_soundfonts` 再次尝试并把提示推给状态栏。
+        let soundfont_apply = super::port_soundfonts::send_port_soundfonts(
+            &mut sender,
+            soundfont,
+            port_soundfonts,
+            midi_max_port,
+            actual_params,
+        );
+        if !soundfont_apply.warnings.is_empty() {
+            tracing::warn!(
+                "XSynth: 端口音色库部分回退全局：{}",
+                soundfont_apply.warnings.join("；")
+            );
+        }
+
+        Self::send_initial_channel_modes(&mut sender, midi_max_port, options);
+
+        Ok((synth, sender))
+    }
+
+    /// 装配实时合成配置：线程模式、NPS 限流、通道布局、渲染块与复音治理。
+    ///
+    /// 只拼配置，不触碰设备与音色库；设备解析见 [`Self::open_realtime_synth`]。
+    fn realtime_config(options: Option<&XSynthOptions>, midi_max_port: u8) -> XSynthRealtimeConfig {
         // 线程策略：不对外提供控制，按机器核数强制解析（逻辑核 > 16 才启用通道内并行池）。
         // `UiConfig::xsynth_threads` 已废弃、不再读取，保留字段仅为兼容旧配置。
         //
@@ -194,6 +243,14 @@ impl XSynth {
             rt_config.soft_nps_gate = opt.soft_nps_gate;
         }
 
+        rt_config
+    }
+
+    /// 解析输出设备并打开实时音频流（指定设备失效时回退系统默认设备）。
+    fn open_realtime_synth(
+        options: Option<&XSynthOptions>,
+        rt_config: XSynthRealtimeConfig,
+    ) -> Result<RealtimeSynth, Error> {
         // 解析音频播放输出设备：指定设备有效则直接对其打开流，
         // 否则回退到系统默认输出设备（设备已移除 / 改名时优雅降级）。
         let target_device = crate::audio_devices::resolve_audio_output_device(
@@ -210,43 +267,17 @@ impl XSynth {
             None => RealtimeSynth::open_with_default_output(rt_config)
                 .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?,
         };
+        Ok(synth)
+    }
 
-        // 设备实际采样率（cpal 决定，可能与请求的不同）
-        let actual_sample_rate = synth.stream_params().sample_rate;
-
-        // 仅按设备实际采样率加载一次正式音色库（无占位预加载）。SampleSoundfont::new()
-        // 的预处理（采样率转换、包络时间等）与 AudioStreamParams.sample_rate 强相关，
-        // 混用会导致音高/速度错误（跑调），故无条件以 actual_sample_rate 加载。
-        let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
-        let load_start = Instant::now();
-        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
-            .map_err(Error::InitFailed)?;
-        tracing::info!(
-            "XSynth: 音色库已按设备实际采样率 {}Hz 加载，耗时: {:.2} 秒",
-            actual_sample_rate,
-            load_start.elapsed().as_secs_f64()
-        );
-
-        // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
-        let mut sender = synth.get_sender_ref().clone();
-
-        // REND-005：全局库 + 端口覆盖一次下发；空映射时事件序列与历史完全一致。
-        // 端口库加载失败只回退该端口（全局库已覆盖全部通道），并在日志中保留原因；
-        // 运行期会由 `apply_port_soundfonts` 再次尝试并把提示推给状态栏。
-        let soundfont_apply = super::port_soundfonts::send_port_soundfonts(
-            &mut sender,
-            soundfont,
-            port_soundfonts,
-            midi_max_port,
-            actual_params,
-        );
-        if !soundfont_apply.warnings.is_empty() {
-            tracing::warn!(
-                "XSynth: 端口音色库部分回退全局：{}",
-                soundfont_apply.warnings.join("；")
-            );
-        }
-
+    /// 下发初始通道模态与复位：每键层数上限 → 各端口 ch9 打击乐 → 杀声部/复位控制器。
+    ///
+    /// 音色库由调用方在此之前下发；三段的先后顺序即语义，不可调整。
+    fn send_initial_channel_modes(
+        sender: &mut RealtimeEventSender,
+        midi_max_port: u8,
+        options: Option<&XSynthOptions>,
+    ) {
         // 每键最大同音数（layers）：把用户设置真正下发。此前该设置从未接线，
         // 引擎始终用默认 Some(4)；None / 0 = 不限制，其余夹紧 1..=128。
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
@@ -275,8 +306,6 @@ impl XSynth {
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::ResetControl,
         )));
-
-        Ok((synth, sender))
     }
 
     /// 同布局文档切换：不重开音频流，仅复位各通道模态/程序与控制状态。

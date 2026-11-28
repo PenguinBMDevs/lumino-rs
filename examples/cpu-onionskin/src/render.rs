@@ -167,7 +167,6 @@ impl Renderer {
         }
         let bands = self.band_count.min(total_width as usize).max(1);
         let band_width = total_width.div_ceil(bands as u32);
-        let (key_min, key_max) = camera.visible_key_range();
 
         let mut ranges = Vec::with_capacity(bands);
         for band_index in 0..bands {
@@ -179,18 +178,63 @@ impl Renderer {
             ranges.push((x0, x1));
         }
 
+        let mut results =
+            self.run_band_tasks(&ranges, camera, &index, &document, current_track, mode);
+
+        results.sort_unstable_by_key(|(band_index, _, _)| *band_index);
+        let mut stats = RenderStats {
+            bands: results.len(),
+            ..RenderStats::default()
+        };
+        for (band_index, buffer, band_stats) in results {
+            stats.visible_notes += band_stats.visible_notes;
+            stats.candidates += band_stats.candidates;
+            stats.long_candidates += band_stats.long_candidates;
+            stats.per_band.push(band_stats);
+            if let Some(&(x0, x1)) = ranges.get(band_index) {
+                let expected_width = (x1 - x0) as usize;
+                if buffer.width == expected_width && buffer.height == height as usize {
+                    for y in 0..height as usize {
+                        let src_start = y * buffer.width;
+                        let dst_start = y * width as usize + x0 as usize;
+                        self.frame[dst_start..dst_start + expected_width]
+                            .copy_from_slice(&buffer.pixels[src_start..src_start + expected_width]);
+                    }
+                }
+                if let Some(slot) = self.slots.get(band_index) {
+                    put_buffer(slot, buffer);
+                }
+            }
+        }
+        stats
+    }
+
+    /// 为每条 band 并行 spawn 一个任务，按完成顺序返回 (band 序号, buffer, 统计)。
+    ///
+    /// task 之间只共享 `Arc` 快照与相机副本；buffer 通过槽位 take/put，
+    /// 锁不跨 await 持有。
+    fn run_band_tasks(
+        &self,
+        ranges: &[(u32, u32)],
+        camera: &Camera,
+        index: &Arc<TrackIndex>,
+        document: &Arc<MidiDocument>,
+        current_track: usize,
+        mode: LodMode,
+    ) -> Vec<(usize, BandBuffer, BandStats)> {
         let style = Arc::clone(&self.style);
         let camera = camera.clone();
         let column_major =
             self.column_major && camera.zoom_x * index.short_note_ticks.max(1) as f32 <= 4.0;
-        let document_for_tasks = Arc::clone(&document);
-        let index_for_tasks = Arc::clone(&index);
+        let document_for_tasks = Arc::clone(document);
+        let index_for_tasks = Arc::clone(index);
         let slots = self.slots.clone();
         let simd = self.simd;
         let mode_copy = mode;
-        let ranges_for_tasks = ranges.clone();
+        let ranges_for_tasks = ranges.to_vec();
+        let (key_min, key_max) = camera.visible_key_range();
 
-        let mut results: Vec<(usize, BandBuffer, BandStats)> = self.runtime.block_on(async {
+        self.runtime.block_on(async {
             let mut set = JoinSet::new();
             for (band_index, &(x0, x1)) in ranges_for_tasks.iter().enumerate() {
                 let Some(slot) = slots.get(band_index).cloned() else {
@@ -239,34 +283,7 @@ impl Renderer {
                 }
             }
             results
-        });
-
-        results.sort_unstable_by_key(|(band_index, _, _)| *band_index);
-        let mut stats = RenderStats {
-            bands: results.len(),
-            ..RenderStats::default()
-        };
-        for (band_index, buffer, band_stats) in results {
-            stats.visible_notes += band_stats.visible_notes;
-            stats.candidates += band_stats.candidates;
-            stats.long_candidates += band_stats.long_candidates;
-            stats.per_band.push(band_stats);
-            if let Some(&(x0, x1)) = ranges.get(band_index) {
-                let expected_width = (x1 - x0) as usize;
-                if buffer.width == expected_width && buffer.height == height as usize {
-                    for y in 0..height as usize {
-                        let src_start = y * buffer.width;
-                        let dst_start = y * width as usize + x0 as usize;
-                        self.frame[dst_start..dst_start + expected_width]
-                            .copy_from_slice(&buffer.pixels[src_start..src_start + expected_width]);
-                    }
-                }
-                if let Some(slot) = self.slots.get(band_index) {
-                    put_buffer(slot, buffer);
-                }
-            }
-        }
-        stats
+        })
     }
 
     /// 只渲染窗口中的一条 x 区间并直接合成进 frame（滚动增量路径）。

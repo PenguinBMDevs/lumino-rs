@@ -83,97 +83,7 @@ impl EditorData {
     pub fn poll_async_commit(&mut self) -> Option<Result<usize>> {
         let pending = self.pending_commit.take()?;
         match pending.receiver.try_recv() {
-            Ok(Ok(result)) => {
-                let modified = result.modified;
-                let reorder_ranges = result.reorder_ranges;
-                // 先按增量区间构造 GPU 段内事件负载（此时 notes 仍可借用），
-                // 再把整轨 move 写回 document——消除旧实现的整轨 clone。
-                // 重排：旧索引区间失效 → 改按重排受影响区间集合（区间外内容不变）
-                let mut update_events: Vec<(usize, Vec<lumino_note_core::note::Note>)> = Vec::new();
-                if reorder_ranges.is_empty() {
-                    update_events.reserve(result.modified_ranges.len());
-                    for &(start, end) in &result.modified_ranges {
-                        let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
-                            .iter()
-                            .map(super::accessors::event_to_note)
-                            .collect();
-                        if !notes.is_empty() {
-                            update_events.push((start, notes));
-                        }
-                    }
-                } else {
-                    for &(lo, hi) in &reorder_ranges {
-                        let mut start = lo;
-                        loop {
-                            let end = (start + super::REORDER_SPAN_CHUNK).min(hi + 1);
-                            let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
-                                .iter()
-                                .map(super::accessors::event_to_note)
-                                .collect();
-                            if !notes.is_empty() {
-                                update_events.push((start, notes));
-                            }
-                            if end > hi {
-                                break;
-                            }
-                            start = end;
-                        }
-                    }
-                }
-                // 写回 document：按**提交时捕获的音轨**整轨替换（单一权威源）。
-                // DEBT-03 #120：绝不用 current_track——提交窗口内用户切轨时，
-                // 旧实现会把 A 轨结果整轨写入 B 轨（静默数据损坏）。
-                let track_id = pending.track_id;
-                // CPU 洋葱皮：≤上限的批量 MoveOp 用有界 old/new 表达，密度走
-                // 增量；超过上限/已有 full 时保持原来的整轨替换 + 整帧兜底，
-                // 不改变批量拖动的数据处理与内存行为。
-                let cpu_changes = if self.cpu_onion_dirty_enabled()
-                    && !self
-                        .cpu_onion_dirty
-                        .as_ref()
-                        .is_some_and(|dirty| dirty.full)
-                {
-                    move_op_cpu_onion_changes(&pending.ops, track_id)
-                } else {
-                    None
-                };
-                if let Some(changes) = cpu_changes {
-                    self.replace_track_notes_with_cpu_onion_changes(
-                        track_id,
-                        result.notes,
-                        &changes,
-                    );
-                } else {
-                    let old_range = move_ops_range(&pending.ops, track_id);
-                    self.replace_track_notes(track_id, result.notes);
-                    if let Some((lo, hi)) = old_range {
-                        self.record_cpu_onion_range(lo, hi);
-                    }
-                }
-                if track_id == self.current_track {
-                    for (start, notes) in update_events {
-                        self.note_delta_events.push(
-                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                                start_index: start,
-                                notes,
-                            },
-                        );
-                    }
-                    // 异步提交作用于发起音轨，洋葱皮不显示 → 可豁免全量重建
-                    self.mark_current_track_changed();
-                    // 事件已完整记录（重排走受影响区间，未重排走实际修改区间）→ 清除 dirty
-                    self.note_delta_dirty = false;
-                } else {
-                    // 已切轨：段内增量事件基于旧轨索引，不可用于新当前轨；
-                    // 按受影响音轨标记，渲染层按单轨 Delta 同步。
-                    self.mark_track_notes_changed_for(Some(std::collections::HashSet::from([
-                        track_id,
-                    ])));
-                }
-                self.edited_tracks.insert(track_id);
-                self.push_move_op(pending.ops);
-                Some(Ok(modified))
-            }
+            Ok(Ok(result)) => Some(Ok(self.apply_commit_result(pending, result))),
             Ok(Err(e)) => Some(Err(e)),
             Err(TryRecvError::Empty) => {
                 self.pending_commit = Some(pending);
@@ -183,6 +93,110 @@ impl EditorData {
                 Some(Err(CoreError::Other("异步提交线程异常断开".to_string())))
             }
         }
+    }
+
+    /// 应用后台线程返回的提交结果（写回 document、推入历史），返回实际修改数。
+    fn apply_commit_result(&mut self, pending: PendingCommit, result: AsyncCommitResult) -> usize {
+        let modified = result.modified;
+        let reorder_ranges = result.reorder_ranges;
+        // 先按增量区间构造 GPU 段内事件负载（此时 notes 仍可借用），
+        // 再把整轨 move 写回 document——消除旧实现的整轨 clone。
+        // 重排：旧索引区间失效 → 改按重排受影响区间集合（区间外内容不变）
+        let update_events = Self::build_commit_update_events(
+            &result.notes,
+            &result.modified_ranges,
+            reorder_ranges,
+        );
+        // 写回 document：按**提交时捕获的音轨**整轨替换（单一权威源）。
+        // DEBT-03 #120：绝不用 current_track——提交窗口内用户切轨时，
+        // 旧实现会把 A 轨结果整轨写入 B 轨（静默数据损坏）。
+        let track_id = pending.track_id;
+        // CPU 洋葱皮：≤上限的批量 MoveOp 用有界 old/new 表达，密度走
+        // 增量；超过上限/已有 full 时保持原来的整轨替换 + 整帧兜底，
+        // 不改变批量拖动的数据处理与内存行为。
+        let cpu_changes = if self.cpu_onion_dirty_enabled()
+            && !self
+                .cpu_onion_dirty
+                .as_ref()
+                .is_some_and(|dirty| dirty.full)
+        {
+            move_op_cpu_onion_changes(&pending.ops, track_id)
+        } else {
+            None
+        };
+        if let Some(changes) = cpu_changes {
+            self.replace_track_notes_with_cpu_onion_changes(track_id, result.notes, &changes);
+        } else {
+            let old_range = move_ops_range(&pending.ops, track_id);
+            self.replace_track_notes(track_id, result.notes);
+            if let Some((lo, hi)) = old_range {
+                self.record_cpu_onion_range(lo, hi);
+            }
+        }
+        if track_id == self.current_track {
+            for (start, notes) in update_events {
+                self.note_delta_events.push(
+                    crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                        start_index: start,
+                        notes,
+                    },
+                );
+            }
+            // 异步提交作用于发起音轨，洋葱皮不显示 → 可豁免全量重建
+            self.mark_current_track_changed();
+            // 事件已完整记录（重排走受影响区间，未重排走实际修改区间）→ 清除 dirty
+            self.note_delta_dirty = false;
+        } else {
+            // 已切轨：段内增量事件基于旧轨索引，不可用于新当前轨；
+            // 按受影响音轨标记，渲染层按单轨 Delta 同步。
+            self.mark_track_notes_changed_for(Some(std::collections::HashSet::from([track_id])));
+        }
+        self.edited_tracks.insert(track_id);
+        self.push_move_op(pending.ops);
+        modified
+    }
+
+    /// 构造提交结果的 GPU 段内增量事件负载 `(start, notes)`。
+    ///
+    /// 未重排：按实际修改区间；已重排：旧索引区间失效，改按重排受影响
+    /// 区间集合分块（区间外内容逐位不变，无全量重建）。
+    fn build_commit_update_events(
+        all_notes: &[NoteEvent],
+        modified_ranges: &[(usize, usize)],
+        reorder_ranges: lumino_midi_model::SortedRestoreRanges,
+    ) -> Vec<(usize, Vec<lumino_note_core::note::Note>)> {
+        let mut update_events: Vec<(usize, Vec<lumino_note_core::note::Note>)> = Vec::new();
+        if reorder_ranges.is_empty() {
+            update_events.reserve(modified_ranges.len());
+            for &(start, end) in modified_ranges {
+                let notes: Vec<lumino_note_core::note::Note> = all_notes[start..end]
+                    .iter()
+                    .map(super::accessors::event_to_note)
+                    .collect();
+                if !notes.is_empty() {
+                    update_events.push((start, notes));
+                }
+            }
+        } else {
+            for &(lo, hi) in &reorder_ranges {
+                let mut start = lo;
+                loop {
+                    let end = (start + super::REORDER_SPAN_CHUNK).min(hi + 1);
+                    let notes: Vec<lumino_note_core::note::Note> = all_notes[start..end]
+                        .iter()
+                        .map(super::accessors::event_to_note)
+                        .collect();
+                    if !notes.is_empty() {
+                        update_events.push((start, notes));
+                    }
+                    if end > hi {
+                        break;
+                    }
+                    start = end;
+                }
+            }
+        }
+        update_events
     }
 
     /// 是否有正在进行的异步提交

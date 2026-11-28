@@ -128,6 +128,24 @@ pub fn show(
     if model.is_empty() {
         return None;
     }
+    paint_overlay(ui, model);
+
+    let mut action = None;
+    // 输入框（框顶 28px）。
+    if model.editing && model.input_rect.width() > 0.0 {
+        action = input_box(ui, model);
+    }
+
+    // √ / × / 模式按钮。
+    if let Some(clicked) = buttons(ui, model, icons) {
+        action = Some(clicked);
+    }
+
+    action
+}
+
+/// 文本框底色/边框与字形预览纹理。
+fn paint_overlay(ui: &egui::Ui, model: &TextToolModel) {
     {
         let painter = ui.painter();
         // 文本框底色与边框（与框选框同色）。
@@ -171,32 +189,36 @@ pub fn show(
             }
         }
     }
+}
 
-    let mut action = None;
-    // 输入框（框顶 28px）。
-    if model.editing && model.input_rect.width() > 0.0 {
-        let mut child = ui.new_child(
-            UiBuilder::new()
-                .max_rect(model.input_rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        let response = child.add_sized(
-            [model.input_rect.width(), model.input_rect.height()],
-            egui::TextEdit::singleline(&mut model.text)
-                .hint_text(model.placeholder.clone())
-                .margin(Margin::symmetric(6, 2)),
-        );
-        if !response.has_focus() {
-            response.request_focus();
-        }
-        if response.changed() {
-            action = Some(TextToolAction::TextChanged(model.text.clone()));
-        }
-        response.on_hover_cursor(egui::CursorIcon::Text);
+/// 框顶单行输入框；文字变化时返回本帧动作。
+fn input_box(ui: &mut egui::Ui, model: &mut TextToolModel) -> Option<TextToolAction> {
+    let mut child = ui.new_child(
+        UiBuilder::new()
+            .max_rect(model.input_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let response = child.add_sized(
+        [model.input_rect.width(), model.input_rect.height()],
+        egui::TextEdit::singleline(&mut model.text)
+            .hint_text(model.placeholder.clone())
+            .margin(Margin::symmetric(6, 2)),
+    );
+    if !response.has_focus() {
+        response.request_focus();
     }
+    let mut action = None;
+    if response.changed() {
+        action = Some(TextToolAction::TextChanged(model.text.clone()));
+    }
+    response.on_hover_cursor(egui::CursorIcon::Text);
+    action
+}
 
-    // √ / × / 模式按钮。
+/// 绘制 √ / × / 模式按钮，返回本帧点击产生的动作。
+fn buttons(ui: &egui::Ui, model: &TextToolModel, icons: &mut IconCache) -> Option<TextToolAction> {
     let painter = ui.painter();
+    let mut action = None;
     for (index, (rect, kind)) in [
         (model.confirm.map(|r| (r, ButtonKind::Confirm))),
         (model.cancel.map(|r| (r, ButtonKind::Cancel))),
@@ -211,28 +233,9 @@ pub fn show(
             egui::Id::unique(("lumino.text-tool-button", index)),
             egui::Sense::click(),
         );
-        let tip = match kind {
-            ButtonKind::Confirm => &model.confirm_tooltip,
-            ButtonKind::Cancel => &model.cancel_tooltip,
-            ButtonKind::Mode => &model.mode_tooltip,
-        };
+        let tip = button_tip(kind, model);
         let response = crate::widgets::hover_text(response, tip);
-        let lighten = response.is_pointer_button_down_on() || response.hovered();
-        let bg = match kind {
-            ButtonKind::Confirm => CONFIRM_BG,
-            ButtonKind::Cancel => CANCEL_BG,
-            ButtonKind::Mode if model.mode_merged => MODE_MERGED_BG,
-            ButtonKind::Mode => MODE_NORMAL_BG,
-        };
-        let bg = if lighten {
-            Color32::from_rgb(
-                bg.r().saturating_add(18),
-                bg.g().saturating_add(18),
-                bg.b().saturating_add(18),
-            )
-        } else {
-            bg
-        };
+        let bg = button_bg(kind, model, &response);
         painter.rect(
             rect,
             CornerRadius::same(8),
@@ -240,33 +243,7 @@ pub fn show(
             Stroke::new(1.0, BORDER),
             StrokeKind::Inside,
         );
-        match kind {
-            ButtonKind::Confirm => {
-                icons.paint_tinted(
-                    painter,
-                    Icon::ConfirmCheck,
-                    rect.shrink(9.0),
-                    Some(Color32::WHITE),
-                );
-            }
-            ButtonKind::Cancel => {
-                icons.paint_tinted(
-                    painter,
-                    Icon::CancelCross,
-                    rect.shrink(9.0),
-                    Some(Color32::WHITE),
-                );
-            }
-            ButtonKind::Mode => {
-                painter.text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    if model.mode_merged { "M" } else { "N" },
-                    egui::FontId::proportional(14.0),
-                    Color32::WHITE,
-                );
-            }
-        }
+        paint_button_content(painter, rect, kind, model, icons);
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
         if response.clicked() {
             action = Some(match kind {
@@ -278,6 +255,72 @@ pub fn show(
     }
 
     action
+}
+
+/// 按钮悬停说明。
+fn button_tip(kind: ButtonKind, model: &TextToolModel) -> &str {
+    match kind {
+        ButtonKind::Confirm => &model.confirm_tooltip,
+        ButtonKind::Cancel => &model.cancel_tooltip,
+        ButtonKind::Mode => &model.mode_tooltip,
+    }
+}
+
+/// 按钮底色（按下 / 悬停时整体提亮 18）。
+fn button_bg(kind: ButtonKind, model: &TextToolModel, response: &egui::Response) -> Color32 {
+    let lighten = response.is_pointer_button_down_on() || response.hovered();
+    let bg = match kind {
+        ButtonKind::Confirm => CONFIRM_BG,
+        ButtonKind::Cancel => CANCEL_BG,
+        ButtonKind::Mode if model.mode_merged => MODE_MERGED_BG,
+        ButtonKind::Mode => MODE_NORMAL_BG,
+    };
+    if lighten {
+        Color32::from_rgb(
+            bg.r().saturating_add(18),
+            bg.g().saturating_add(18),
+            bg.b().saturating_add(18),
+        )
+    } else {
+        bg
+    }
+}
+
+/// 按钮内容（√ / × 图标或 M / N 文字）。
+fn paint_button_content(
+    painter: &egui::Painter,
+    rect: Rect,
+    kind: ButtonKind,
+    model: &TextToolModel,
+    icons: &mut IconCache,
+) {
+    match kind {
+        ButtonKind::Confirm => {
+            icons.paint_tinted(
+                painter,
+                Icon::ConfirmCheck,
+                rect.shrink(9.0),
+                Some(Color32::WHITE),
+            );
+        }
+        ButtonKind::Cancel => {
+            icons.paint_tinted(
+                painter,
+                Icon::CancelCross,
+                rect.shrink(9.0),
+                Some(Color32::WHITE),
+            );
+        }
+        ButtonKind::Mode => {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if model.mode_merged { "M" } else { "N" },
+                egui::FontId::proportional(14.0),
+                Color32::WHITE,
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

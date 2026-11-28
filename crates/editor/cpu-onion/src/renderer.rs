@@ -175,69 +175,13 @@ impl CpuOnionRenderer {
             return &self.output;
         }
 
-        // 总览分支自己覆盖整帧（每一行都写入，无密度处写透明），不必先清两次
-        // （`clear_frame` 会同时清内部帧 + 输出帧，1080p 白付 ~16MB 写入）。
-        //
-        // 跨档（Overview ↔ Exact）必须换一块全新输出缓冲：旧帧可能仍被 UI /
-        // GPU 上传侧持有，共享 Arc 时只靠 COW 也可能让下游拿错一帧。换缓冲 +
-        // 版本递增是纹理刷新的双保险。
-        let overview = density.is_some_and(|density| {
-            density.key_count() == camera.key_count && crate::density::uses_overview(&index, camera)
-        });
-        // 彩色覆盖光栅优先于热力图：只要覆盖金字塔能保证 1px 精度就按真实
-        // 轨道颜色出图。它同样适用于 `<30` 小节——那正是 Exact 在密集谱面
-        // 下扫上亿音符的区间；显示语义仍是「原始音符的像素覆盖」，不是密度热力。
-        let coverage = density.is_some_and(|density| {
-            density.key_count() == camera.key_count && density.can_render_coverage(camera)
-        });
-        if self.last_overview != Some(overview) || self.last_coverage != Some(coverage) {
-            self.output = CpuFrame::new(width, height);
-            self.last_overview = Some(overview);
-            self.last_coverage = Some(coverage);
-        }
-        if coverage && let Some(density) = density {
-            let estimate = crate::density::overview_note_estimate(&index, camera);
-            self.render_coverage_full(camera, density, estimate, current_track, muted);
-            return &self.output;
-        }
-        if overview && let Some(density) = density {
-            let estimate = crate::density::overview_note_estimate(&index, camera);
-            self.render_overview_full(camera, density, estimate);
+        if self.try_render_simplified(&index, camera, density, current_track, muted) {
             return &self.output;
         }
 
         self.clear_frame();
-        let (key_min, key_max) = camera.visible_key_range();
-        let bands = self.band_count.min(width as usize).max(1);
-        let band_width = width.div_ceil(bands as u32);
-        let muted: Arc<[bool]> = Arc::from(muted);
-        let mut ranges = Vec::with_capacity(bands);
-        let mut jobs = Vec::with_capacity(bands);
-        for band_index in 0..bands {
-            let x0 = band_index as u32 * band_width;
-            if x0 >= width {
-                break;
-            }
-            let x1 = x0.saturating_add(band_width).min(width);
-            let (tick_lo, tick_hi) = camera.tick_range_for_x(x0 as f32, x1 as f32);
-            ranges.push((x0, x1));
-            jobs.push(BandJob {
-                x0,
-                x1,
-                camera: *camera,
-                tick_lo,
-                tick_hi,
-                key_min,
-                key_max,
-                current_track,
-                muted: Arc::clone(&muted),
-                style: Arc::clone(&self.style),
-                index: Arc::clone(&index),
-                document: Arc::clone(&document),
-                simd: self.simd,
-                early_coverage: true,
-            });
-        }
+        let (ranges, jobs) =
+            self.build_band_jobs(width, camera, current_track, muted, &index, &document);
 
         let results = self.run_band_jobs(jobs);
         for (band_index, buffer, stats) in results {
@@ -299,6 +243,99 @@ impl CpuOnionRenderer {
     fn clear_frame(&mut self) {
         self.frame.fill(0);
         self.visible_notes = 0;
+    }
+
+    /// 简化层整帧出口：彩色覆盖光栅优先于热力图。
+    ///
+    /// 命中任一简化层时整帧已画完并返回 `true`；返回 `false` 表示本帧该走 Exact。
+    fn try_render_simplified(
+        &mut self,
+        index: &TrackIndex,
+        camera: &CanvasCamera,
+        density: Option<&DensityPyramid>,
+        current_track: usize,
+        muted: &[bool],
+    ) -> bool {
+        let width = self.width;
+        let height = self.height;
+        // 总览分支自己覆盖整帧（每一行都写入，无密度处写透明），不必先清两次
+        // （`clear_frame` 会同时清内部帧 + 输出帧，1080p 白付 ~16MB 写入）。
+        //
+        // 跨档（Overview ↔ Exact）必须换一块全新输出缓冲：旧帧可能仍被 UI /
+        // GPU 上传侧持有，共享 Arc 时只靠 COW 也可能让下游拿错一帧。换缓冲 +
+        // 版本递增是纹理刷新的双保险。
+        let overview = density.is_some_and(|density| {
+            density.key_count() == camera.key_count && crate::density::uses_overview(index, camera)
+        });
+        // 彩色覆盖光栅优先于热力图：只要覆盖金字塔能保证 1px 精度就按真实
+        // 轨道颜色出图。它同样适用于 `<30` 小节——那正是 Exact 在密集谱面
+        // 下扫上亿音符的区间；显示语义仍是「原始音符的像素覆盖」，不是密度热力。
+        let coverage = density.is_some_and(|density| {
+            density.key_count() == camera.key_count && density.can_render_coverage(camera)
+        });
+        if self.last_overview != Some(overview) || self.last_coverage != Some(coverage) {
+            self.output = CpuFrame::new(width, height);
+            self.last_overview = Some(overview);
+            self.last_coverage = Some(coverage);
+        }
+        if coverage && let Some(density) = density {
+            let estimate = crate::density::overview_note_estimate(index, camera);
+            self.render_coverage_full(camera, density, estimate, current_track, muted);
+            return true;
+        }
+        if overview && let Some(density) = density {
+            let estimate = crate::density::overview_note_estimate(index, camera);
+            self.render_overview_full(camera, density, estimate);
+            return true;
+        }
+        false
+    }
+
+    /// 按 band 数切分 `[0, width)`，为每条 band 构造渲染任务。
+    ///
+    /// 返回的 `ranges[i]` 是第 `i` 条 band 的 `[x0, x1)`，与 `jobs[i]` 一一对应，
+    /// 供合成阶段按 band 索引回填。
+    fn build_band_jobs(
+        &self,
+        width: u32,
+        camera: &CanvasCamera,
+        current_track: usize,
+        muted: &[bool],
+        index: &Arc<TrackIndex>,
+        document: &Arc<MidiDocument>,
+    ) -> (Vec<(u32, u32)>, Vec<BandJob>) {
+        let (key_min, key_max) = camera.visible_key_range();
+        let bands = self.band_count.min(width as usize).max(1);
+        let band_width = width.div_ceil(bands as u32);
+        let muted: Arc<[bool]> = Arc::from(muted);
+        let mut ranges = Vec::with_capacity(bands);
+        let mut jobs = Vec::with_capacity(bands);
+        for band_index in 0..bands {
+            let x0 = band_index as u32 * band_width;
+            if x0 >= width {
+                break;
+            }
+            let x1 = x0.saturating_add(band_width).min(width);
+            let (tick_lo, tick_hi) = camera.tick_range_for_x(x0 as f32, x1 as f32);
+            ranges.push((x0, x1));
+            jobs.push(BandJob {
+                x0,
+                x1,
+                camera: *camera,
+                tick_lo,
+                tick_hi,
+                key_min,
+                key_max,
+                current_track,
+                muted: Arc::clone(&muted),
+                style: Arc::clone(&self.style),
+                index: Arc::clone(index),
+                document: Arc::clone(document),
+                simd: self.simd,
+                early_coverage: true,
+            });
+        }
+        (ranges, jobs)
     }
 
     fn run_band_jobs(&self, jobs: Vec<BandJob>) -> Vec<(usize, BandBuffer, BandStats)> {

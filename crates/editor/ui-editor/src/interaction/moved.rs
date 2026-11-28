@@ -11,125 +11,18 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: lumino_ui_core::geom::Point) {
         crate::puffin_profiler::moved_handle();
-        // DRAW-049：Bake 放置态 B 阶段拉框
-        if self.bake_marquee_active() {
-            self.handle_bake_marquee_moved(pos);
-            return;
-        }
-        // DRAW-044：柔化模式下拖动 = 调半径
-        if self.round_corners_active() && self.round_corner_moved(pos) {
-            return;
-        }
-        // DRAW-025：切割拖线中，只更新切线预览
-        if self.slice_cut_moved(pos) {
-            return;
-        }
-        // 画刷矢量笔画：落笔绘制/整体拖动中，跟随鼠标更新笔画几何（不写 document）
-        if self.editor_state.brush_tool.is_active() {
-            self.handle_brush_moved(pos);
-            return;
-        }
-        // 图形选中工具：拖动已绘制图形（仅更新叠加层预览偏移，不改 document）
-        // 或空白处拉框框选（仅更新拉框矩形，不改 document）
-        // 020：编辑图形（锚点拖拽）也必须进这里——它不设置 shape_select.drag，
-        // 漏掉会让锚点「按下有、拖动无」，必须再点一次才动。
-        if self.is_shape_editing()
-            || self.editor_state.shape_select.is_dragging()
-            || self.editor_state.shape_select.is_marqueeing()
-        {
-            let raw_tick = self.pos_to_tick(pos);
-            let raw_key = self.pos_to_raw_key(pos);
-            self.handle_shape_select_moved(raw_tick, raw_key);
+        if self.handle_moved_pointer_capture(pos) {
             return;
         }
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_key(pos);
         let snapped_tick = self.snap_tick(tick);
 
-        // 图片转 MIDI 放置模式：移动/拉伸（框选 Selecting 复用下方 EditState::Selecting 逻辑）
-        let i2m_interaction = self.editor_state.image_to_midi.interaction;
-        if self.editor_state.image_to_midi.is_active()
-            && i2m_interaction != lumino_editor_state::I2mInteraction::Selecting
-            && i2m_interaction != lumino_editor_state::I2mInteraction::None
-        {
-            self.handle_i2m_moved(snapped_tick, key as f32);
+        if self.handle_moved_tool_preview(pos, tick, key, snapped_tick) {
             return;
         }
 
-        // 曲线工具贝塞尔路径模式：锚点/控制柄拖动中（纵向转置）
-        if self.editor_state.tool == lumino_message::Tool::Curve
-            && self.editor_state.line_tool.interaction != LineToolInteraction::None
-        {
-            let raw_tick = self.pos_to_tick(pos);
-            let raw_key = self.pos_to_raw_key(pos);
-            // 横向原逻辑：snapped_tick 来自 tick 吸附，key 取整，raw 为自由值
-            // 纵向保持同语义，仅轴互换
-            self.handle_line_tool_moved(snapped_tick, key as f32, raw_tick, raw_key);
-            return;
-        }
-
-        // 文字工具：已放置框的拖拽移动（中间实心区），优先于 Selecting 分支
-        if self.editor_state.tool == lumino_message::Tool::Text
-            && self.editor_state.text_tool.active
-            && self.editor_state.text_tool.is_dragging()
-        {
-            self.handle_text_tool_box_move(pos);
-            return;
-        }
-
-        // 形状工具：拖拽拉框中（横向 / 纵向卷帘统一走逻辑坐标）
-        if self.editor_state.tool == lumino_message::Tool::Shape
-            && self.editor_state.shape_tool.interaction != ShapeToolInteraction::None
-        {
-            // Shift 按住：使用原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；
-            // 否则：网格吸附坐标。正图形约束在几何层基于该坐标计算。
-            let raw_key = self.pos_to_raw_key(pos);
-            let (dt, dk) = if self.shift_pressed() {
-                (tick, raw_key)
-            } else {
-                (snapped_tick, key as f32)
-            };
-            self.handle_shape_tool_moved(dt, dk);
-            return;
-        }
-
-        // 文字工具：拖拽中实时更新文本框（Selecting 态）
-        if self.editor_state.tool == lumino_message::Tool::Text
-            && matches!(
-                self.editor_state.interaction.edit_state,
-                EditState::Selecting { .. }
-            )
-        {
-            self.handle_text_tool_moved(pos);
-            return;
-        }
-
-        // 框选/拖拽过程中 hover 判定无意义，且会触发空间索引重建/线性扫描或
-        // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
-        // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，
-        // 不依赖 hover 状态，因此跳过是安全的。
-        //
-        // 松手后（pending_drag_state 非空，edit_state=Idle），hit_test_note 内部
-        // collect_ghost_indices 仍会遍历 pending.selected_indices() 全量选中音符
-        // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
-        //（用户未在交互），直接跳过。
-        let hover = if self.transient.pending_drag.is_some()
-            || self.transient.pending_copy.is_some()
-            || matches!(
-                self.editor_state.interaction.edit_state,
-                EditState::Selecting { .. }
-                    | EditState::Dragging { .. }
-                    | EditState::DraggingSelection { .. }
-                    | EditState::DraggingSelectionCopy { .. }
-            ) {
-            None
-        } else {
-            self.hit_test_note(pos)
-        };
-        self.editor_state.interaction.hover_state = hover;
-
-        if let EditState::Scrubbing = self.editor_state.interaction.edit_state {
-            self.playback_position = snapped_tick;
+        if self.handle_moved_hover_and_scrub(pos, snapped_tick) {
             return;
         }
 
@@ -192,6 +85,153 @@ impl Editor {
         let (new_tick, new_key, new_length) =
             self.calculate_edit_changes(pos, tick, key, snapped_tick);
         self.apply_note_changes(new_tick, new_key, new_length);
+    }
+
+    /// 指针捕获类分支：Bake 框选、柔化角点、切割拖线、画刷笔画、图形选中。
+    ///
+    /// 返回 `true` 表示本次移动已被上述分支消费，不再进入坐标换算与工具分支。
+    fn handle_moved_pointer_capture(&mut self, pos: lumino_ui_core::geom::Point) -> bool {
+        // DRAW-049：Bake 放置态 B 阶段拉框
+        if self.bake_marquee_active() {
+            self.handle_bake_marquee_moved(pos);
+            return true;
+        }
+        // DRAW-044：柔化模式下拖动 = 调半径
+        if self.round_corners_active() && self.round_corner_moved(pos) {
+            return true;
+        }
+        // DRAW-025：切割拖线中，只更新切线预览
+        if self.slice_cut_moved(pos) {
+            return true;
+        }
+        // 画刷矢量笔画：落笔绘制/整体拖动中，跟随鼠标更新笔画几何（不写 document）
+        if self.editor_state.brush_tool.is_active() {
+            self.handle_brush_moved(pos);
+            return true;
+        }
+        // 图形选中工具：拖动已绘制图形（仅更新叠加层预览偏移，不改 document）
+        // 或空白处拉框框选（仅更新拉框矩形，不改 document）
+        // 020：编辑图形（锚点拖拽）也必须进这里——它不设置 shape_select.drag，
+        // 漏掉会让锚点「按下有、拖动无」，必须再点一次才动。
+        if self.is_shape_editing()
+            || self.editor_state.shape_select.is_dragging()
+            || self.editor_state.shape_select.is_marqueeing()
+        {
+            let raw_tick = self.pos_to_tick(pos);
+            let raw_key = self.pos_to_raw_key(pos);
+            self.handle_shape_select_moved(raw_tick, raw_key);
+            return true;
+        }
+        false
+    }
+
+    /// 工具预览类分支：图片转 MIDI、曲线锚点、文字框拖动、图形拉框、文字框选。
+    ///
+    /// 返回 `true` 表示本次移动已被上述工具分支消费。
+    fn handle_moved_tool_preview(
+        &mut self,
+        pos: lumino_ui_core::geom::Point,
+        tick: f32,
+        key: u16,
+        snapped_tick: f32,
+    ) -> bool {
+        // 图片转 MIDI 放置模式：移动/拉伸（框选 Selecting 复用下方 EditState::Selecting 逻辑）
+        let i2m_interaction = self.editor_state.image_to_midi.interaction;
+        if self.editor_state.image_to_midi.is_active()
+            && i2m_interaction != lumino_editor_state::I2mInteraction::Selecting
+            && i2m_interaction != lumino_editor_state::I2mInteraction::None
+        {
+            self.handle_i2m_moved(snapped_tick, key as f32);
+            return true;
+        }
+
+        // 曲线工具贝塞尔路径模式：锚点/控制柄拖动中（纵向转置）
+        if self.editor_state.tool == lumino_message::Tool::Curve
+            && self.editor_state.line_tool.interaction != LineToolInteraction::None
+        {
+            let raw_tick = self.pos_to_tick(pos);
+            let raw_key = self.pos_to_raw_key(pos);
+            // 横向原逻辑：snapped_tick 来自 tick 吸附，key 取整，raw 为自由值
+            // 纵向保持同语义，仅轴互换
+            self.handle_line_tool_moved(snapped_tick, key as f32, raw_tick, raw_key);
+            return true;
+        }
+
+        // 文字工具：已放置框的拖拽移动（中间实心区），优先于 Selecting 分支
+        if self.editor_state.tool == lumino_message::Tool::Text
+            && self.editor_state.text_tool.active
+            && self.editor_state.text_tool.is_dragging()
+        {
+            self.handle_text_tool_box_move(pos);
+            return true;
+        }
+
+        // 形状工具：拖拽拉框中（横向 / 纵向卷帘统一走逻辑坐标）
+        if self.editor_state.tool == lumino_message::Tool::Shape
+            && self.editor_state.shape_tool.interaction != ShapeToolInteraction::None
+        {
+            // Shift 按住：使用原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；
+            // 否则：网格吸附坐标。正图形约束在几何层基于该坐标计算。
+            let raw_key = self.pos_to_raw_key(pos);
+            let (dt, dk) = if self.shift_pressed() {
+                (tick, raw_key)
+            } else {
+                (snapped_tick, key as f32)
+            };
+            self.handle_shape_tool_moved(dt, dk);
+            return true;
+        }
+
+        // 文字工具：拖拽中实时更新文本框（Selecting 态）
+        if self.editor_state.tool == lumino_message::Tool::Text
+            && matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::Selecting { .. }
+            )
+        {
+            self.handle_text_tool_moved(pos);
+            return true;
+        }
+        false
+    }
+
+    /// 悬停态与擦洗分支：更新 hover 状态，Scrubbing 时推进播放位置。
+    ///
+    /// 返回 `true` 表示当前处于 Scrubbing，播放位置已更新。
+    fn handle_moved_hover_and_scrub(
+        &mut self,
+        pos: lumino_ui_core::geom::Point,
+        snapped_tick: f32,
+    ) -> bool {
+        // 框选/拖拽过程中 hover 判定无意义，且会触发空间索引重建/线性扫描或
+        // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
+        // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，
+        // 不依赖 hover 状态，因此跳过是安全的。
+        //
+        // 松手后（pending_drag_state 非空，edit_state=Idle），hit_test_note 内部
+        // collect_ghost_indices 仍会遍历 pending.selected_indices() 全量选中音符
+        // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
+        //（用户未在交互），直接跳过。
+        let hover = if self.transient.pending_drag.is_some()
+            || self.transient.pending_copy.is_some()
+            || matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::Selecting { .. }
+                    | EditState::Dragging { .. }
+                    | EditState::DraggingSelection { .. }
+                    | EditState::DraggingSelectionCopy { .. }
+            ) {
+            None
+        } else {
+            self.hit_test_note(pos)
+        };
+        self.editor_state.interaction.hover_state = hover;
+
+        if let EditState::Scrubbing = self.editor_state.interaction.edit_state {
+            self.playback_position = snapped_tick;
+            return true;
+        }
+        false
     }
 
     /// 计算编辑状态的变化值

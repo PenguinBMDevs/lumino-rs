@@ -31,128 +31,12 @@ impl LuminoProject {
         project.sys_ex = doc.sys_ex.clone();
         project.track_names = doc.track_names.clone();
 
-        // 从控制事件中拆分 CC / PC / 弯音
-        for ev in &doc.control_events {
-            match ev.kind {
-                0 => {
-                    let (controller, value) = ev.as_control_change();
-                    project
-                        .control_changes
-                        .push((ev.tick, ev.track, ev.channel, controller, value));
-                }
-                1 => {
-                    let program = ev.as_program_change();
-                    project
-                        .program_changes
-                        .push((ev.tick, ev.track, ev.channel, program));
-                }
-                2 => {
-                    // as_pitch_bend 返回 -1.0..1.0 的归一化值，转换为以 8192 为中心的偏移量
-                    let normalized = ev.as_pitch_bend();
-                    let offset = (normalized * 8192.0).round() as i16;
-                    project
-                        .pitch_bends
-                        .push((ev.tick, ev.track, ev.channel, offset));
-                }
-                3 => {
-                    project.channel_aftertouch.push((
-                        ev.tick,
-                        ev.track,
-                        ev.channel,
-                        ev.as_channel_aftertouch(),
-                    ));
-                }
-                4 => {
-                    let (key, velocity) = ev.as_poly_aftertouch();
-                    project
-                        .poly_aftertouch
-                        .push((ev.tick, ev.track, ev.channel, key, velocity));
-                }
-                _ => {}
-            }
-        }
+        append_control_events(&mut project, doc);
 
         // 提取每轨事件（含空白音轨：无音符但需保留音轨槽位与元数据，
         // 否则空白音轨不会被保存/加载）
         for track_id in 0..doc.track_count {
-            let track_notes = doc.track_notes(track_id as usize);
-
-            // 从 NoteEvent 构造 CompactEvent 音符事件（空白音轨则为空）
-            let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
-                Vec::with_capacity(track_notes.len() * 2);
-            for note in track_notes {
-                let [on, off] = note.to_compact_events(track_id);
-                track_events.push(on);
-                track_events.push(off);
-            }
-            // 稳定排序（保持音符声明顺序）：同 tick 的 NoteOff 必然排在 NoteOn 前
-            // （同一音符的 off 先于后续音符的 on 插入），配合回读端 FIFO 配对，
-            // 保证同 key 相接/重叠音符的 NoteOn/NoteOff 配对一致。
-            // sort_unstable 会打乱同 tick 顺序 → 音符长度偶发错乱。
-            track_events.sort_by_key(|e| e.delta_tick());
-
-            // 将绝对 tick 转换为相对 delta_tick，保证 CompactEvent 语义一致
-            let mut last_tick = 0_u32;
-            for ev in &mut track_events {
-                let abs_tick = ev.delta_tick();
-                ev.set_delta_tick(abs_tick.saturating_sub(last_tick));
-                last_tick = abs_tick;
-            }
-
-            // 推断 channel：优先取首个音符事件的通道；空白音轨（无音符）回退到
-            // document 的 track_channel（含控制事件通道，最终默认 0）
-            let channel = if let Some(ev) = track_events.iter().find(|ev| ev.kind().is_note()) {
-                ev.channel()
-            } else {
-                doc.track_channel(track_id)
-            };
-
-            // 推断 max_tick：最后一对音符的结束 tick（绝对值）
-            let max_tick = track_events
-                .iter()
-                .scan(0_u32, |acc, ev| {
-                    *acc = acc.saturating_add(ev.delta_tick());
-                    Some(*acc)
-                })
-                .last()
-                .unwrap_or(0);
-
-            let name = doc.track_name(track_id as usize).unwrap_or("").to_string();
-
-            // 从 document 音轨视图恢复可见性与 solo（空白音轨通常需要保留
-            // 隐藏/静音状态，否则保存→加载后状态丢失）
-            let (visibility, solo) = doc
-                .tracks
-                .get(track_id)
-                .map(|view| {
-                    (
-                        match view.visibility {
-                            lumino_midi_model::TrackVisibility::Visible => {
-                                TrackVisibilitySer::Visible
-                            }
-                            lumino_midi_model::TrackVisibility::Muted => TrackVisibilitySer::Muted,
-                            lumino_midi_model::TrackVisibility::Hidden => {
-                                TrackVisibilitySer::Hidden
-                            }
-                        },
-                        view.solo,
-                    )
-                })
-                .unwrap_or((TrackVisibilitySer::Visible, false));
-
-            let meta = TrackMeta {
-                track_id,
-                name,
-                channel,
-                port: doc.track_port(track_id),
-                visibility,
-                solo,
-                is_drum: channel == 9, // MIDI 通道 10 (0-indexed 9) 为鼓组
-                max_tick,
-            };
-
-            let track_data = LmtrackData::from_compact_events(meta, &track_events);
-            project.add_track(track_data);
+            project.add_track(track_slot_from_document(doc, track_id));
         }
 
         // 统计总音符数
@@ -192,102 +76,12 @@ impl LuminoProject {
             track_names.push(Some(track_data.meta.name.clone()));
             track_ports.push(track_data.meta.port);
 
-            let compact_events = track_data.compact_events()?;
-            // FIFO 配对：同 key 重叠音符按 NoteOn 顺序匹配 NoteOff
-            // （HashMap 单槽会互相覆盖，导致重叠音符长度错乱——变短/变长）
-            let mut active: std::collections::HashMap<
-                (u8, u8),
-                std::collections::VecDeque<(u32, u8)>,
-            > = std::collections::HashMap::new();
-            let mut current_tick = 0_u32;
-
-            for ev in compact_events {
-                current_tick = current_tick.saturating_add(ev.delta_tick());
-                let key = ev.param1() as u8;
-                let channel = ev.channel();
-                let kind = ev.kind();
-                let velocity = ev.param2() as u8;
-
-                if kind == lumino_midi_model::compact::EventKind::NoteOn && velocity > 0 {
-                    active
-                        .entry((key, channel))
-                        .or_default()
-                        .push_back((current_tick, velocity));
-                } else if (kind == lumino_midi_model::compact::EventKind::NoteOff
-                    || (kind == lumino_midi_model::compact::EventKind::NoteOn && velocity == 0))
-                    && let Some(queue) = active.get_mut(&(key, channel))
-                    && let Some((start_tick, note_velocity)) = queue.pop_front()
-                {
-                    // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复（按值）
-                    let release_velocity = ev.param2() as u8;
-                    notes[idx].push_back(NoteEvent::new_with_release(
-                        start_tick,
-                        current_tick,
-                        key,
-                        note_velocity,
-                        release_velocity,
-                        channel,
-                    ));
-                    total_ticks = total_ticks.max(current_tick);
-                }
-            }
-
-            // 未关闭的音符延伸到 max_tick
-            if let Some(max_tick) =
-                (track_data.meta.max_tick > 0).then_some(track_data.meta.max_tick)
-            {
-                for ((key, channel), queue) in active {
-                    for (start_tick, note_velocity) in queue {
-                        notes[idx].push_back(NoteEvent::new(
-                            start_tick,
-                            max_tick,
-                            key,
-                            note_velocity,
-                            channel,
-                        ));
-                        total_ticks = total_ticks.max(max_tick);
-                    }
-                }
-            }
+            // 该轨音符重建进 `notes[idx]`，同时累加本轨涉及的最大 tick
+            total_ticks = rebuild_track_notes(track_data, total_ticks, &mut notes[idx])?;
         }
 
         // 重建控制事件
-        let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
-        for (tick, track, channel, controller, value) in &self.control_changes {
-            control_events.push(midly::loader::PackedControlEvent::control_change(
-                *tick,
-                *track,
-                *channel,
-                *controller,
-                *value,
-            ));
-        }
-        for (tick, track, channel, program) in &self.program_changes {
-            control_events.push(midly::loader::PackedControlEvent::program_change(
-                *tick, *track, *channel, *program,
-            ));
-        }
-        for (tick, track, channel, value) in &self.pitch_bends {
-            // 将偏移量还原为 0..16383 的原始 pitch bend 值
-            let bend = value.saturating_add(8192).clamp(0, 16383) as u16;
-            control_events.push(midly::loader::PackedControlEvent::pitch_bend(
-                *tick, *track, *channel, bend,
-            ));
-        }
-        for (tick, track, channel, velocity) in &self.channel_aftertouch {
-            control_events.push(midly::loader::PackedControlEvent::channel_aftertouch(
-                *tick, *track, *channel, *velocity,
-            ));
-        }
-        for (tick, track, channel, key, velocity) in &self.poly_aftertouch {
-            control_events.push(midly::loader::PackedControlEvent::poly_aftertouch(
-                *tick, *track, *channel, *key, *velocity,
-            ));
-        }
-        // 稳定排序保留同 tick 组装顺序（CC → PC → PB）：RPN 选择/DataEntry 必须
-        // 先于同 tick 的 PB 生效，与 document_build / 导出路径的既有契约一致。
-        // 旧实现用 sort_unstable，会打乱同 tick 顺序（非稳定排序不保证原序）。
-        control_events.sort_by_key(|e| e.tick);
+        let control_events = pack_control_events(self);
 
         // 补齐缺失的 track_names
         track_names.resize_with(track_count as usize, || None);
@@ -348,6 +142,239 @@ impl LuminoProject {
             storage_path: storage_path.into(),
         });
     }
+}
+
+/// 从 `MidiDocument` 的控制事件中拆分 CC / PC / 弯音 / 触后
+///
+/// 按 `kind` 分派到工程的扁平列表，保持 document 中的原始顺序。
+fn append_control_events(project: &mut LuminoProject, doc: &MidiDocument) {
+    // 从控制事件中拆分 CC / PC / 弯音
+    for ev in &doc.control_events {
+        match ev.kind {
+            0 => {
+                let (controller, value) = ev.as_control_change();
+                project
+                    .control_changes
+                    .push((ev.tick, ev.track, ev.channel, controller, value));
+            }
+            1 => {
+                let program = ev.as_program_change();
+                project
+                    .program_changes
+                    .push((ev.tick, ev.track, ev.channel, program));
+            }
+            2 => {
+                // as_pitch_bend 返回 -1.0..1.0 的归一化值，转换为以 8192 为中心的偏移量
+                let normalized = ev.as_pitch_bend();
+                let offset = (normalized * 8192.0).round() as i16;
+                project
+                    .pitch_bends
+                    .push((ev.tick, ev.track, ev.channel, offset));
+            }
+            3 => {
+                project.channel_aftertouch.push((
+                    ev.tick,
+                    ev.track,
+                    ev.channel,
+                    ev.as_channel_aftertouch(),
+                ));
+            }
+            4 => {
+                let (key, velocity) = ev.as_poly_aftertouch();
+                project
+                    .poly_aftertouch
+                    .push((ev.tick, ev.track, ev.channel, key, velocity));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 从 `MidiDocument` 的单轨数据构建 `LmtrackData`
+///
+/// 空白音轨（无音符）同样生成槽位，以保留名称、可见性、solo 与端口等元数据。
+fn track_slot_from_document(doc: &MidiDocument, track_id: u16) -> LmtrackData {
+    let track_notes = doc.track_notes(track_id as usize);
+
+    // 从 NoteEvent 构造 CompactEvent 音符事件（空白音轨则为空）
+    let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
+        Vec::with_capacity(track_notes.len() * 2);
+    for note in track_notes {
+        let [on, off] = note.to_compact_events(track_id);
+        track_events.push(on);
+        track_events.push(off);
+    }
+    // 稳定排序（保持音符声明顺序）：同 tick 的 NoteOff 必然排在 NoteOn 前
+    // （同一音符的 off 先于后续音符的 on 插入），配合回读端 FIFO 配对，
+    // 保证同 key 相接/重叠音符的 NoteOn/NoteOff 配对一致。
+    // sort_unstable 会打乱同 tick 顺序 → 音符长度偶发错乱。
+    track_events.sort_by_key(|e| e.delta_tick());
+
+    // 将绝对 tick 转换为相对 delta_tick，保证 CompactEvent 语义一致
+    let mut last_tick = 0_u32;
+    for ev in &mut track_events {
+        let abs_tick = ev.delta_tick();
+        ev.set_delta_tick(abs_tick.saturating_sub(last_tick));
+        last_tick = abs_tick;
+    }
+
+    // 推断 channel：优先取首个音符事件的通道；空白音轨（无音符）回退到
+    // document 的 track_channel（含控制事件通道，最终默认 0）
+    let channel = if let Some(ev) = track_events.iter().find(|ev| ev.kind().is_note()) {
+        ev.channel()
+    } else {
+        doc.track_channel(track_id)
+    };
+
+    // 推断 max_tick：最后一对音符的结束 tick（绝对值）
+    let max_tick = track_events
+        .iter()
+        .scan(0_u32, |acc, ev| {
+            *acc = acc.saturating_add(ev.delta_tick());
+            Some(*acc)
+        })
+        .last()
+        .unwrap_or(0);
+
+    let name = doc.track_name(track_id as usize).unwrap_or("").to_string();
+
+    // 从 document 音轨视图恢复可见性与 solo（空白音轨通常需要保留
+    // 隐藏/静音状态，否则保存→加载后状态丢失）
+    let (visibility, solo) = doc
+        .tracks
+        .get(track_id)
+        .map(|view| {
+            (
+                match view.visibility {
+                    lumino_midi_model::TrackVisibility::Visible => TrackVisibilitySer::Visible,
+                    lumino_midi_model::TrackVisibility::Muted => TrackVisibilitySer::Muted,
+                    lumino_midi_model::TrackVisibility::Hidden => TrackVisibilitySer::Hidden,
+                },
+                view.solo,
+            )
+        })
+        .unwrap_or((TrackVisibilitySer::Visible, false));
+
+    let meta = TrackMeta {
+        track_id,
+        name,
+        channel,
+        port: doc.track_port(track_id),
+        visibility,
+        solo,
+        is_drum: channel == 9, // MIDI 通道 10 (0-indexed 9) 为鼓组
+        max_tick,
+    };
+
+    LmtrackData::from_compact_events(meta, &track_events)
+}
+
+/// 从单轨 `.lmtrack` 数据重建 `NoteEvent`，返回累加后的最大 tick
+///
+/// 音符追加到调用方提供的 `notes` 容器；`total_ticks` 由调用方传入当前全局
+/// 最大值，本函数按本轨事件继续取大后返回。
+fn rebuild_track_notes(
+    track_data: &LmtrackData,
+    mut total_ticks: u32,
+    notes: &mut lumino_midi_model::ChunkedList<NoteEvent>,
+) -> Result<u32> {
+    let compact_events = track_data.compact_events()?;
+    // FIFO 配对：同 key 重叠音符按 NoteOn 顺序匹配 NoteOff
+    // （HashMap 单槽会互相覆盖，导致重叠音符长度错乱——变短/变长）
+    let mut active: std::collections::HashMap<(u8, u8), std::collections::VecDeque<(u32, u8)>> =
+        std::collections::HashMap::new();
+    let mut current_tick = 0_u32;
+
+    for ev in compact_events {
+        current_tick = current_tick.saturating_add(ev.delta_tick());
+        let key = ev.param1() as u8;
+        let channel = ev.channel();
+        let kind = ev.kind();
+        let velocity = ev.param2() as u8;
+
+        if kind == lumino_midi_model::compact::EventKind::NoteOn && velocity > 0 {
+            active
+                .entry((key, channel))
+                .or_default()
+                .push_back((current_tick, velocity));
+        } else if (kind == lumino_midi_model::compact::EventKind::NoteOff
+            || (kind == lumino_midi_model::compact::EventKind::NoteOn && velocity == 0))
+            && let Some(queue) = active.get_mut(&(key, channel))
+            && let Some((start_tick, note_velocity)) = queue.pop_front()
+        {
+            // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复（按值）
+            let release_velocity = ev.param2() as u8;
+            notes.push_back(NoteEvent::new_with_release(
+                start_tick,
+                current_tick,
+                key,
+                note_velocity,
+                release_velocity,
+                channel,
+            ));
+            total_ticks = total_ticks.max(current_tick);
+        }
+    }
+
+    // 未关闭的音符延伸到 max_tick
+    if let Some(max_tick) = (track_data.meta.max_tick > 0).then_some(track_data.meta.max_tick) {
+        for ((key, channel), queue) in active {
+            for (start_tick, note_velocity) in queue {
+                notes.push_back(NoteEvent::new(
+                    start_tick,
+                    max_tick,
+                    key,
+                    note_velocity,
+                    channel,
+                ));
+                total_ticks = total_ticks.max(max_tick);
+            }
+        }
+    }
+
+    Ok(total_ticks)
+}
+
+/// 将工程内扁平的控制事件还原为 `MidiDocument` 使用的紧凑事件列表
+fn pack_control_events(project: &LuminoProject) -> Vec<midly::loader::PackedControlEvent> {
+    let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
+    for (tick, track, channel, controller, value) in &project.control_changes {
+        control_events.push(midly::loader::PackedControlEvent::control_change(
+            *tick,
+            *track,
+            *channel,
+            *controller,
+            *value,
+        ));
+    }
+    for (tick, track, channel, program) in &project.program_changes {
+        control_events.push(midly::loader::PackedControlEvent::program_change(
+            *tick, *track, *channel, *program,
+        ));
+    }
+    for (tick, track, channel, value) in &project.pitch_bends {
+        // 将偏移量还原为 0..16383 的原始 pitch bend 值
+        let bend = value.saturating_add(8192).clamp(0, 16383) as u16;
+        control_events.push(midly::loader::PackedControlEvent::pitch_bend(
+            *tick, *track, *channel, bend,
+        ));
+    }
+    for (tick, track, channel, velocity) in &project.channel_aftertouch {
+        control_events.push(midly::loader::PackedControlEvent::channel_aftertouch(
+            *tick, *track, *channel, *velocity,
+        ));
+    }
+    for (tick, track, channel, key, velocity) in &project.poly_aftertouch {
+        control_events.push(midly::loader::PackedControlEvent::poly_aftertouch(
+            *tick, *track, *channel, *key, *velocity,
+        ));
+    }
+    // 稳定排序保留同 tick 组装顺序（CC → PC → PB）：RPN 选择/DataEntry 必须
+    // 先于同 tick 的 PB 生效，与 document_build / 导出路径的既有契约一致。
+    // 旧实现用 sort_unstable，会打乱同 tick 顺序（非稳定排序不保证原序）。
+    control_events.sort_by_key(|e| e.tick);
+
+    control_events
 }
 
 /// 为 `Vec<TrackSlot>` 提供便捷方法，避免直接暴露内部字段

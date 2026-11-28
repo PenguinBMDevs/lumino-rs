@@ -30,20 +30,9 @@ impl MidiHandler {
 
         let track_count = document.track_count();
         let total_ticks = document.total_ticks();
-        let mut track_infos = Vec::with_capacity(track_count);
 
-        // 只收集音轨信息（名称、音符数），不预加载音符到 track_notes
-        // 音符将在首次渲染或切换音轨时从 MidiDocument 懒加载
-        // 这样可以避免 track_notes + MidiDocument 两份数据共存导致内存翻倍
-        // 注意：使用 track_note_count 而非 get_track_notes 以避免全量提取
         let t_infos = std::time::Instant::now();
-        for track_idx in 0..track_count {
-            let note_count = document.track_note_count(track_idx as u16);
-            let track_name = document.track_name(track_idx).map(|s| s.to_string());
-            let channel = document.track_channel(track_idx as u16);
-            let port = document.track_port(track_idx as u16);
-            track_infos.push((track_idx, track_name, note_count, channel, port));
-        }
+        let track_infos = collect_track_infos(&document, track_count);
         let t_infos = t_infos.elapsed();
 
         let t_tracks = std::time::Instant::now();
@@ -53,18 +42,7 @@ impl MidiHandler {
 
         // 从预存储的 tempo_changes 加载（在 document move 进 UI 之前借用）
         let t_tempo = std::time::Instant::now();
-        let tempo_ui: Vec<(u32, u32)> = document
-            .tempo_changes
-            .iter()
-            .map(|&(tick, bpm)| {
-                let microseconds = if bpm > 0.0 {
-                    lumino_midi_loader::bpm_to_tempo(bpm as f64)
-                } else {
-                    lumino_midi_loader::constants::DEFAULT_TEMPO_MICROS
-                };
-                (tick, microseconds)
-            })
-            .collect();
+        let tempo_ui: Vec<(u32, u32)> = collect_tempo_ui(&document);
         let t_tempo = t_tempo.elapsed();
 
         // REND-003：删除"提取首轨 → 回写"往返（原 `get_track_notes` + `load_track_notes`）。
@@ -72,10 +50,7 @@ impl MidiHandler {
         // `replace_track_notes` 还会给首轨重新分配全部 ID），是加载后主线程长时间
         // "未响应"的根因；单一权威源架构下编辑器/渲染均直接读 `document`，
         // 切到首轨（`set_current_track`）即可，无需预加载。
-        let first_track_idx = track_infos
-            .iter()
-            .find(|(_, _, note_count, _, _)| *note_count > 0)
-            .map(|(first_track_idx, _, _, _, _)| *first_track_idx);
+        let first_track_idx = first_note_track(&track_infos);
 
         // 将 MidiDocument 所有权移交给编辑器（单一权威源，零拷贝）
         let t_setdoc = std::time::Instant::now();
@@ -118,4 +93,49 @@ impl MidiHandler {
         let total_ticks = (parsed.info.duration_ticks as f32).max(1.0) + extra_ticks as f32;
         ui.set_total_ticks(total_ticks);
     }
+}
+
+/// 收集音轨展示信息（序号、名称、音符数、通道、端口）
+///
+/// 只收集音轨信息（名称、音符数），不预加载音符到 track_notes
+/// 音符将在首次渲染或切换音轨时从 MidiDocument 懒加载
+/// 这样可以避免 track_notes + MidiDocument 两份数据共存导致内存翻倍
+/// 注意：使用 track_note_count 而非 get_track_notes 以避免全量提取
+fn collect_track_infos(
+    document: &lumino_midi_loader::MidiDocument,
+    track_count: usize,
+) -> Vec<(usize, Option<String>, u64, u8, u8)> {
+    let mut track_infos = Vec::with_capacity(track_count);
+    for track_idx in 0..track_count {
+        let note_count = document.track_note_count(track_idx as u16);
+        let track_name = document.track_name(track_idx).map(|s| s.to_string());
+        let channel = document.track_channel(track_idx as u16);
+        let port = document.track_port(track_idx as u16);
+        track_infos.push((track_idx, track_name, note_count, channel, port));
+    }
+    track_infos
+}
+
+/// 把 tempo_changes 映射为 UI 需要的 (tick, 微秒每四分音符) 列表
+fn collect_tempo_ui(document: &lumino_midi_loader::MidiDocument) -> Vec<(u32, u32)> {
+    document
+        .tempo_changes
+        .iter()
+        .map(|&(tick, bpm)| {
+            let microseconds = if bpm > 0.0 {
+                lumino_midi_loader::bpm_to_tempo(bpm as f64)
+            } else {
+                lumino_midi_loader::constants::DEFAULT_TEMPO_MICROS
+            };
+            (tick, microseconds)
+        })
+        .collect()
+}
+
+/// 首个含音符的音轨序号（找不到则不切轨）
+fn first_note_track(track_infos: &[(usize, Option<String>, u64, u8, u8)]) -> Option<usize> {
+    track_infos
+        .iter()
+        .find(|(_, _, note_count, _, _)| *note_count > 0)
+        .map(|(first_track_idx, _, _, _, _)| *first_track_idx)
 }

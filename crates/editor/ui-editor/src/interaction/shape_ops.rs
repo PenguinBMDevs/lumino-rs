@@ -26,8 +26,8 @@ use crate::interaction::line_tool::{geom, paths};
 use crate::{Editor, Note};
 use lumino_core::shape::{ShapeFill, ShapeKind, ShapeModel, ShapeOp};
 use lumino_editor_state::shape_ops::{
-    NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one, arc_points_scaled,
-    polygon_paths, rounded_anchors, straighten_shape, symmetric_shape,
+    AreaContext, NoteOpContext, OpContext, apply_geometry_ops, apply_note_ops, arc_k_or_one,
+    arc_points_scaled, polygon_paths, rounded_anchors, straighten_shape, symmetric_shape,
 };
 use lumino_editor_state::{BezierAnchor, ShapeNote, note_to_event};
 use lumino_midi_model::TickIndexedEvents;
@@ -39,47 +39,10 @@ impl Editor {
     /// 与曲线工具确认同源：展平 → 逐音高行解析 + 法线加粗 → 同 tick 同 key 留最长 →
     /// 长度下限补齐。`anchors.len() < 2` 视为无音符形状（仍可登记与持久化）。
     pub(crate) fn shape_notes_of(&self, model: &ShapeModel, track: usize) -> Vec<ShapeNote> {
-        // 文字形状是独立再生成路径：几何锚点不参与，参数/文本框/采样模式全在 TextOp。
-        // UI-023：新形状带冻结的 `k`（`TextV2`），旧形状走 4×4 兼容（`Text`）。
-        if let Some(op) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::TextV2(op) => Some(op),
-            _ => None,
-        }) {
-            return self.text_shape_notes_v2(model, op, track);
+        if let Some(notes) = self.special_shape_notes(model, track) {
+            return notes;
         }
-        if let Some(op) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Text(op) => Some(op),
-            _ => None,
-        }) {
-            return self.text_shape_notes(model, op, track);
-        }
-        if let Some(params) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Drawing(params) => Some(params),
-            _ => None,
-        }) {
-            return self.drawing_notes(model, params, track);
-        }
-        let mut anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
-        // 角度柔化（DRAW-044）：锚点级替换，先于扶正/对称；曲线/弧按下标套用会切错位置
-        if let Some(params) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Round(params) => Some(params),
-            _ => None,
-        }) {
-            anchors = rounded_anchors(model, params, f64::from(self.editor_state.view.ppq));
-        }
-        if let Some(params) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Straighten(params) => Some(params),
-            _ => None,
-        }) {
-            anchors = straighten_shape(model, params.level);
-        }
-        if let Some(params) = model.ops.iter().find_map(|op| match op {
-            ShapeOp::Symmetry(params) => Some(params),
-            _ => None,
-        }) && let Some(expanded) = symmetric_shape(model, params)
-        {
-            anchors = expanded;
-        }
+        let anchors = self.shape_anchors(model);
         if anchors.len() < 2 && model.geometry.rect.is_none() {
             return Vec::new();
         }
@@ -101,20 +64,7 @@ impl Editor {
             return notes;
         }
         // Arc：三点定圆，在屏幕空间（beats/k, keys）求解；退化则回退为折线。
-        let poly = if model.kind == ShapeKind::Arc && model.geometry.anchors.len() >= 3 {
-            let to_beat = |a: &lumino_core::shape::ShapeAnchor| {
-                (f64::from(a.pos.0) / ppq, f64::from(a.pos.1))
-            };
-            let a = to_beat(&model.geometry.anchors[0]);
-            let b = to_beat(&model.geometry.anchors[1]);
-            let c = to_beat(&model.geometry.anchors[2]);
-            arc_points_scaled(a, b, c, arc_k_or_one(f64::from(model.k)))
-                .into_iter()
-                .map(|(beat, key)| (beat * ppq, key))
-                .collect()
-        } else {
-            geom::flatten_path(&anchors)
-        };
+        let poly = arc_or_flatten(model, &anchors, ppq);
         // Polygon 是框型几何来源，可能产生多条环；先按 box 预生成。
         let polygon = model.ops.iter().find_map(|op| match op {
             ShapeOp::Polygon(params) => Some(params),
@@ -130,21 +80,10 @@ impl Editor {
             self.editor_state.line_tool.min_note_division,
             self.editor_state.view.ppq,
         );
-        // 先跑完 Geometry 阶段算子，面积求解与音符生成共用同一组路径。
-        let mut paths = Vec::with_capacity(base_paths.len());
-        for path in base_paths {
-            let poly = apply_geometry_ops(&path, &model.ops, &ctx);
-            if poly.len() >= 2 {
-                paths.push(poly);
-            }
-        }
+        let paths = geometry_paths(model, base_paths, &ctx);
         let glue_box = paths.first().and_then(|poly| shape_box_of(poly));
         // Areas 只作用于内部填充；描边/OutlineSpam 仍走原链路。
-        let area = if matches!(model.style.fill, ShapeFill::Fill | ShapeFill::Spam) {
-            self.area_context(&paths, model)
-        } else {
-            None
-        };
+        let area = self.shape_area(&paths, model);
         let mut notes = Vec::new();
         for poly in &paths {
             // ShapeStyle.fill：Empty/OutlineSpam 走描边，Fill/Spam 走逐行内部。
@@ -175,6 +114,66 @@ impl Editor {
         apply_note_ops(&mut notes, &model.ops, &note_ctx);
         fill_notes::unlock_area_channels(&mut notes);
         notes
+    }
+
+    /// 文字 / 绘图形状的再生成路径：几何锚点不参与
+    fn special_shape_notes(&self, model: &ShapeModel, track: usize) -> Option<Vec<ShapeNote>> {
+        // 文字形状是独立再生成路径：几何锚点不参与，参数/文本框/采样模式全在 TextOp。
+        // UI-023：新形状带冻结的 `k`（`TextV2`），旧形状走 4×4 兼容（`Text`）。
+        if let Some(op) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::TextV2(op) => Some(op),
+            _ => None,
+        }) {
+            return Some(self.text_shape_notes_v2(model, op, track));
+        }
+        if let Some(op) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Text(op) => Some(op),
+            _ => None,
+        }) {
+            return Some(self.text_shape_notes(model, op, track));
+        }
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Drawing(params) => Some(params),
+            _ => None,
+        }) {
+            return Some(self.drawing_notes(model, params, track));
+        }
+        None
+    }
+
+    /// 锚点级几何：角度柔化 → 扶正 → 对称（DRAW-044 顺序不可换）
+    fn shape_anchors(&self, model: &ShapeModel) -> Vec<BezierAnchor> {
+        let mut anchors: Vec<BezierAnchor> = model.geometry.anchors.clone();
+        // 角度柔化（DRAW-044）：锚点级替换，先于扶正/对称；曲线/弧按下标套用会切错位置
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Round(params) => Some(params),
+            _ => None,
+        }) {
+            anchors = rounded_anchors(model, params, f64::from(self.editor_state.view.ppq));
+        }
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Straighten(params) => Some(params),
+            _ => None,
+        }) {
+            anchors = straighten_shape(model, params.level);
+        }
+        if let Some(params) = model.ops.iter().find_map(|op| match op {
+            ShapeOp::Symmetry(params) => Some(params),
+            _ => None,
+        }) && let Some(expanded) = symmetric_shape(model, params)
+        {
+            anchors = expanded;
+        }
+        anchors
+    }
+
+    /// 内部填充的区域上下文（Areas 只作用于 Fill / Spam）
+    fn shape_area(&self, paths: &[Vec<(f64, f64)>], model: &ShapeModel) -> Option<AreaContext> {
+        if matches!(model.style.fill, ShapeFill::Fill | ShapeFill::Spam) {
+            self.area_context(paths, model)
+        } else {
+            None
+        }
     }
 
     /// 新建形状：生成音符 + 登记形状（一次撤销单元）；Conductor 轨（0）拒绝
@@ -409,4 +408,38 @@ fn broadcast_shape_sync(editor: &mut Editor, track: usize, notes: &[ShapeNote], 
             track,
         );
     }
+}
+
+/// 基础折线：Arc 三点定圆在屏幕空间（beats/k, keys）求解，退化则回退为展平折线。
+fn arc_or_flatten(model: &ShapeModel, anchors: &[BezierAnchor], ppq: f64) -> Vec<(f64, f64)> {
+    if model.kind == ShapeKind::Arc && model.geometry.anchors.len() >= 3 {
+        let to_beat =
+            |a: &lumino_core::shape::ShapeAnchor| (f64::from(a.pos.0) / ppq, f64::from(a.pos.1));
+        let a = to_beat(&model.geometry.anchors[0]);
+        let b = to_beat(&model.geometry.anchors[1]);
+        let c = to_beat(&model.geometry.anchors[2]);
+        arc_points_scaled(a, b, c, arc_k_or_one(f64::from(model.k)))
+            .into_iter()
+            .map(|(beat, key)| (beat * ppq, key))
+            .collect()
+    } else {
+        geom::flatten_path(anchors)
+    }
+}
+
+/// 路径先经 Geometry 阶段算子改写，再交给同源音符生成
+fn geometry_paths(
+    model: &ShapeModel,
+    base_paths: Vec<Vec<(f64, f64)>>,
+    ctx: &OpContext,
+) -> Vec<Vec<(f64, f64)>> {
+    // 先跑完 Geometry 阶段算子，面积求解与音符生成共用同一组路径。
+    let mut paths = Vec::with_capacity(base_paths.len());
+    for path in base_paths {
+        let poly = apply_geometry_ops(&path, &model.ops, ctx);
+        if poly.len() >= 2 {
+            paths.push(poly);
+        }
+    }
+    paths
 }

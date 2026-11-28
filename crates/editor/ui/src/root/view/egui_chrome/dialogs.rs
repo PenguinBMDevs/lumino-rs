@@ -59,47 +59,7 @@ impl Root {
                 close: tr!("关闭").to_string(),
                 cancel: tr!("取消").to_string(),
             })),
-            DialogType::Settings => {
-                let language = self.settings.display.language;
-                let selected = self.settings.selected_menu_index;
-                // 已迁移页面：常规 / 音视频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 /
-                // 云 / 兼容性 / 关于；未知索引返回 None，由叠加层兜底。
-                let page = match selected {
-                    0 => SettingsPageModel::General,
-                    crate::settings::MENU_INDEX_AUDIO => {
-                        SettingsPageModel::Audio(super::settings_audio::page(self))
-                    }
-                    2 => SettingsPageModel::Ui(Box::new(super::settings_ui::page(self))),
-                    3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
-                    4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
-                    5 => SettingsPageModel::Ui(Box::new(super::settings_pages::palette_page(self))),
-                    6 => SettingsPageModel::Ui(Box::new(super::settings_pages::editing_page(self))),
-                    7 => SettingsPageModel::Cloud(super::settings_pages::cloud_page(self)),
-                    9 => SettingsPageModel::Ui(Box::new(super::settings_pages::about_page(self))),
-                    crate::settings::MENU_INDEX_COMPATIBILITY => {
-                        SettingsPageModel::Compatibility(self.compatibility_page(language))
-                    }
-                    _ => return None,
-                };
-                let editing = &self.settings.editing;
-                Some(DialogModel::Settings(Box::new(SettingsSnapshot {
-                    palette: self.settings_palette(),
-                    labels: settings_labels(language),
-                    selected,
-                    eraser: lumino_core::i18n::eraser_behavior_name(
-                        editing.eraser_behavior,
-                        language,
-                    )
-                    .to_owned(),
-                    track_add: lumino_core::i18n::track_add_behavior_name(
-                        editing.track_add_behavior,
-                        language,
-                    )
-                    .to_owned(),
-                    log_retention: self.settings.logging.log_retention_count.to_string(),
-                    page,
-                })))
-            }
+            DialogType::Settings => self.settings_dialog_model(),
             DialogType::ProjectSettings => Some(DialogModel::ProjectSettings(Box::new(
                 self.project_settings_model(),
             ))),
@@ -166,6 +126,46 @@ impl Root {
             DialogType::Mixer => Some(DialogModel::Mixer(Box::new(self.mixer_dialog_model()))),
             _ => None,
         }
+    }
+
+    /// 设置对话框：菜单索引 → 页面快照，未知索引返回 `None`（叠加层不接管）。
+    fn settings_dialog_model(&self) -> Option<DialogModel> {
+        let language = self.settings.display.language;
+        let selected = self.settings.selected_menu_index;
+        // 已迁移页面：常规 / 音视频 / 界面 / 快捷键 / 洋葱皮 / 调色板 / 编辑 /
+        // 云 / 兼容性 / 关于；未知索引返回 None，由叠加层兜底。
+        let page = match selected {
+            0 => SettingsPageModel::General,
+            crate::settings::MENU_INDEX_AUDIO => {
+                SettingsPageModel::Audio(super::settings_audio::page(self))
+            }
+            2 => SettingsPageModel::Ui(Box::new(super::settings_ui::page(self))),
+            3 => SettingsPageModel::Shortcuts(shortcuts_page(language)),
+            4 => SettingsPageModel::OnionSkin(self.onion_skin_page()),
+            5 => SettingsPageModel::Ui(Box::new(super::settings_pages::palette_page(self))),
+            6 => SettingsPageModel::Ui(Box::new(super::settings_pages::editing_page(self))),
+            7 => SettingsPageModel::Cloud(super::settings_pages::cloud_page(self)),
+            9 => SettingsPageModel::Ui(Box::new(super::settings_pages::about_page(self))),
+            crate::settings::MENU_INDEX_COMPATIBILITY => {
+                SettingsPageModel::Compatibility(self.compatibility_page(language))
+            }
+            _ => return None,
+        };
+        let editing = &self.settings.editing;
+        Some(DialogModel::Settings(Box::new(SettingsSnapshot {
+            palette: self.settings_palette(),
+            labels: settings_labels(language),
+            selected,
+            eraser: lumino_core::i18n::eraser_behavior_name(editing.eraser_behavior, language)
+                .to_owned(),
+            track_add: lumino_core::i18n::track_add_behavior_name(
+                editing.track_add_behavior,
+                language,
+            )
+            .to_owned(),
+            log_retention: self.settings.logging.log_retention_count.to_string(),
+            page,
+        })))
     }
 
     /// 洋葱皮页：后端下拉（加载 MIDI 后只读）+ 能力边界提示。

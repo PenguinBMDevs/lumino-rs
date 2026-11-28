@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use lumino_midi_loader::MidiDocument;
+use lumino_midi_loader::{MidiDocument, NoteEvent};
 
 use crate::{
     camera::Camera,
@@ -109,158 +109,212 @@ pub fn render_band(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
     })
 }
 
-fn render_notes(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
-    let camera = &job.camera;
-    let (tick_lo, tick_hi) = camera.tick_range_for_x(job.x0 as f32, job.x1 as f32);
-    let track_count = job.document.track_count();
-    let mut stats = BandStats::default();
-    let cull_only = std::env::var_os("CPU_ONIONSKIN_CULL_ONLY").is_some();
-    let column_major = job.column_major;
-    let ruler_rows = (camera.ruler_height.round().max(0.0) as usize).min(buffer.height);
-    let canvas_rows = buffer.height.saturating_sub(ruler_rows);
-    let key_lo = u32::from(job.key_min.min(127));
-    let key_hi = u32::from(job.key_max.min(127));
-    let visible_key_mask = if key_hi >= key_lo {
-        let span = key_hi - key_lo + 1;
-        if span >= 128 {
-            u128::MAX
-        } else {
-            ((1u128 << span) - 1) << key_lo
-        }
-    } else {
-        0
-    };
-    let active_keys = job
-        .index
-        .active_keys(tick_lo, tick_hi, job.current_track, &[])
-        & visible_key_mask;
-    let active_rows = if job.index.key_mask_bytes() == 0 {
-        canvas_rows
-    } else {
-        (active_keys.count_ones() as usize)
-            .saturating_mul(camera.zoom_y.ceil().max(1.0) as usize)
-            .min(canvas_rows)
-    };
-    let early_coverage = job.early_coverage;
-    let coverage_target = if early_coverage {
-        buffer.width.saturating_mul(active_rows)
-    } else {
-        usize::MAX
-    };
+/// 单 band 音符遍历的窗口/覆盖参数（pass 的前置状态）。
+#[derive(Debug)]
+struct PassSetup {
+    /// 窗口 tick 下界。
+    tick_lo: u32,
+    /// 窗口 tick 上界。
+    tick_hi: u32,
+    /// 文档轨道总数。
+    track_count: usize,
+    /// 是否只统计剔除结果而不落笔。
+    cull_only: bool,
+    /// 是否列主序绘制窄音符。
+    column_major: bool,
+    /// 标尺占用的行数（不计入覆盖统计）。
+    ruler_rows: usize,
+    /// 提前退出所需覆盖的像素目标。
+    coverage_target: usize,
+}
 
+impl PassSetup {
+    /// 从 band 输入计算窗口、可见行数与覆盖目标。
+    fn new(job: &BandJob, buffer: &BandBuffer) -> Self {
+        let camera = &job.camera;
+        let (tick_lo, tick_hi) = camera.tick_range_for_x(job.x0 as f32, job.x1 as f32);
+        let track_count = job.document.track_count();
+        let cull_only = std::env::var_os("CPU_ONIONSKIN_CULL_ONLY").is_some();
+        let column_major = job.column_major;
+        let ruler_rows = (camera.ruler_height.round().max(0.0) as usize).min(buffer.height);
+        let canvas_rows = buffer.height.saturating_sub(ruler_rows);
+        let key_lo = u32::from(job.key_min.min(127));
+        let key_hi = u32::from(job.key_max.min(127));
+        let visible_key_mask = if key_hi >= key_lo {
+            let span = key_hi - key_lo + 1;
+            if span >= 128 {
+                u128::MAX
+            } else {
+                ((1u128 << span) - 1) << key_lo
+            }
+        } else {
+            0
+        };
+        let active_keys = job
+            .index
+            .active_keys(tick_lo, tick_hi, job.current_track, &[])
+            & visible_key_mask;
+        let active_rows = if job.index.key_mask_bytes() == 0 {
+            canvas_rows
+        } else {
+            (active_keys.count_ones() as usize)
+                .saturating_mul(camera.zoom_y.ceil().max(1.0) as usize)
+                .min(canvas_rows)
+        };
+        let early_coverage = job.early_coverage;
+        let coverage_target = if early_coverage {
+            buffer.width.saturating_mul(active_rows)
+        } else {
+            usize::MAX
+        };
+        Self {
+            tick_lo,
+            tick_hi,
+            track_count,
+            cull_only,
+            column_major,
+            ruler_rows,
+            coverage_target,
+        }
+    }
+}
+
+/// 单音符绘制的相位开关：主轨标记、覆盖统计与标尺行。
+#[derive(Debug, Clone, Copy)]
+struct NotePhase {
+    /// 是否主轨（owner=2）。
+    is_main: bool,
+    /// 是否统计覆盖像素（洋葱皮 pass）。
+    count_coverage: bool,
+    /// 是否列主序绘制窄音符。
+    column_major: bool,
+    /// 标尺占用的行数。
+    ruler_rows: usize,
+}
+
+fn render_notes(job: &BandJob, buffer: &mut BandBuffer) -> BandStats {
+    let pass = PassSetup::new(job, buffer);
+    let mut stats = BandStats::default();
+    render_note_passes(job, buffer, &mut stats, &pass);
+    if pass.column_major {
+        buffer.composite_columns();
+    }
+    stats.coverage_target = pass.coverage_target;
+    stats.covered = buffer.covered_pixels;
+    stats
+}
+
+/// 两趟轨道遍历：pass 0 洋葱皮、pass 1 主轨（后画覆盖洋葱皮）。
+fn render_note_passes(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    stats: &mut BandStats,
+    pass: &PassSetup,
+) {
     // pass 0 = 洋葱皮，pass 1 = 主轨（后画，覆盖洋葱皮）。
-    for pass in 0..2u8 {
+    for pass_index in 0..2u8 {
         // 洋葱皮已经把画布铺满：同级先到先得，后续洋葱皮轨不可能再改变
         // 任何像素，直接跳到主轨 pass。
-        if pass == 0 && buffer.covered_pixels >= coverage_target {
+        if pass_index == 0 && buffer.covered_pixels >= pass.coverage_target {
             continue;
         }
-        'tracks: for track in 0..track_count {
+        'tracks: for track in 0..pass.track_count {
             let is_main = track == job.current_track;
-            if (pass == 1) != is_main {
+            if (pass_index == 1) != is_main {
                 continue;
             }
             let notes = job.document.track_notes(track);
             if notes.is_empty() {
                 continue;
             }
-            let count_coverage = pass == 0;
+            let count_coverage = pass_index == 0;
+            let phase = NotePhase {
+                is_main,
+                count_coverage,
+                column_major: pass.column_major,
+                ruler_rows: pass.ruler_rows,
+            };
             // 长音符 underlay：先画，轨内正常音符后画（近似 GPU 的同轨先到先得）。
             for note in job.index.long_notes(track) {
                 stats.long_candidates += 1;
-                if note.start_tick > tick_hi {
+                if note.start_tick > pass.tick_hi {
                     break;
                 }
-                if note.end_tick < tick_lo {
+                if note.end_tick < pass.tick_lo {
                     continue;
                 }
                 if (note.key as u16) < job.key_min || (note.key as u16) > job.key_max {
                     continue;
                 }
-                if cull_only {
+                if pass.cull_only {
                     stats.visible_notes += 1;
                     continue;
                 }
-                let covered = if column_major {
-                    super::notes::draw_note_column(
-                        job,
-                        buffer,
-                        track,
-                        is_main,
-                        note,
-                        &mut stats,
-                        count_coverage,
-                        ruler_rows,
-                    )
-                } else {
-                    super::notes::draw_note(
-                        job,
-                        buffer,
-                        track,
-                        is_main,
-                        note,
-                        &mut stats,
-                        count_coverage,
-                        ruler_rows,
-                    )
-                };
+                let covered = draw_note_in_phase(job, buffer, stats, note, track, phase);
                 buffer.covered_pixels += covered;
-                if count_coverage && buffer.covered_pixels >= coverage_target {
+                if count_coverage && buffer.covered_pixels >= pass.coverage_target {
                     break 'tracks;
                 }
             }
             let lookback = job.index.lookback(track);
-            let (lo, hi) = notes.window_range(tick_lo, tick_hi.saturating_add(1), lookback);
+            let (lo, hi) =
+                notes.window_range(pass.tick_lo, pass.tick_hi.saturating_add(1), lookback);
             for (_, note) in notes.iter_window(lo, hi) {
                 stats.candidates += 1;
                 if note.length() > crate::model::LOOKBACK_TICKS {
                     // 已由 long_notes underlay 覆盖，避免重复绘制。
                     continue;
                 }
-                if note.end_tick < tick_lo || note.start_tick > tick_hi {
+                if note.end_tick < pass.tick_lo || note.start_tick > pass.tick_hi {
                     continue;
                 }
                 if (note.key as u16) < job.key_min || (note.key as u16) > job.key_max {
                     continue;
                 }
-                if cull_only {
+                if pass.cull_only {
                     stats.visible_notes += 1;
                     continue;
                 }
-                let covered = if column_major {
-                    super::notes::draw_note_column(
-                        job,
-                        buffer,
-                        track,
-                        is_main,
-                        note,
-                        &mut stats,
-                        count_coverage,
-                        ruler_rows,
-                    )
-                } else {
-                    super::notes::draw_note(
-                        job,
-                        buffer,
-                        track,
-                        is_main,
-                        note,
-                        &mut stats,
-                        count_coverage,
-                        ruler_rows,
-                    )
-                };
+                let covered = draw_note_in_phase(job, buffer, stats, note, track, phase);
                 buffer.covered_pixels += covered;
-                if count_coverage && buffer.covered_pixels >= coverage_target {
+                if count_coverage && buffer.covered_pixels >= pass.coverage_target {
                     break 'tracks;
                 }
             }
         }
     }
-    if column_major {
-        buffer.composite_columns();
+}
+
+/// 按列主序/行主序把单个音符画进 band 缓冲，返回新增覆盖像素数。
+fn draw_note_in_phase(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    stats: &mut BandStats,
+    note: &NoteEvent,
+    track: usize,
+    phase: NotePhase,
+) -> usize {
+    if phase.column_major {
+        super::notes::draw_note_column(
+            job,
+            buffer,
+            track,
+            phase.is_main,
+            note,
+            stats,
+            phase.count_coverage,
+            phase.ruler_rows,
+        )
+    } else {
+        super::notes::draw_note(
+            job,
+            buffer,
+            track,
+            phase.is_main,
+            note,
+            stats,
+            phase.count_coverage,
+            phase.ruler_rows,
+        )
     }
-    stats.coverage_target = coverage_target;
-    stats.covered = buffer.covered_pixels;
-    stats
 }

@@ -240,105 +240,116 @@ impl App {
                 let text = text.as_str();
                 let ctrl = self.modifiers.control_key();
                 let shift = self.modifiers.shift_key();
-                if ctrl && (text == "z" || text == "Z") {
-                    if shift {
-                        if self
-                            .editor
-                            .redo(&mut self.document, &mut self.index, &mut self.density)
-                        {
-                            self.after_edit();
-                        }
-                    } else if self.editor.undo(
-                        &mut self.document,
-                        &mut self.index,
-                        &mut self.density,
-                    ) {
-                        self.after_edit();
-                    }
+                if self.handle_edit_shortcut(text, ctrl, shift) {
                     return;
                 }
-                if ctrl && (text == "y" || text == "Y") {
-                    if self
-                        .editor
-                        .redo(&mut self.document, &mut self.index, &mut self.density)
-                    {
-                        self.after_edit();
-                    }
-                    return;
-                }
-                if ctrl && (text == "c" || text == "C") {
-                    self.editor
-                        .copy_selected(&self.document, self.current_track);
-                    return;
-                }
-                if ctrl && (text == "v" || text == "V") {
-                    if let Some((tick, key)) = self.canvas_tick_key() {
-                        let tick = self.snap_tick(tick);
-                        let key = key as u8;
-                        self.editor.paste_at(
-                            &mut self.document,
-                            &mut self.index,
-                            &mut self.density,
-                            self.current_track,
-                            tick,
-                            key,
-                        );
-                        self.after_edit();
-                    }
-                    return;
-                }
-                if ctrl && (text == "a" || text == "A") {
-                    self.editor.select_all(&self.document, self.current_track);
-                    self.content_dirty = true;
-                    return;
-                }
-                if text == "i" || text == "I" {
-                    self.editor.tool = match self.editor.tool {
-                        Tool::Select => Tool::Insert,
-                        Tool::Insert => Tool::Select,
-                    };
-                    self.editor.status = format!("工具：{}", self.editor.tool_name());
-                    self.content_dirty = true;
-                } else if text == "+" || text == "=" {
-                    if let Some(camera) = &mut self.camera {
-                        let x = camera.width as f32 * 0.5;
-                        camera.zoom_x_at(x, camera.zoom_x * 1.25);
-                    }
-                    self.needs_redraw = true;
-                    self.content_dirty = true;
-                } else if text == "-" || text == "_" {
-                    if let Some(camera) = &mut self.camera {
-                        let x = camera.width as f32 * 0.5;
-                        camera.zoom_x_at(x, camera.zoom_x * 0.8);
-                    }
-                    self.needs_redraw = true;
-                    self.content_dirty = true;
-                } else if text == "f" || text == "F" {
-                    if let Some(camera) = &mut self.camera {
-                        let fit_x = camera.canvas_width() / camera.total_ticks.max(1) as f32;
-                        camera.zoom_x = fit_x.clamp(0.0002, 40.0);
-                        camera.zoom_y =
-                            (camera.canvas_height() / camera.key_count.max(1) as f32).max(1.0);
-                        camera.scroll_x = 0.0;
-                        camera.target_scroll_x = 0.0;
-                        camera.scroll_y = 0.0;
-                    }
-                    self.needs_redraw = true;
-                    self.content_dirty = true;
-                } else if text == "r" || text == "R" {
-                    if let Some(camera) = &mut self.camera {
-                        camera.zoom_x = self.initial_zoom;
-                        camera.scroll_x = 0.0;
-                        camera.target_scroll_x = 0.0;
-                        camera.center_on_key(60);
-                    }
-                    self.needs_redraw = true;
-                    self.content_dirty = true;
-                }
+                self.handle_view_key(text);
             }
             _ => {}
         }
         self.idle_reported = false;
         self.next_frame = Instant::now();
+    }
+
+    /// Ctrl 组合键（撤销/重做/复制/粘贴/全选）；返回 true 表示已消费，调用方须直接返回。
+    fn handle_edit_shortcut(&mut self, text: &str, ctrl: bool, shift: bool) -> bool {
+        if ctrl && (text == "z" || text == "Z") {
+            if shift {
+                if self
+                    .editor
+                    .redo(&mut self.document, &mut self.index, &mut self.density)
+                {
+                    self.after_edit();
+                }
+            } else if self
+                .editor
+                .undo(&mut self.document, &mut self.index, &mut self.density)
+            {
+                self.after_edit();
+            }
+            return true;
+        }
+        if ctrl && (text == "y" || text == "Y") {
+            if self
+                .editor
+                .redo(&mut self.document, &mut self.index, &mut self.density)
+            {
+                self.after_edit();
+            }
+            return true;
+        }
+        if ctrl && (text == "c" || text == "C") {
+            self.editor
+                .copy_selected(&self.document, self.current_track);
+            return true;
+        }
+        if ctrl && (text == "v" || text == "V") {
+            if let Some((tick, key)) = self.canvas_tick_key() {
+                let tick = self.snap_tick(tick);
+                let key = key as u8;
+                self.editor.paste_at(
+                    &mut self.document,
+                    &mut self.index,
+                    &mut self.density,
+                    self.current_track,
+                    tick,
+                    key,
+                );
+                self.after_edit();
+            }
+            return true;
+        }
+        if ctrl && (text == "a" || text == "A") {
+            self.editor.select_all(&self.document, self.current_track);
+            self.content_dirty = true;
+            return true;
+        }
+        false
+    }
+
+    /// 视图与工具切换键（i / + / - / f / r）。
+    fn handle_view_key(&mut self, text: &str) {
+        if text == "i" || text == "I" {
+            self.editor.tool = match self.editor.tool {
+                Tool::Select => Tool::Insert,
+                Tool::Insert => Tool::Select,
+            };
+            self.editor.status = format!("工具：{}", self.editor.tool_name());
+            self.content_dirty = true;
+        } else if text == "+" || text == "=" {
+            if let Some(camera) = &mut self.camera {
+                let x = camera.width as f32 * 0.5;
+                camera.zoom_x_at(x, camera.zoom_x * 1.25);
+            }
+            self.needs_redraw = true;
+            self.content_dirty = true;
+        } else if text == "-" || text == "_" {
+            if let Some(camera) = &mut self.camera {
+                let x = camera.width as f32 * 0.5;
+                camera.zoom_x_at(x, camera.zoom_x * 0.8);
+            }
+            self.needs_redraw = true;
+            self.content_dirty = true;
+        } else if text == "f" || text == "F" {
+            if let Some(camera) = &mut self.camera {
+                let fit_x = camera.canvas_width() / camera.total_ticks.max(1) as f32;
+                camera.zoom_x = fit_x.clamp(0.0002, 40.0);
+                camera.zoom_y = (camera.canvas_height() / camera.key_count.max(1) as f32).max(1.0);
+                camera.scroll_x = 0.0;
+                camera.target_scroll_x = 0.0;
+                camera.scroll_y = 0.0;
+            }
+            self.needs_redraw = true;
+            self.content_dirty = true;
+        } else if text == "r" || text == "R" {
+            if let Some(camera) = &mut self.camera {
+                camera.zoom_x = self.initial_zoom;
+                camera.scroll_x = 0.0;
+                camera.target_scroll_x = 0.0;
+                camera.center_on_key(60);
+            }
+            self.needs_redraw = true;
+            self.content_dirty = true;
+        }
     }
 }

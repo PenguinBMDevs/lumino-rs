@@ -46,18 +46,7 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
         // 复用标题栏变更用的同一条 `restart_window` 路径——它只重建 WindowManager
         // （窗口 + surface + Host 渲染上下文），不动文档 / 音频 / UI 状态。
         if self.inner.is_some() {
-            // 只有「真的被 suspended 过」才重建。启动期 Android 常连发两次 resumed，
-            // 若不区分就会把刚建好的窗口/表面整个 drop（wgpu 全部 Destroy + Activity invisible）。
-            if !self.suspended_since_resume {
-                log::debug!("启动期重复 resumed：忽略，不重建");
-                return;
-            }
-            self.suspended_since_resume = false;
-            log::info!("回前台：重建窗口与表面");
-            if let Some(this) = self.inner.as_mut() {
-                this.restart_window(event_loop);
-                this.window_state.window.window().request_redraw();
-            }
+            self.resumed_rebuild_window(event_loop);
             return;
         }
 
@@ -85,99 +74,7 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
             }
         }
 
-        match self.init_inner(event_loop) {
-            Ok(inner) => {
-                self.inner = Some(inner);
-
-                log::debug!("init_inner 完成，inner 就绪");
-                // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
-                self.after_inner_started();
-
-                // 崩溃日志 + 自动保存恢复询问：异常退出留下的文件，启动时
-                // 各提示一次。不能在这里同步弹原生模态框——此时首帧还没绘制，
-                // 会白屏且事件循环被阻塞；排到 `about_to_wait` 的首帧之后。
-                // 测试模式跳过——自动化场景不得被模态框卡住。
-                if self.test_config.is_none()
-                    && let Some(this) = self.inner.as_mut()
-                {
-                    this.schedule_startup_prompts();
-                }
-
-                // 诊断开关：启动即加载指定 MIDI（`LUMINO_OPEN_MIDI=path`），
-                // 用于复现播放期输入 / 渲染问题；正常启动不受影响。
-                if self.test_config.is_none()
-                    && let Ok(path) = std::env::var("LUMINO_OPEN_MIDI")
-                    && let Some(this) = self.inner.as_mut()
-                {
-                    tracing::info!("诊断：启动加载 MIDI - {path}");
-                    this.load_midi_file(std::path::PathBuf::from(path));
-                }
-
-                // 如果是测试模式，自动加载 MIDI
-                if let Some(test_config) = self.test_config.take()
-                    && let Some(this) = self.inner.as_mut()
-                {
-                    tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
-                    let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                    let progress_cb = Arc::clone(&this.window_state.progress_cb);
-                    let test_duration = test_config.test_time;
-
-                    this.window_state.window.ui_mut().skip_ui_rendering = true;
-                    this.test_state.test_mode_state = Some(TestModeState {
-                        active: false,
-                        start_time: None,
-                        duration: test_duration,
-                        fps_samples: Vec::new(),
-                        last_fps_update: None,
-                        frame_count: 0,
-                    });
-
-                    // 看门狗在加载 MIDI 前确保已启动，并标记加载状态：
-                    // 测试模式同样受"只监控加载 MIDI 期间"约束
-                    lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
-
-                    tokio::spawn(async move {
-                        match lumino_midi_loader::loader::load_parsed_midi(
-                            midi_path,
-                            Some(&progress_cb),
-                        )
-                        .await
-                        {
-                            Ok(parsed) => {
-                                tracing::info!("测试模式：MIDI 加载完成");
-                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                                lumino_ui::event::emit(lumino_ui::event::Event::Menu(
-                                    lumino_ui::event::menu::Event::File(
-                                        lumino_ui::event::menu::file::Event::MidiParsed(
-                                            std::sync::Arc::new(parsed),
-                                        ),
-                                    ),
-                                ));
-                            }
-                            Err(e) => {
-                                tracing::error!("测试模式：MIDI 加载失败 - {e}");
-                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
-                                lumino_ui::event::emit(lumino_ui::event::Event::Menu(
-                                    lumino_ui::event::menu::Event::File(
-                                        lumino_ui::event::menu::file::Event::MidiParseError(
-                                            e.to_string(),
-                                        ),
-                                    ),
-                                ));
-                            }
-                        }
-                    });
-                }
-            }
-            Err(e) => {
-                tracing::error!("Runner 初始化失败：{}", e);
-                #[cfg(target_os = "android")]
-                log::error!("Android 初始化失败: {e}");
-                self.init_error = Some(e);
-                event_loop.exit();
-            }
-        }
+        self.resumed_start(event_loop);
     }
 
     fn window_event(
@@ -259,6 +156,155 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
 
+        if !self.about_to_wait_pre_inner(event_loop) {
+            return;
+        }
+
+        let Some(this) = self.inner.as_mut() else {
+            return;
+        };
+
+        about_to_wait_progress(this, event_loop);
+
+        about_to_wait_window_and_audio(this, event_loop);
+
+        about_to_wait_events_and_dialogs(this, event_loop);
+
+        about_to_wait_dialog_update_and_persist(this);
+
+        about_to_wait_control(this, event_loop);
+    }
+}
+
+// ── resumed 阶段 ────────────────────────────────────────────────────────
+
+impl Runner {
+    /// `resumed` 的「续次恢复」分支：真的被 suspended 过才重建窗口与表面。
+    fn resumed_rebuild_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // 只有「真的被 suspended 过」才重建。启动期 Android 常连发两次 resumed，
+        // 若不区分就会把刚建好的窗口/表面整个 drop（wgpu 全部 Destroy + Activity invisible）。
+        if !self.suspended_since_resume {
+            log::debug!("启动期重复 resumed：忽略，不重建");
+            return;
+        }
+        self.suspended_since_resume = false;
+        log::info!("回前台：重建窗口与表面");
+        if let Some(this) = self.inner.as_mut() {
+            this.restart_window(event_loop);
+            this.window_state.window.window().request_redraw();
+        }
+    }
+
+    /// `resumed` 的初始化阶段：创建设备门控放行后的 `RunnerInner`，
+    /// 再按启动开关依次排入启动提示、诊断 MIDI 与测试模式加载。
+    fn resumed_start(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        match self.init_inner(event_loop) {
+            Ok(inner) => {
+                self.inner = Some(inner);
+
+                log::debug!("init_inner 完成，inner 就绪");
+                // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
+                self.after_inner_started();
+
+                self.resumed_schedule_startup_prompts();
+                self.resumed_open_midi_from_env();
+                self.resumed_start_test_mode();
+            }
+            Err(e) => {
+                tracing::error!("Runner 初始化失败：{}", e);
+                #[cfg(target_os = "android")]
+                log::error!("Android 初始化失败: {e}");
+                self.init_error = Some(e);
+                event_loop.exit();
+            }
+        }
+    }
+
+    /// 启动提示排程（崩溃日志 / 自动保存恢复询问）。
+    fn resumed_schedule_startup_prompts(&mut self) {
+        // 崩溃日志 + 自动保存恢复询问：异常退出留下的文件，启动时
+        // 各提示一次。不能在这里同步弹原生模态框——此时首帧还没绘制，
+        // 会白屏且事件循环被阻塞；排到 `about_to_wait` 的首帧之后。
+        // 测试模式跳过——自动化场景不得被模态框卡住。
+        if self.test_config.is_none()
+            && let Some(this) = self.inner.as_mut()
+        {
+            this.schedule_startup_prompts();
+        }
+    }
+
+    /// 诊断开关：按环境变量在启动时加载 MIDI。
+    fn resumed_open_midi_from_env(&mut self) {
+        // 诊断开关：启动即加载指定 MIDI（`LUMINO_OPEN_MIDI=path`），
+        // 用于复现播放期输入 / 渲染问题；正常启动不受影响。
+        if self.test_config.is_none()
+            && let Ok(path) = std::env::var("LUMINO_OPEN_MIDI")
+            && let Some(this) = self.inner.as_mut()
+        {
+            tracing::info!("诊断：启动加载 MIDI - {path}");
+            this.load_midi_file(std::path::PathBuf::from(path));
+        }
+    }
+
+    /// 测试模式：置位 UI / 测试状态、启动看门狗后异步加载 MIDI。
+    fn resumed_start_test_mode(&mut self) {
+        // 如果是测试模式，自动加载 MIDI
+        if let Some(test_config) = self.test_config.take()
+            && let Some(this) = self.inner.as_mut()
+        {
+            tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
+            let midi_path = std::path::PathBuf::from(&test_config.midi_path);
+            let progress_cb = Arc::clone(&this.window_state.progress_cb);
+            let test_duration = test_config.test_time;
+
+            this.window_state.window.ui_mut().skip_ui_rendering = true;
+            this.test_state.test_mode_state = Some(TestModeState {
+                active: false,
+                start_time: None,
+                duration: test_duration,
+                fps_samples: Vec::new(),
+                last_fps_update: None,
+                frame_count: 0,
+            });
+
+            // 看门狗在加载 MIDI 前确保已启动，并标记加载状态：
+            // 测试模式同样受"只监控加载 MIDI 期间"约束
+            lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+            lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
+
+            tokio::spawn(async move {
+                match lumino_midi_loader::loader::load_parsed_midi(midi_path, Some(&progress_cb))
+                    .await
+                {
+                    Ok(parsed) => {
+                        tracing::info!("测试模式：MIDI 加载完成");
+                        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
+                        lumino_ui::event::emit(lumino_ui::event::Event::Menu(
+                            lumino_ui::event::menu::Event::File(
+                                lumino_ui::event::menu::file::Event::MidiParsed(
+                                    std::sync::Arc::new(parsed),
+                                ),
+                            ),
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::error!("测试模式：MIDI 加载失败 - {e}");
+                        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
+                        lumino_ui::event::emit(lumino_ui::event::Event::Menu(
+                            lumino_ui::event::menu::Event::File(
+                                lumino_ui::event::menu::file::Event::MidiParseError(e.to_string()),
+                            ),
+                        ));
+                    }
+                }
+            });
+        }
+    }
+
+    /// `about_to_wait` 前半段：点击补帧、重连推进、状态提示清除与警告窗分流。
+    ///
+    /// 返回 `false` 表示本帧由警告窗阶段处理完毕，调用方应直接结束。
+    fn about_to_wait_pre_inner(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) -> bool {
         // 点击优先：本批窗口事件已全部处理完，先把点击 / 触摸产生的帧补上，
         // 再跑重连、进度、对话框等后台工作。渲染绝不插到两次点击之间，
         // 也不会让 `WM_PAINT` 的低优先级拖住点击反馈。
@@ -281,7 +327,7 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
         // 设备检查警告窗阶段：主窗口未初始化，只处理警告窗的用户选择
         if self.inner.is_none() {
             self.about_to_wait_device_warning(event_loop);
-            return;
+            return false;
         }
 
         // REND-019 周边（R4 P2 反馈）：最大化微扰的"取消最大化→重最大化"会把主窗
@@ -293,166 +339,193 @@ impl lumino_ui_runtime::RuntimeApp<crate::runner::UserEvent> for Runner {
             this.window_state.dialog_manager.raise_all_dialogs();
         }
 
-        let Some(this) = self.inner.as_mut() else {
-            return;
-        };
-
-        // 处理进度消息
-        puffin::profile_scope!("runner_about_to_wait_process_messages");
-        let main_window = Arc::clone(this.window_state.window.window());
-        let main_ui = this.window_state.window.ui_mut();
-        this.window_state
-            .progress
-            .process_messages(main_ui, &main_window);
-
-        // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
-        // 同时检测洋葱皮生成完成，设置编辑开始时间
-        this.about_to_wait_waterfall_progress();
-
-        // 注意：脏区域临时覆层只在 set_current_track 中发送，
-        // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
-        // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
-        // 直到 force_waterfall_regen 后台重生完成并清理覆层。
-
-        // 更新进度窗口
-        puffin::profile_scope!("runner_about_to_wait_progress_update");
-        let ui_config = this.window_state.storage.config.get().ui.clone();
-        this.window_state.progress.update(event_loop, &ui_config);
-
-        // 云传输进度悬浮窗：覆盖定位在云浏览对话框（无则主窗口）上
-        puffin::profile_scope!("runner_about_to_wait_cloud_progress_update");
-        this.window_state.cloud_progress.process_messages();
-        // 云浏览对话框存在则以其为锚点，否则回退主窗口——恒有锚点，
-        // 故用非 Option 引用，消除「永远走不到 None」的死路径（步骤5）。
-        let cloud_anchor: &winit::window::Window = match this
-            .window_state
-            .dialog_manager
-            .dialog_window_of_type(DialogType::CloudBrowser)
-        {
-            Some(w) => w.as_ref(),
-            None => this.window_state.window.window().as_ref(),
-        };
-        this.window_state
-            .cloud_progress
-            .update(event_loop, &ui_config, cloud_anchor);
-
-        // 处理窗口动作
-        puffin::profile_scope!("runner_about_to_wait_window_actions");
-        this.window_state.window.handle_window_actions(event_loop);
-
-        // 窗口关闭被保存确认对话框挂起（工程存在未保存更改）：弹出确认对话框
-        // 交由 Runner 决定「保存 / 关闭（放弃）/ 取消」。读取并清空该标志。
-        if this.window_state.window.take_deferred_save_confirm_close() {
-            use crate::runner::inner::PendingCloseAction;
-            this.request_close_action(PendingCloseAction::WindowClose, event_loop);
-        }
-
-        // 处理音频动作
-        puffin::profile_scope!("runner_about_to_wait_audio_actions");
-        crate::runner::inner::RunnerInner::process_audio_actions(
-            &mut this.window_state.window,
-            &mut this.midi_state.midi,
-        );
-
-        // 处理核心事件（包括打开对话框）
-        puffin::profile_scope!("runner_about_to_wait_core_events");
-        this.process_core_events(event_loop);
-
-        // 初始化新创建的对话框（同步主窗口的协作状态）
-        this.about_to_wait_init_dialogs(event_loop);
-
-        // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
-        // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
-        this.try_fill_recover_track_entries();
-        this.sync_history_dialog();
-        // 混音台：开关对账 + 通道条 / 电平快照推送（窗口初始化完成后才推）
-        this.sync_mixer_dialog();
-        // DEBT-14：主窗口「退回抽屉」的数据转发给抽屉窗口
-        this.sync_shape_drawer_return();
-
-        // 启动提示（崩溃日志 / 自动保存恢复）排到首帧之后执行，
-        // 避免原生模态框在窗口绘制前阻塞事件循环。
-        this.run_startup_prompts();
-
-        // GPU 检测会话状态灌注（设置对话框刚创建 / 重开时重放 Running、冷却与结果）
-        this.about_to_wait_gpu_check();
-
-        // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
-        // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的
-        // 预览帧/进度会被转发到一个不存在的对话框而丢失。
-        this.about_to_wait_forward_video_preview();
-
-        // 处理导出进度消息（转发到对应的对话框窗口）
-        this.about_to_wait_forward_export_progress();
-
-        // 更新对话框
-        puffin::profile_scope!("runner_about_to_wait_dialog_update");
-        this.window_state.dialog_manager.update();
-        // 混音台：对话框重绘产生的推子 / 静音 / 主音量动作，回放到主窗口。
-        this.drain_mixer_dialog_actions();
-
-        // UI-015：工程设置对话框打开期间同步音符总量（值变化才推送/重绘）
-        if this
-            .window_state
-            .dialog_manager
-            .has_dialog_type(DialogType::ProjectSettings)
-        {
-            let count = this.window_state.window.ui().get_editor_note_count();
-            this.window_state
-                .dialog_manager
-                .forward_project_settings_note_count(count);
-        }
-
-        // 设置面板切换主题：立即全局应用（主窗口 + 所有对话框），
-        // 与 View 菜单复用 apply_global_theme；配置持久化交给随后同一帧的
-        // save_storage。消费后设置对话框主题已是新值，回灌不会再次入队。
-        if let Some(theme) = this
-            .window_state
-            .dialog_manager
-            .take_pending_settings_theme()
-        {
-            tracing::info!("设置面板切换主题，立即全局应用: {}", theme);
-            this.apply_global_theme(theme);
-        }
-
-        // 保存存储
-        puffin::profile_scope!("runner_about_to_wait_save_storage");
-        this.save_storage();
-
-        // 内存日志
-        puffin::profile_scope!("runner_about_to_wait_memory_logging");
-        this.handle_memory_logging();
-
-        // 重新初始化 MIDI 或检查 XSynth 异步初始化
-        puffin::profile_scope!("runner_about_to_wait_midi_reinit");
-        this.handle_midi_reinit();
-
-        // 检查是否需要重启窗口（标题栏设置变更）
-        if this.window_state.needs_window_restart {
-            this.window_state.needs_window_restart = false;
-            this.restart_window(event_loop);
-        }
-
-        // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
-        // 本地保存与云端上传均结束后自动退出
-        if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
-            log::info!("延迟退出：保存完成，关闭事件循环");
-            this.window_state.window.close_pending = false;
-            event_loop.exit();
-            return;
-        }
-
-        // 周期自动保存心跳：放在控制流策略之前，本轮到点排程能立即参与
-        // `handle_control_flow` 的唤醒点合并（未启用时廉价早退）。
-        puffin::profile_scope!("runner_about_to_wait_autosave");
-        this.autosave_tick();
-
-        // 控制循环休眠策略
-        puffin::profile_scope!("runner_about_to_wait_control_flow");
-        this.handle_control_flow(event_loop);
-
-        // 测试模式 FPS 监测
-        puffin::profile_scope!("runner_about_to_wait_test_mode_fps");
-        this.handle_test_mode_fps(event_loop);
+        true
     }
+}
+
+// ── about_to_wait 阶段 ──────────────────────────────────────────────────
+
+/// 进度阶段：消费进度与洋葱皮进度消息，更新进度窗口与云传输悬浮窗。
+fn about_to_wait_progress(
+    this: &mut crate::runner::inner::RunnerInner,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+) {
+    // 处理进度消息
+    puffin::profile_scope!("runner_about_to_wait_process_messages");
+    let main_window = Arc::clone(this.window_state.window.window());
+    let main_ui = this.window_state.window.ui_mut();
+    this.window_state
+        .progress
+        .process_messages(main_ui, &main_window);
+
+    // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
+    // 同时检测洋葱皮生成完成，设置编辑开始时间
+    this.about_to_wait_waterfall_progress();
+
+    // 注意：脏区域临时覆层只在 set_current_track 中发送，
+    // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
+    // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
+    // 直到 force_waterfall_regen 后台重生完成并清理覆层。
+
+    // 更新进度窗口
+    puffin::profile_scope!("runner_about_to_wait_progress_update");
+    let ui_config = this.window_state.storage.config.get().ui.clone();
+    this.window_state.progress.update(event_loop, &ui_config);
+
+    // 云传输进度悬浮窗：覆盖定位在云浏览对话框（无则主窗口）上
+    puffin::profile_scope!("runner_about_to_wait_cloud_progress_update");
+    this.window_state.cloud_progress.process_messages();
+    // 云浏览对话框存在则以其为锚点，否则回退主窗口——恒有锚点，
+    // 故用非 Option 引用，消除「永远走不到 None」的死路径（步骤5）。
+    let cloud_anchor: &winit::window::Window = match this
+        .window_state
+        .dialog_manager
+        .dialog_window_of_type(DialogType::CloudBrowser)
+    {
+        Some(w) => w.as_ref(),
+        None => this.window_state.window.window().as_ref(),
+    };
+    this.window_state
+        .cloud_progress
+        .update(event_loop, &ui_config, cloud_anchor);
+}
+
+/// 窗口与音频阶段：窗口动作、被挂起的关闭确认、音频动作。
+fn about_to_wait_window_and_audio(
+    this: &mut crate::runner::inner::RunnerInner,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+) {
+    // 处理窗口动作
+    puffin::profile_scope!("runner_about_to_wait_window_actions");
+    this.window_state.window.handle_window_actions(event_loop);
+
+    // 窗口关闭被保存确认对话框挂起（工程存在未保存更改）：弹出确认对话框
+    // 交由 Runner 决定「保存 / 关闭（放弃）/ 取消」。读取并清空该标志。
+    if this.window_state.window.take_deferred_save_confirm_close() {
+        use crate::runner::inner::PendingCloseAction;
+        this.request_close_action(PendingCloseAction::WindowClose, event_loop);
+    }
+
+    // 处理音频动作
+    puffin::profile_scope!("runner_about_to_wait_audio_actions");
+    crate::runner::inner::RunnerInner::process_audio_actions(
+        &mut this.window_state.window,
+        &mut this.midi_state.midi,
+    );
+}
+
+/// 事件与对话框阶段：核心事件、对话框初始化与各类同步、启动提示、导出转发。
+fn about_to_wait_events_and_dialogs(
+    this: &mut crate::runner::inner::RunnerInner,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+) {
+    // 处理核心事件（包括打开对话框）
+    puffin::profile_scope!("runner_about_to_wait_core_events");
+    this.process_core_events(event_loop);
+
+    // 初始化新创建的对话框（同步主窗口的协作状态）
+    this.about_to_wait_init_dialogs(event_loop);
+
+    // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
+    // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
+    this.try_fill_recover_track_entries();
+    this.sync_history_dialog();
+    // 混音台：开关对账 + 通道条 / 电平快照推送（窗口初始化完成后才推）
+    this.sync_mixer_dialog();
+    // DEBT-14：主窗口「退回抽屉」的数据转发给抽屉窗口
+    this.sync_shape_drawer_return();
+
+    // 启动提示（崩溃日志 / 自动保存恢复）排到首帧之后执行，
+    // 避免原生模态框在窗口绘制前阻塞事件循环。
+    this.run_startup_prompts();
+
+    // GPU 检测会话状态灌注（设置对话框刚创建 / 重开时重放 Running、冷却与结果）
+    this.about_to_wait_gpu_check();
+
+    // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
+    // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的
+    // 预览帧/进度会被转发到一个不存在的对话框而丢失。
+    this.about_to_wait_forward_video_preview();
+
+    // 处理导出进度消息（转发到对应的对话框窗口）
+    this.about_to_wait_forward_export_progress();
+}
+
+/// 对话框更新与落盘阶段：重绘、混音台回放、工程设置同步、全局主题与存储保存。
+fn about_to_wait_dialog_update_and_persist(this: &mut crate::runner::inner::RunnerInner) {
+    // 更新对话框
+    puffin::profile_scope!("runner_about_to_wait_dialog_update");
+    this.window_state.dialog_manager.update();
+    // 混音台：对话框重绘产生的推子 / 静音 / 主音量动作，回放到主窗口。
+    this.drain_mixer_dialog_actions();
+
+    // UI-015：工程设置对话框打开期间同步音符总量（值变化才推送/重绘）
+    if this
+        .window_state
+        .dialog_manager
+        .has_dialog_type(DialogType::ProjectSettings)
+    {
+        let count = this.window_state.window.ui().get_editor_note_count();
+        this.window_state
+            .dialog_manager
+            .forward_project_settings_note_count(count);
+    }
+
+    // 设置面板切换主题：立即全局应用（主窗口 + 所有对话框），
+    // 与 View 菜单复用 apply_global_theme；配置持久化交给随后同一帧的
+    // save_storage。消费后设置对话框主题已是新值，回灌不会再次入队。
+    if let Some(theme) = this
+        .window_state
+        .dialog_manager
+        .take_pending_settings_theme()
+    {
+        tracing::info!("设置面板切换主题，立即全局应用: {}", theme);
+        this.apply_global_theme(theme);
+    }
+
+    // 保存存储
+    puffin::profile_scope!("runner_about_to_wait_save_storage");
+    this.save_storage();
+
+    // 内存日志
+    puffin::profile_scope!("runner_about_to_wait_memory_logging");
+    this.handle_memory_logging();
+
+    // 重新初始化 MIDI 或检查 XSynth 异步初始化
+    puffin::profile_scope!("runner_about_to_wait_midi_reinit");
+    this.handle_midi_reinit();
+}
+
+/// 控制阶段：窗口重启、延迟退出、自动保存心跳与事件循环休眠策略。
+fn about_to_wait_control(
+    this: &mut crate::runner::inner::RunnerInner,
+    event_loop: &winit::event_loop::ActiveEventLoop,
+) {
+    // 检查是否需要重启窗口（标题栏设置变更）
+    if this.window_state.needs_window_restart {
+        this.window_state.needs_window_restart = false;
+        this.restart_window(event_loop);
+    }
+
+    // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
+    // 本地保存与云端上传均结束后自动退出
+    if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
+        log::info!("延迟退出：保存完成，关闭事件循环");
+        this.window_state.window.close_pending = false;
+        event_loop.exit();
+        return;
+    }
+
+    // 周期自动保存心跳：放在控制流策略之前，本轮到点排程能立即参与
+    // `handle_control_flow` 的唤醒点合并（未启用时廉价早退）。
+    puffin::profile_scope!("runner_about_to_wait_autosave");
+    this.autosave_tick();
+
+    // 控制循环休眠策略
+    puffin::profile_scope!("runner_about_to_wait_control_flow");
+    this.handle_control_flow(event_loop);
+
+    // 测试模式 FPS 监测
+    puffin::profile_scope!("runner_about_to_wait_test_mode_fps");
+    this.handle_test_mode_fps(event_loop);
 }

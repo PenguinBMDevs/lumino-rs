@@ -324,6 +324,15 @@ L = 逐音符对照（历史实现）| B = 同载荷批量归并"
         last = r;
     }
 
+    print_single_row_table(&p_ms, &l_ms, &b_ms, &last);
+
+    report_gates(&p_ms, &l_ms, &b_ms, &last);
+
+    print_growth_curve(division);
+}
+
+/// 打印单档三路径（P 生产 / L 逐音符 / B 批量）指标表
+fn print_single_row_table(p_ms: &[f64], l_ms: &[f64], b_ms: &[f64], last: &Row) {
     println!("── 单档（{} 音符）──", last.notes);
     println!(
         "{:<30} | {:>13} | {:>13} | {:>11}",
@@ -335,9 +344,9 @@ L = 逐音符对照（历史实现）| B = 同载荷批量归并"
     };
     row(
         "写入耗时（中位）",
-        format!("{:.1} ms", median(&p_ms)),
-        format!("{:.1} ms", median(&l_ms)),
-        format!("{:.1} ms", median(&b_ms)),
+        format!("{:.1} ms", median(p_ms)),
+        format!("{:.1} ms", median(l_ms)),
+        format!("{:.1} ms", median(b_ms)),
     );
     row(
         "delta 事件数",
@@ -391,9 +400,12 @@ L = 逐音符对照（历史实现）| B = 同载荷批量归并"
         }
         .into(),
     );
+}
 
-    let p_med = median(&p_ms);
-    let b_med = median(&b_ms);
+/// 打印判定行与对照行（耗时门控 / GPU 搬移门控 / 相对批量提速）
+fn report_gates(p_ms: &[f64], l_ms: &[f64], b_ms: &[f64], last: &Row) {
+    let p_med = median(p_ms);
+    let b_med = median(b_ms);
     let gate_time = p_med <= TARGET_CONFIRM_MS;
     let gate_render = last.p_cost.moved_instances == 0;
     println!();
@@ -409,7 +421,7 @@ GPU 搬移实例 {}（要求 0）{} | 相对批量路径 {:.1}×",
             f64::NAN
         }
     );
-    let l_med = median(&l_ms);
+    let l_med = median(l_ms);
     if l_med > 0.0 && b_med > 0.0 {
         println!(
             "对照：逐音符路径 {l_med:.1} ms / 搬移 {:.0} 万实例 → 批量 {b_med:.1} ms / 搬移 0（提速 {:.0}×）",
@@ -417,8 +429,10 @@ GPU 搬移实例 {}（要求 0）{} | 相对批量路径 {:.1}×",
             l_med / b_med
         );
     }
+}
 
-    // ── 增长曲线：生产路径 Σtail 随 N 的增长阶数 ──
+/// ── 增长曲线：生产路径 Σtail 随 N 的增长阶数 ──
+fn print_growth_curve(division: Option<u32>) {
     println!();
     println!("── 增长曲线（图形宽度扫描）──");
     println!(

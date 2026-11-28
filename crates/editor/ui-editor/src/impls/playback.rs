@@ -156,111 +156,11 @@ impl PlaybackKeyState {
             (doc.track_count(), notes_gen, need_full_rebuild)
         };
 
+        // 全量重建与增量扫描各自并入 active_notes，只差起点与复杂度。
         if need_full_rebuild {
-            // 仅在音符数据变化时重建索引（按世代缓存，避免每次 seek/循环重复建树）
-            if self.scan.notes_gen != Some(notes_gen) {
-                self.rebuild_index(data, track_count, notes_gen);
-            }
-
-            let Some(doc) = data.document.as_ref() else {
-                return;
-            };
-
-            // 全量重建需保证 scan_idx 容量与 track_count 对齐（首次/重置后长度为 0）
-            if self.scan.scan_idx.len() != track_count {
-                self.scan.scan_idx = vec![0; track_count];
-            }
-
-            if let Some(ki) = &self.scan.key_color_index {
-                // O(活跃) 路径：直接查询在 [tick, tick] 区间活跃的音符
-                let mut result = Vec::new();
-                ki.index.update_query(tick, tick, 0, 255, &mut result);
-                self.scan.active_notes.clear();
-                for &gi in &result {
-                    let end_tick = ki.end_of[gi];
-                    // 与原 O(end) 路径一致：仅 end_tick > tick 的音符视为活跃
-                    if end_tick <= tick_u32 {
-                        continue;
-                    }
-                    let track = ki.track_of[gi] as usize;
-                    let key = ki.key_of[gi] as usize;
-                    let color = onion_track_color(track);
-                    self.scan.active_notes.push((end_tick, key * 4, color));
-                }
-                // 维持 scan_idx 不变量，使后续增量路径保持 O(活跃) 而非退回 O(end)
-                for (track_idx, scan_idx) in
-                    self.scan.scan_idx.iter_mut().enumerate().take(track_count)
-                {
-                    let notes = doc.track_notes(track_idx);
-                    if notes.is_empty() {
-                        continue;
-                    }
-                    let end = notes.partition_point(tick_u32.wrapping_add(1));
-                    *scan_idx = end;
-                }
-            } else {
-                // 回退：超大工程（超阈值未建索引）走原 O(end) 线性扫描
-                self.scan = PlaybackScanState {
-                    last_tick: tick,
-                    scan_idx: vec![0; track_count],
-                    active_notes: Vec::new(),
-                    notes_gen: Some(notes_gen),
-                    key_color_index: None,
-                };
-
-                for track_idx in 0..track_count {
-                    let notes = doc.track_notes(track_idx);
-                    if notes.is_empty() {
-                        continue;
-                    }
-                    let color = onion_track_color(track_idx);
-                    // ChunkedList::partition_point(tick+1) = 第一个 tick > tick_u32 的索引
-                    // （等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`）
-                    let end = notes.partition_point(tick_u32.wrapping_add(1));
-                    self.scan.scan_idx[track_idx] = end;
-                    // 仅扫描 [start, end) 区间——新进入活跃的音符
-                    for n in notes.iter().take(end) {
-                        if n.end_tick() > tick_u32 {
-                            let offset = (n.key as usize) * 4;
-                            self.scan.active_notes.push((n.end_tick(), offset, color));
-                        }
-                    }
-                }
-            }
+            self.rebuild_active_notes(data, track_count, notes_gen, tick, tick_u32);
         } else {
-            // 增量扫描：从上次位置继续，把新进入活跃的音符 push 进 active_notes
-            // 注意：scan_idx 长度可能 < track_count（首次扫描前未初始化），用 max 兜底
-            let Some(doc) = data.document.as_ref() else {
-                return;
-            };
-
-            if self.scan.scan_idx.len() < track_count {
-                self.scan.scan_idx.resize(track_count, 0);
-            }
-
-            for track_idx in 0..track_count {
-                let notes = doc.track_notes(track_idx);
-                if notes.is_empty() {
-                    continue;
-                }
-                let color = onion_track_color(track_idx);
-                let start = self.scan.scan_idx[track_idx];
-                // 等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`
-                let end = notes.partition_point(tick_u32.wrapping_add(1));
-                self.scan.scan_idx[track_idx] = end;
-                // 仅扫描 [start, end) 区间——新进入活跃的音符
-                for n in notes.iter().skip(start).take(end.saturating_sub(start)) {
-                    if n.end_tick() > tick_u32 {
-                        let offset = (n.key as usize) * 4;
-                        self.scan.active_notes.push((n.end_tick(), offset, color));
-                    }
-                }
-            }
-
-            // 清理已结束的音符（活跃音符数通常 < 几百，retain O(几百)）
-            self.scan
-                .active_notes
-                .retain(|(end_tick, _, _)| *end_tick > tick_u32);
+            self.scan_incremental(data, track_count, tick_u32);
         }
 
         self.scan.last_tick = tick;
@@ -272,6 +172,134 @@ impl PlaybackKeyState {
             new_colors[offset..offset + 4].copy_from_slice(color);
         }
         self.key_colors.colors = new_colors;
+    }
+
+    /// 全量重建活跃音符集合（音符世代变化、tick 回退或大幅前跳时）
+    ///
+    /// 仅在音符数据变化时重建空间索引；随后优先经 `key_color_index` 的
+    /// O(活跃) 路径取音符，超大工程未建索引时回退 O(end) 线性扫描。
+    ///
+    /// 文档不可用时直接返回：调用方 `update` 已用同一 `&EditorData` 判定文档存在，
+    /// 其间不存在可改变 `document` 的操作，故该分支不可达。
+    fn rebuild_active_notes(
+        &mut self,
+        data: &EditorData,
+        track_count: usize,
+        notes_gen: u64,
+        tick: f32,
+        tick_u32: u32,
+    ) {
+        // 仅在音符数据变化时重建索引（按世代缓存，避免每次 seek/循环重复建树）
+        if self.scan.notes_gen != Some(notes_gen) {
+            self.rebuild_index(data, track_count, notes_gen);
+        }
+
+        let Some(doc) = data.document.as_ref() else {
+            return;
+        };
+
+        // 全量重建需保证 scan_idx 容量与 track_count 对齐（首次/重置后长度为 0）
+        if self.scan.scan_idx.len() != track_count {
+            self.scan.scan_idx = vec![0; track_count];
+        }
+
+        if let Some(ki) = &self.scan.key_color_index {
+            // O(活跃) 路径：直接查询在 [tick, tick] 区间活跃的音符
+            let mut result = Vec::new();
+            ki.index.update_query(tick, tick, 0, 255, &mut result);
+            self.scan.active_notes.clear();
+            for &gi in &result {
+                let end_tick = ki.end_of[gi];
+                // 与原 O(end) 路径一致：仅 end_tick > tick 的音符视为活跃
+                if end_tick <= tick_u32 {
+                    continue;
+                }
+                let track = ki.track_of[gi] as usize;
+                let key = ki.key_of[gi] as usize;
+                let color = onion_track_color(track);
+                self.scan.active_notes.push((end_tick, key * 4, color));
+            }
+            // 维持 scan_idx 不变量，使后续增量路径保持 O(活跃) 而非退回 O(end)
+            for (track_idx, scan_idx) in self.scan.scan_idx.iter_mut().enumerate().take(track_count)
+            {
+                let notes = doc.track_notes(track_idx);
+                if notes.is_empty() {
+                    continue;
+                }
+                let end = notes.partition_point(tick_u32.wrapping_add(1));
+                *scan_idx = end;
+            }
+        } else {
+            // 回退：超大工程（超阈值未建索引）走原 O(end) 线性扫描
+            self.scan = PlaybackScanState {
+                last_tick: tick,
+                scan_idx: vec![0; track_count],
+                active_notes: Vec::new(),
+                notes_gen: Some(notes_gen),
+                key_color_index: None,
+            };
+
+            for track_idx in 0..track_count {
+                let notes = doc.track_notes(track_idx);
+                if notes.is_empty() {
+                    continue;
+                }
+                let color = onion_track_color(track_idx);
+                // ChunkedList::partition_point(tick+1) = 第一个 tick > tick_u32 的索引
+                // （等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`）
+                let end = notes.partition_point(tick_u32.wrapping_add(1));
+                self.scan.scan_idx[track_idx] = end;
+                // 仅扫描 [start, end) 区间——新进入活跃的音符
+                for n in notes.iter().take(end) {
+                    if n.end_tick() > tick_u32 {
+                        let offset = (n.key as usize) * 4;
+                        self.scan.active_notes.push((n.end_tick(), offset, color));
+                    }
+                }
+            }
+        }
+    }
+
+    /// 增量扫描新进入活跃的音符，并清理已结束的音符
+    ///
+    /// 从 `scan_idx` 记录的游标继续，把 `[start, end)` 区间内仍活跃的音符 push 进
+    /// `active_notes`；随后 retain 掉已结束的音符（活跃音符数通常 < 几百）。
+    ///
+    /// 文档不可用时直接返回：与 `rebuild_active_notes` 同理，该分支不可达。
+    fn scan_incremental(&mut self, data: &EditorData, track_count: usize, tick_u32: u32) {
+        // 增量扫描：从上次位置继续，把新进入活跃的音符 push 进 active_notes
+        // 注意：scan_idx 长度可能 < track_count（首次扫描前未初始化），用 max 兜底
+        let Some(doc) = data.document.as_ref() else {
+            return;
+        };
+
+        if self.scan.scan_idx.len() < track_count {
+            self.scan.scan_idx.resize(track_count, 0);
+        }
+
+        for track_idx in 0..track_count {
+            let notes = doc.track_notes(track_idx);
+            if notes.is_empty() {
+                continue;
+            }
+            let color = onion_track_color(track_idx);
+            let start = self.scan.scan_idx[track_idx];
+            // 等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`
+            let end = notes.partition_point(tick_u32.wrapping_add(1));
+            self.scan.scan_idx[track_idx] = end;
+            // 仅扫描 [start, end) 区间——新进入活跃的音符
+            for n in notes.iter().skip(start).take(end.saturating_sub(start)) {
+                if n.end_tick() > tick_u32 {
+                    let offset = (n.key as usize) * 4;
+                    self.scan.active_notes.push((n.end_tick(), offset, color));
+                }
+            }
+        }
+
+        // 清理已结束的音符（活跃音符数通常 < 几百，retain O(几百)）
+        self.scan
+            .active_notes
+            .retain(|(end_tick, _, _)| *end_tick > tick_u32);
     }
 
     /// 为播放键色构建跨所有轨的空间索引（按 doc 缓存）

@@ -63,6 +63,26 @@ pub fn apply(path: &[Pt], params: &TumourParams, ppq: f64) -> (Vec<Pt>, TumourRe
         return (path.to_vec(), TumourReport::default());
     }
 
+    let (bumps, truncated) = collect_bumps(params, &sampler, ppq, range_start, range_end);
+    let report = TumourReport {
+        bumps: bumps.len(),
+        truncated,
+    };
+
+    let out = assemble(path, &sampler, &bumps, params);
+
+    (out, report)
+}
+
+/// 在 `range_start..range_end` 内布凸起起点；返回凸起列表与是否被截断
+fn collect_bumps(
+    params: &TumourParams,
+    sampler: &Sampler,
+    ppq: f64,
+    range_start: f64,
+    range_end: f64,
+) -> (Vec<Bump>, bool) {
+    let range = range_end - range_start;
     let base_dist = params.dist as f64 * ppq;
     let mut dist = base_dist;
     let mut fit_count = None;
@@ -117,25 +137,24 @@ pub fn apply(path: &[Pt], params: &TumourParams, ppq: f64) -> (Vec<Pt>, TumourRe
     }
 
     let truncated = wanted > MAX_TUMOURS || (s < range_end - EPS && bumps.len() >= limit);
-    let report = TumourReport {
-        bumps: bumps.len(),
-        truncated,
-    };
+    (bumps, truncated)
+}
 
+/// 拼出最终路径：原路径点 + 每个凸起的轮廓点
+fn assemble(path: &[Pt], sampler: &Sampler, bumps: &[Bump], params: &TumourParams) -> Vec<Pt> {
     let mut out = Vec::with_capacity(path.len() + bumps.len() * 12);
     push_distinct(&mut out, path[0]);
     let mut cursor = 0.0;
     for (index, bump) in bumps.iter().enumerate() {
         append_vertices(&mut out, path, &sampler.cum, cursor, bump.s);
-        for point in bump_points(&sampler, bump, params, index) {
+        for point in bump_points(sampler, bump, params, index) {
             push_distinct(&mut out, point);
         }
         cursor = bump.end;
     }
     append_vertices(&mut out, path, &sampler.cum, cursor, sampler.total);
     push_distinct(&mut out, path[path.len() - 1]);
-
-    (out, report)
+    out
 }
 
 struct Bump {

@@ -169,35 +169,7 @@ pub fn show(
             .data(|d| d.get_temp::<Option<Session>>(session_id))
             .flatten()
     {
-        match session {
-            Session::Thumb {
-                start_x,
-                start_scroll,
-            } => {
-                let target = thumb_drag_scroll(start_scroll, pos.x - start_x, &geo);
-                action = Some(VideoTimelineAction::ScrollX(target - scroll));
-            }
-            Session::Edge {
-                start_x,
-                start_zoom,
-                start_thumb_w,
-                edge,
-            } => {
-                if let Some(new_zoom) = edge_drag_zoom(
-                    start_zoom,
-                    pos.x - start_x,
-                    edge == Edge::End,
-                    start_thumb_w,
-                    geo.track_w,
-                    geo.scrollable <= 0.0,
-                ) {
-                    action = Some(VideoTimelineAction::Zoom {
-                        factor: new_zoom / zoom.max(0.01),
-                        fixed_ratio: if edge == Edge::End { 0.0 } else { 1.0 },
-                    });
-                }
-            }
-        }
+        action = drag_action(session, pos, &geo, scroll, zoom);
     }
 
     if response.drag_stopped() {
@@ -210,6 +182,47 @@ pub fn show(
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
     action
+}
+
+/// 拖拽中：按会话增量计算本帧动作（`Thumb` 滚动 / `Edge` 缩放）。
+fn drag_action(
+    session: Session,
+    pos: egui::Pos2,
+    geo: &ScrollGeometry,
+    scroll: f32,
+    zoom: f32,
+) -> Option<VideoTimelineAction> {
+    match session {
+        Session::Thumb {
+            start_x,
+            start_scroll,
+        } => {
+            let target = thumb_drag_scroll(start_scroll, pos.x - start_x, geo);
+            Some(VideoTimelineAction::ScrollX(target - scroll))
+        }
+        Session::Edge {
+            start_x,
+            start_zoom,
+            start_thumb_w,
+            edge,
+        } => {
+            let mut action = None;
+            if let Some(new_zoom) = edge_drag_zoom(
+                start_zoom,
+                pos.x - start_x,
+                edge == Edge::End,
+                start_thumb_w,
+                geo.track_w,
+                geo.scrollable <= 0.0,
+            ) {
+                action = Some(VideoTimelineAction::Zoom {
+                    factor: new_zoom / zoom.max(0.01),
+                    fixed_ratio: if edge == Edge::End { 0.0 } else { 1.0 },
+                });
+            }
+            action
+        }
+    }
 }
 
 #[cfg(test)]

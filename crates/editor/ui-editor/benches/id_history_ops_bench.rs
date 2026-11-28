@@ -186,6 +186,119 @@ fn run_cycle(
     }
 }
 
+/// 冷启动暖机：一轮不计入判定的连续操作（页表/分配器预热，仅参考）。
+fn run_cold_warmup(editor: &mut Editor, workload: usize, identity_before: &Identity) {
+    // ── 冷启动暖机一轮（不计入判定，仅参考）──
+    let mut cold = RequiredStats::new();
+    let mut cold_mv = MoveStats::new();
+    let cold_report = run_cycle(editor, &mut cold, &mut cold_mv, workload, identity_before);
+    println!("── 冷启动首轮（页表/分配器预热；仅参考，不计入判定）──");
+    let _ = cold.select.report();
+    let _ = cold.copy.report();
+    let _ = cold.paste.report();
+    println!(
+        "冷启动数据校验: {}",
+        if cold_report.data_ok { "✓" } else { "✗" }
+    );
+    println!();
+}
+
+/// 热态连续 N 轮（判定依据）：返回各轮数据一致性校验是否全部通过。
+fn run_hot_cycles(
+    editor: &mut Editor,
+    required: &mut RequiredStats,
+    mv: &mut MoveStats,
+    workload: usize,
+    identity_before: &Identity,
+    cycles: usize,
+) -> bool {
+    // ── 热态连续 N 轮（判定依据）──
+    let mut checksum_ok = true;
+    for c in 0..cycles {
+        let r = run_cycle(editor, required, mv, workload, identity_before);
+        checksum_ok &= r.data_ok;
+        println!(
+            "第 {}/{} 轮: 粘贴后 {} | 撤销后 {} | 重做后 {} | 撤销后 {} | 选中 {} | 粘贴 {} | 数据校验 {}",
+            c + 1,
+            cycles,
+            r.after_paste,
+            r.after_undo1,
+            r.after_redo,
+            r.after_undo2,
+            r.selected,
+            r.inserted,
+            if r.cycle_ok { "✓" } else { "✗" }
+        );
+    }
+    checksum_ok
+}
+
+/// 必需操作集与附加观测报告：返回 (耗时全部达标, 内存全部达标)。
+fn report_required(required: &RequiredStats, mv: &MoveStats, cycles: usize) -> (bool, bool) {
+    println!();
+    println!("── 必需操作耗时 / 内存（{cycles} 轮热态；内存=单次操作峰值堆增量）──");
+    let mut time_ok = true;
+    let mut mem_ok = true;
+    macro_rules! report_gated {
+        ($st:expr) => {{
+            let (t, m) = $st.report();
+            time_ok &= t;
+            mem_ok &= m;
+        }};
+    }
+    report_gated!(required.select);
+    report_gated!(required.copy);
+    report_gated!(required.paste);
+    report_gated!(required.undo);
+    report_gated!(required.redo);
+    report_gated!(required.undo2);
+
+    println!("── 附加观测：ID MoveOp 路径（非必需操作集，仅供参考）──");
+    let _ = mv.apply.report();
+    let _ = mv.undo.report();
+    let _ = mv.redo.report();
+    (time_ok, mem_ok)
+}
+
+/// 打印内存总览、历史栈与最终结论。
+fn print_summary(editor: &Editor, baseline: usize, time_ok: bool, mem_ok: bool, checksum_ok: bool) {
+    let run_peak = run_peak();
+    let mem_growth = run_peak as i64 - baseline as i64;
+    println!();
+    println!(
+        "── 内存总览（信息参考）──\n基线: {:.1} MB | 全程绝对峰值: {:.1} MB | 绝对上升: {:.1} MB（含历史快照/选中容量等跨操作保留，非单次操作预算）",
+        mb(baseline as i64),
+        mb(run_peak as i64),
+        mb(mem_growth),
+    );
+    println!(
+        "历史栈: undo={} redo={} | 数据一致性: {}",
+        editor.editor_state.data.history.undo_len(),
+        editor.editor_state.data.history.redo_len(),
+        if checksum_ok {
+            "✓ 全部轮次无损"
+        } else {
+            "✗ 存在偏差"
+        }
+    );
+    println!();
+
+    let pass = time_ok && mem_ok && checksum_ok;
+    println!(
+        "结论(200W 音符连续操作): {}",
+        if pass {
+            "✓ PASS —— 必需操作单项 ≤ 100ms 且单次操作内存上升 ≤ 150MB，数据无损"
+        } else if !checksum_ok {
+            "✗ FAIL —— 数据一致性校验未通过"
+        } else if !mem_ok {
+            "✗ FAIL —— 存在必需操作内存上升超阈值"
+        } else {
+            "✗ FAIL —— 存在必需操作耗时超阈值"
+        }
+    );
+    println!("=== 完成 ===");
+}
+
 fn main() {
     println!("=== Lumino ID 型撤销/重做 + 复制/粘贴 + 选中 连续操作基准 ===");
     let path = env::var("LUMINO_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
@@ -232,109 +345,20 @@ fn main() {
 
     let identity_before = track_identity(&editor);
 
-    // ── 冷启动暖机一轮（不计入判定，仅参考）──
-    let mut cold = RequiredStats::new();
-    let mut cold_mv = MoveStats::new();
-    let cold_report = run_cycle(
-        &mut editor,
-        &mut cold,
-        &mut cold_mv,
-        workload,
-        &identity_before,
-    );
-    println!("── 冷启动首轮（页表/分配器预热；仅参考，不计入判定）──");
-    let _ = cold.select.report();
-    let _ = cold.copy.report();
-    let _ = cold.paste.report();
-    println!(
-        "冷启动数据校验: {}",
-        if cold_report.data_ok { "✓" } else { "✗" }
-    );
-    println!();
+    run_cold_warmup(&mut editor, workload, &identity_before);
 
-    // ── 热态连续 N 轮（判定依据）──
     let mut required = RequiredStats::new();
     let mut mv = MoveStats::new();
-    let mut checksum_ok = true;
-    for c in 0..cycles {
-        let r = run_cycle(
-            &mut editor,
-            &mut required,
-            &mut mv,
-            workload,
-            &identity_before,
-        );
-        checksum_ok &= r.data_ok;
-        println!(
-            "第 {}/{} 轮: 粘贴后 {} | 撤销后 {} | 重做后 {} | 撤销后 {} | 选中 {} | 粘贴 {} | 数据校验 {}",
-            c + 1,
-            cycles,
-            r.after_paste,
-            r.after_undo1,
-            r.after_redo,
-            r.after_undo2,
-            r.selected,
-            r.inserted,
-            if r.cycle_ok { "✓" } else { "✗" }
-        );
-    }
-
-    println!();
-    println!("── 必需操作耗时 / 内存（{cycles} 轮热态；内存=单次操作峰值堆增量）──");
-    let mut time_ok = true;
-    let mut mem_ok = true;
-    macro_rules! report_gated {
-        ($st:expr) => {{
-            let (t, m) = $st.report();
-            time_ok &= t;
-            mem_ok &= m;
-        }};
-    }
-    report_gated!(required.select);
-    report_gated!(required.copy);
-    report_gated!(required.paste);
-    report_gated!(required.undo);
-    report_gated!(required.redo);
-    report_gated!(required.undo2);
-
-    println!("── 附加观测：ID MoveOp 路径（非必需操作集，仅供参考）──");
-    let _ = mv.apply.report();
-    let _ = mv.undo.report();
-    let _ = mv.redo.report();
-
-    let run_peak = run_peak();
-    let mem_growth = run_peak as i64 - baseline as i64;
-    println!();
-    println!(
-        "── 内存总览（信息参考）──\n基线: {:.1} MB | 全程绝对峰值: {:.1} MB | 绝对上升: {:.1} MB（含历史快照/选中容量等跨操作保留，非单次操作预算）",
-        mb(baseline as i64),
-        mb(run_peak as i64),
-        mb(mem_growth),
+    let checksum_ok = run_hot_cycles(
+        &mut editor,
+        &mut required,
+        &mut mv,
+        workload,
+        &identity_before,
+        cycles,
     );
-    println!(
-        "历史栈: undo={} redo={} | 数据一致性: {}",
-        editor.editor_state.data.history.undo_len(),
-        editor.editor_state.data.history.redo_len(),
-        if checksum_ok {
-            "✓ 全部轮次无损"
-        } else {
-            "✗ 存在偏差"
-        }
-    );
-    println!();
 
-    let pass = time_ok && mem_ok && checksum_ok;
-    println!(
-        "结论(200W 音符连续操作): {}",
-        if pass {
-            "✓ PASS —— 必需操作单项 ≤ 100ms 且单次操作内存上升 ≤ 150MB，数据无损"
-        } else if !checksum_ok {
-            "✗ FAIL —— 数据一致性校验未通过"
-        } else if !mem_ok {
-            "✗ FAIL —— 存在必需操作内存上升超阈值"
-        } else {
-            "✗ FAIL —— 存在必需操作耗时超阈值"
-        }
-    );
-    println!("=== 完成 ===");
+    let (time_ok, mem_ok) = report_required(&required, &mv, cycles);
+
+    print_summary(&editor, baseline, time_ok, mem_ok, checksum_ok);
 }

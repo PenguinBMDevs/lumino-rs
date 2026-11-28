@@ -61,54 +61,8 @@ impl RunnerInner {
         }
         self.commit_edit_before_io("导出工程");
 
-        // 如果没有加载 MIDI 但有编辑器内容，先自动保存
-        if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {
-            let has_notes = {
-                let ui = self.window_state.window.ui();
-                ui.get_editor_note_count() > 0
-            };
-            if has_notes {
-                tracing::info!("导出工程：自动保存新项目");
-                if self.save_editor_as_midi_file().is_none() {
-                    return; // 用户取消保存
-                }
-                // 阻塞加载刚保存的 MIDI 文件，并把 document 移入 UI（单一权威源）
-                if let Some(ref source) = self.midi_state.current_midi_source.clone() {
-                    // 看门狗在加载前确保已启动，并标记加载状态（导出自动重载同样是加载 MIDI）
-                    lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
-                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
-                    match futures::executor::block_on(lumino_midi_loader::loader::load_midi(
-                        source.clone(),
-                    )) {
-                        Ok(parsed) => {
-                            lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(
-                                false,
-                            );
-                            // Arc::try_unwrap 零拷贝拆出（自动保存路径上 Arc 唯一）
-                            let Some(doc) =
-                                parsed.document.and_then(|arc| Arc::try_unwrap(arc).ok())
-                            else {
-                                tracing::error!("自动保存后加载 MIDI 失败: 无 document");
-                                return;
-                            };
-                            // REND-002：自动保存重载同一文档，按文档端口布局强制重建
-                            // 合成管线（清通道模态；失败保持旧布局）。
-                            self.midi_state.midi.apply_midi_port_layout(doc.max_port());
-                            let ui = self.window_state.window.ui_mut();
-                            ui.set_midi_document(doc);
-                        }
-                        Err(e) => {
-                            lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(
-                                false,
-                            );
-                            tracing::error!("自动保存后加载 MIDI 失败: {}", e);
-                            return;
-                        }
-                    }
-                } else {
-                    return;
-                }
-            }
+        if !self.auto_save_editor_before_export() {
+            return;
         }
 
         let file_stem = self
@@ -175,5 +129,61 @@ impl RunnerInner {
                 }
             }
         });
+    }
+
+    /// 导出前自动保存：无已加载 MIDI 但有编辑器内容时，先保存再阻塞重载。
+    ///
+    /// 返回 `false` 表示用户取消保存或重载失败，调用方应立即中止导出。
+    fn auto_save_editor_before_export(&mut self) -> bool {
+        // 如果没有加载 MIDI 但有编辑器内容，先自动保存
+        if self.midi_state.current_midi.is_none() && self.midi_state.current_midi_source.is_none() {
+            let has_notes = {
+                let ui = self.window_state.window.ui();
+                ui.get_editor_note_count() > 0
+            };
+            if has_notes {
+                tracing::info!("导出工程：自动保存新项目");
+                if self.save_editor_as_midi_file().is_none() {
+                    return false; // 用户取消保存
+                }
+                // 阻塞加载刚保存的 MIDI 文件，并把 document 移入 UI（单一权威源）
+                if let Some(ref source) = self.midi_state.current_midi_source.clone() {
+                    // 看门狗在加载前确保已启动，并标记加载状态（导出自动重载同样是加载 MIDI）
+                    lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
+                    match futures::executor::block_on(lumino_midi_loader::loader::load_midi(
+                        source.clone(),
+                    )) {
+                        Ok(parsed) => {
+                            lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(
+                                false,
+                            );
+                            // Arc::try_unwrap 零拷贝拆出（自动保存路径上 Arc 唯一）
+                            let Some(doc) =
+                                parsed.document.and_then(|arc| Arc::try_unwrap(arc).ok())
+                            else {
+                                tracing::error!("自动保存后加载 MIDI 失败: 无 document");
+                                return false;
+                            };
+                            // REND-002：自动保存重载同一文档，按文档端口布局强制重建
+                            // 合成管线（清通道模态；失败保持旧布局）。
+                            self.midi_state.midi.apply_midi_port_layout(doc.max_port());
+                            let ui = self.window_state.window.ui_mut();
+                            ui.set_midi_document(doc);
+                        }
+                        Err(e) => {
+                            lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(
+                                false,
+                            );
+                            tracing::error!("自动保存后加载 MIDI 失败: {}", e);
+                            return false;
+                        }
+                    }
+                } else {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }

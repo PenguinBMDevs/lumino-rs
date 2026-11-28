@@ -50,98 +50,121 @@ impl Host {
             return;
         }
 
-        let state = &self.root.editor.editor_state;
-        let view = &state.view;
-        let canvas = &state.canvas;
-        let is_vertical = state.is_vertical_roll;
+        let is_vertical = self.root.editor.editor_state.is_vertical_roll;
 
         // 计算光标在 canvas 内的局部坐标与区域
         let cursor = self.window_ctx.cursor_position;
         let Some(pos) = cursor else {
             // 无光标时以画布中心为锚点，双轴缩放
-            let center_ratio = 0.5;
-            let new_x = view.zoom_x * factor;
-            let new_y = view.zoom_y * factor;
-            self.route_message(message::Message::ZoomXChanged {
-                zoom: new_x,
-                fixed_ratio: center_ratio,
-            });
-            self.route_message(message::Message::ZoomYChanged {
-                zoom: new_y,
-                fixed_ratio: center_ratio,
-            });
-            self.ui_dirty = true;
-            self.window_ctx.window.request_redraw();
+            self.pinch_zoom_around_center(factor);
             return;
         };
 
-        let local_x = pos.x - canvas.offset_x;
-        let local_y = pos.y - canvas.offset_y;
+        let (local_x, local_y) = {
+            let canvas = &self.root.editor.editor_state.canvas;
+            (pos.x - canvas.offset_x, pos.y - canvas.offset_y)
+        };
 
         if is_vertical {
-            let kb_h = view.keyboard_width;
-            let is_over_kb = local_y >= canvas.size_y - kb_h && canvas.size_y > 0.0;
-            if is_over_kb {
-                // 键盘区（底部横向）：只缩放音高轴 Y
-                let fixed_ratio = (local_x / canvas.size_x.max(1.0)).clamp(0.0, 1.0);
-                self.route_message(message::Message::ZoomYChanged {
-                    zoom: view.zoom_y * factor,
-                    fixed_ratio,
-                });
-            } else {
-                // 网格区：双轴同时缩放（时间 X + 音高 Y），锚点分别为距底比例与水平比例
-                let grid_h = (canvas.size_y - kb_h).max(1.0);
-                let fixed_ratio_time = ((canvas.size_y - kb_h - local_y) / grid_h).clamp(0.0, 1.0);
-                let fixed_ratio_pitch = (local_x / canvas.size_x.max(1.0)).clamp(0.0, 1.0);
-                let new_x = view.zoom_x * factor;
-                let new_y = view.zoom_y * factor;
-                // 先 X 后 Y，保持锚点不动（viewport.rs 内各自 clamp）
-                self.route_message(message::Message::ZoomXChanged {
-                    zoom: new_x,
-                    fixed_ratio: fixed_ratio_time,
-                });
-                self.route_message(message::Message::ZoomYChanged {
-                    zoom: new_y,
-                    fixed_ratio: fixed_ratio_pitch,
-                });
-            }
+            self.pinch_gesture_vertical(factor, local_x, local_y);
         } else {
-            let is_over_keyboard = local_x < view.keyboard_width;
-            let is_over_ruler = local_y < view.ruler_height;
-            if is_over_keyboard {
-                let viewport_h = (canvas.size_y - view.ruler_height).max(1.0);
-                let fixed_ratio = ((local_y - view.ruler_height) / viewport_h).clamp(0.0, 1.0);
-                self.route_message(message::Message::ZoomYChanged {
-                    zoom: view.zoom_y * factor,
-                    fixed_ratio,
-                });
-            } else if is_over_ruler {
-                let viewport_w = (canvas.size_x - view.keyboard_width).max(1.0);
-                let fixed_ratio = ((local_x - view.keyboard_width) / viewport_w).clamp(0.0, 1.0);
-                self.route_message(message::Message::ZoomXChanged {
-                    zoom: view.zoom_x * factor,
-                    fixed_ratio,
-                });
-            } else {
-                // 网格区：双轴同时缩放，锚点分别跟鼠标 X/Y（更跟手，类似 yinhe Android 捏合双轴）
-                let viewport_w = (canvas.size_x - view.keyboard_width).max(1.0);
-                let viewport_h = (canvas.size_y - view.ruler_height).max(1.0);
-                let fixed_ratio_x = ((local_x - view.keyboard_width) / viewport_w).clamp(0.0, 1.0);
-                let fixed_ratio_y = ((local_y - view.ruler_height) / viewport_h).clamp(0.0, 1.0);
-                let new_x = view.zoom_x * factor;
-                let new_y = view.zoom_y * factor;
-                self.route_message(message::Message::ZoomXChanged {
-                    zoom: new_x,
-                    fixed_ratio: fixed_ratio_x,
-                });
-                self.route_message(message::Message::ZoomYChanged {
-                    zoom: new_y,
-                    fixed_ratio: fixed_ratio_y,
-                });
-            }
+            self.pinch_gesture_horizontal(factor, local_x, local_y);
         }
 
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+    }
+
+    /// 无光标时的双轴缩放：以画布中心为锚点。
+    fn pinch_zoom_around_center(&mut self, factor: f32) {
+        let view = &self.root.editor.editor_state.view;
+        let center_ratio = 0.5;
+        let new_x = view.zoom_x * factor;
+        let new_y = view.zoom_y * factor;
+        self.route_message(message::Message::ZoomXChanged {
+            zoom: new_x,
+            fixed_ratio: center_ratio,
+        });
+        self.route_message(message::Message::ZoomYChanged {
+            zoom: new_y,
+            fixed_ratio: center_ratio,
+        });
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 纵向卷帘：底部键盘条只缩放音高轴，网格区双轴同时缩放。
+    fn pinch_gesture_vertical(&mut self, factor: f32, local_x: f32, local_y: f32) {
+        let state = &self.root.editor.editor_state;
+        let view = &state.view;
+        let canvas = &state.canvas;
+
+        let kb_h = view.keyboard_width;
+        let is_over_kb = local_y >= canvas.size_y - kb_h && canvas.size_y > 0.0;
+        if is_over_kb {
+            // 键盘区（底部横向）：只缩放音高轴 Y
+            let fixed_ratio = (local_x / canvas.size_x.max(1.0)).clamp(0.0, 1.0);
+            self.route_message(message::Message::ZoomYChanged {
+                zoom: view.zoom_y * factor,
+                fixed_ratio,
+            });
+        } else {
+            // 网格区：双轴同时缩放（时间 X + 音高 Y），锚点分别为距底比例与水平比例
+            let grid_h = (canvas.size_y - kb_h).max(1.0);
+            let fixed_ratio_time = ((canvas.size_y - kb_h - local_y) / grid_h).clamp(0.0, 1.0);
+            let fixed_ratio_pitch = (local_x / canvas.size_x.max(1.0)).clamp(0.0, 1.0);
+            let new_x = view.zoom_x * factor;
+            let new_y = view.zoom_y * factor;
+            // 先 X 后 Y，保持锚点不动（viewport.rs 内各自 clamp）
+            self.route_message(message::Message::ZoomXChanged {
+                zoom: new_x,
+                fixed_ratio: fixed_ratio_time,
+            });
+            self.route_message(message::Message::ZoomYChanged {
+                zoom: new_y,
+                fixed_ratio: fixed_ratio_pitch,
+            });
+        }
+    }
+
+    /// 横向卷帘：左键盘栏只缩放音高轴，标尺只缩放时间轴，网格区双轴同时缩放。
+    fn pinch_gesture_horizontal(&mut self, factor: f32, local_x: f32, local_y: f32) {
+        let state = &self.root.editor.editor_state;
+        let view = &state.view;
+        let canvas = &state.canvas;
+
+        let is_over_keyboard = local_x < view.keyboard_width;
+        let is_over_ruler = local_y < view.ruler_height;
+        if is_over_keyboard {
+            let viewport_h = (canvas.size_y - view.ruler_height).max(1.0);
+            let fixed_ratio = ((local_y - view.ruler_height) / viewport_h).clamp(0.0, 1.0);
+            self.route_message(message::Message::ZoomYChanged {
+                zoom: view.zoom_y * factor,
+                fixed_ratio,
+            });
+        } else if is_over_ruler {
+            let viewport_w = (canvas.size_x - view.keyboard_width).max(1.0);
+            let fixed_ratio = ((local_x - view.keyboard_width) / viewport_w).clamp(0.0, 1.0);
+            self.route_message(message::Message::ZoomXChanged {
+                zoom: view.zoom_x * factor,
+                fixed_ratio,
+            });
+        } else {
+            // 网格区：双轴同时缩放，锚点分别跟鼠标 X/Y（更跟手，类似 yinhe Android 捏合双轴）
+            let viewport_w = (canvas.size_x - view.keyboard_width).max(1.0);
+            let viewport_h = (canvas.size_y - view.ruler_height).max(1.0);
+            let fixed_ratio_x = ((local_x - view.keyboard_width) / viewport_w).clamp(0.0, 1.0);
+            let fixed_ratio_y = ((local_y - view.ruler_height) / viewport_h).clamp(0.0, 1.0);
+            let new_x = view.zoom_x * factor;
+            let new_y = view.zoom_y * factor;
+            self.route_message(message::Message::ZoomXChanged {
+                zoom: new_x,
+                fixed_ratio: fixed_ratio_x,
+            });
+            self.route_message(message::Message::ZoomYChanged {
+                zoom: new_y,
+                fixed_ratio: fixed_ratio_y,
+            });
+        }
     }
 }

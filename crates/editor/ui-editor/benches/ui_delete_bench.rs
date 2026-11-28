@@ -141,11 +141,21 @@ fn main() {
     println!("加载后基线堆内存: {:.1} MB", mb(baseline as i64));
     println!();
 
-    // 临时内存核对（LUMINO_DELETE_MEMCHECK=1）——保留为可选诊断开关
+    run_memcheck(&mut editor, total);
+
+    let scenarios = build_scenarios(total);
+
+    let (stats, data_ok, gated_count) = run_scenarios(&mut editor, total, cycles, scenarios);
+
+    print_summary(stats, data_ok, gated_count, baseline, &editor, cycles);
+}
+
+/// 临时内存核对（LUMINO_DELETE_MEMCHECK=1）——保留为可选诊断开关
+fn run_memcheck(editor: &mut Editor, total: usize) {
     if std::env::var("LUMINO_DELETE_MEMCHECK").is_ok() {
         let count2m = 2_000_000.min(total);
         for round in 0..3 {
-            build_selection(&mut editor, total, Shape::Tail(count2m));
+            build_selection(editor, total, Shape::Tail(count2m));
             let b = live();
             let ab = support::alloc_total();
             support::reset_peak();
@@ -161,11 +171,16 @@ fn main() {
             let _ = lumino_message::events::take_events();
         }
     }
+}
 
+/// (名称, 选区, 是否计入判定)：病理压力场景（区间数远超增量阈值，走整段重建回退）
+/// 仅信息参考，不计入 PASS/FAIL。
+/// 删除基准的场景表：名称、形状、是否计入受门控统计。
+type Scenarios = [(&'static str, Shape, bool); 6];
+
+fn build_scenarios(total: usize) -> Scenarios {
     let count2m = 2_000_000.min(total);
-    // (名称, 选区, 是否计入判定)：病理压力场景（区间数远超增量阈值，走整段重建回退）
-    // 仅信息参考，不计入 PASS/FAIL。
-    let scenarios: [(&str, Shape, bool); 6] = [
+    [
         ("删除 200W（尾部连续）", Shape::Tail(count2m), true),
         ("删除 200W（中部连续）", Shape::Mid(count2m), true),
         (
@@ -193,8 +208,16 @@ fn main() {
             },
             false,
         ),
-    ];
+    ]
+}
 
+/// 逐场景执行「选区 → 删除 → 校验 → 撤销 → 校验」，返回（统计, 数据无损, 计入判定场景数）
+fn run_scenarios(
+    editor: &mut Editor,
+    total: usize,
+    cycles: usize,
+    scenarios: Scenarios,
+) -> (Vec<(ScenarioStats, usize, bool)>, bool, usize) {
     let mut stats: Vec<(ScenarioStats, usize, bool)> = Vec::new();
     let mut data_ok = true;
     let mut gated_count = 0usize;
@@ -205,7 +228,7 @@ fn main() {
         let mut selected = 0usize;
         for c in 0..=cycles {
             // 每轮重建选区（`delete_selected_notes` 会清空选中）
-            selected = build_selection(&mut editor, total, shape);
+            selected = build_selection(editor, total, shape);
             let before = editor.editor_state.data.current_track_note_count();
             if c == 0 {
                 editor.delete_selected_notes();
@@ -247,6 +270,18 @@ fn main() {
         stats.push((st, selected, gated));
     }
 
+    (stats, data_ok, gated_count)
+}
+
+/// 汇总：逐项输出耗时/内存报告与总览，并按三项判定给出最终结论
+fn print_summary(
+    stats: Vec<(ScenarioStats, usize, bool)>,
+    data_ok: bool,
+    gated_count: usize,
+    baseline: usize,
+    editor: &Editor,
+    cycles: usize,
+) {
     println!();
     println!("── 删除 / 撤销耗时与内存（{cycles} 轮热态，中位判定）──");
     let mut time_ok = true;

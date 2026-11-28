@@ -19,6 +19,9 @@ impl VelocityHandler {
     }
 
     /// 处理力度编辑面板动作
+    ///
+    /// 力度 / 曲线分支改完音符后落到尾部同步播放引擎；其余分支按域搬入私有助手，
+    /// 原分支里的「不需要重绘」早退在接线处保留。
     pub fn handle_action(root: &mut Root, action: VelocityAction) {
         use crate::message::VelocityAction as VA;
 
@@ -45,21 +48,7 @@ impl VelocityHandler {
             VA::CurveEnd => {
                 tracing::debug!("力度面板: 曲线绘制结束");
             }
-            VA::ToggleMode => {
-                let panel = &mut root.editor.velocity_panel;
-                // 按 id 判定（拖动排序后 conductor 可能不在首位）
-                let is_conductor = root.sidebar.selected_track == 0
-                    && root
-                        .sidebar
-                        .tracks
-                        .iter()
-                        .find(|t| t.id == 0)
-                        .is_some_and(|t| t.is_conductor);
-                panel.edit_mode =
-                    Self::next_edit_mode(panel.edit_mode, is_conductor, panel.selected_cc);
-                tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
-                return; // 不需要重绘
-            }
+            VA::ToggleMode => return Self::handle_toggle_mode(root), // 不需要重绘
             VA::CcControllerSelected(cc) => {
                 root.editor.velocity_panel.selected_cc = cc;
                 root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
@@ -67,27 +56,80 @@ impl VelocityHandler {
                 return; // 不需要重绘
             }
             VA::CcOptionSelected(option) => {
-                use crate::editor::velocity::CcOption;
-                match option {
-                    CcOption::Bend => {
-                        root.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Bend;
-                        tracing::debug!("力度面板: 选择 Bend");
-                    }
-                    CcOption::Cc(cc) => {
-                        root.editor.velocity_panel.selected_cc = cc;
-                        root.editor.velocity_panel.edit_mode =
-                            crate::editor::velocity::EditMode::Cc(cc);
-                        tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
-                    }
-                }
+                Self::handle_cc_option_selected(root, option);
                 return; // 不需要重绘
             }
             // ── Tempo 编辑动作 ──
+            action @ (VA::TempoDragStart(_)
+            | VA::TempoDragMove(..)
+            | VA::TempoDragEnd
+            | VA::TempoAdd(..)
+            | VA::TempoDelete(_)) => {
+                Self::handle_tempo_action(root, action);
+                return;
+            }
+            // ── 自动化曲线编辑动作 ──
+            action @ (VA::AutomationEdit(_)
+            | VA::AutomationBatch(_)
+            | VA::AutomationDragStart
+            | VA::AutomationZoom(_)) => {
+                Self::handle_automation_action(root, action);
+                return;
+            }
+            VA::WheelScrolled { delta_x, delta_y } => {
+                Self::handle_wheel_scrolled(root, delta_x, delta_y);
+                return;
+            }
+        }
+
+        // 同步播放引擎：力度修改必须实时反映到播放中
+        if root.editor.notes_changed() {
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        }
+    }
+
+    /// 切换编辑模式（力度 / Bend / CC / Tempo），按音轨是否为 Conductor 决定环形顺序。
+    fn handle_toggle_mode(root: &mut Root) {
+        let panel = &mut root.editor.velocity_panel;
+        // 按 id 判定（拖动排序后 conductor 可能不在首位）
+        let is_conductor = root.sidebar.selected_track == 0
+            && root
+                .sidebar
+                .tracks
+                .iter()
+                .find(|t| t.id == 0)
+                .is_some_and(|t| t.is_conductor);
+        panel.edit_mode = Self::next_edit_mode(panel.edit_mode, is_conductor, panel.selected_cc);
+        tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
+    }
+
+    /// 选择 Bend 或 CC 选项，并同步面板当前 CC 编号。
+    fn handle_cc_option_selected(root: &mut Root, option: crate::editor::velocity::CcOption) {
+        use crate::editor::velocity::CcOption;
+        match option {
+            CcOption::Bend => {
+                root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Bend;
+                tracing::debug!("力度面板: 选择 Bend");
+            }
+            CcOption::Cc(cc) => {
+                root.editor.velocity_panel.selected_cc = cc;
+                root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Cc(cc);
+                tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
+            }
+        }
+    }
+
+    /// Tempo 编辑动作（拖拽 / 新建 / 删除速度点）：全部不需要重绘。
+    ///
+    /// 调用方保证只传入 Tempo 族动作，其余变体由 catch-all 忽略。
+    fn handle_tempo_action(root: &mut Root, action: VelocityAction) {
+        use crate::message::VelocityAction as VA;
+
+        match action {
             VA::TempoDragStart(idx) => {
                 root.editor.push_history();
                 tracing::debug!("Tempo: 开始拖拽点 {}", idx);
-                return;
             }
             VA::TempoDragMove(idx, new_bpm) => {
                 let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
@@ -95,11 +137,9 @@ impl VelocityHandler {
                 if root.editor.editor_state.data.set_tempo_point(idx, bpm) {
                     root.update_playback_bpm();
                 }
-                return;
             }
             VA::TempoDragEnd => {
                 tracing::debug!("Tempo: 拖拽结束");
-                return;
             }
             VA::TempoAdd(tick, bpm) => {
                 root.editor.push_history();
@@ -108,7 +148,6 @@ impl VelocityHandler {
                 root.editor.editor_state.data.add_tempo_point(tick, bpm);
                 root.update_playback_bpm();
                 tracing::debug!("Tempo: 添加点 tick={} bpm={}", tick, bpm);
-                return;
             }
             VA::TempoDelete(idx) => {
                 root.editor.push_history();
@@ -116,27 +155,33 @@ impl VelocityHandler {
                     root.update_playback_bpm();
                     tracing::debug!("Tempo: 删除点 {}", idx);
                 }
-                return;
             }
-            // ── 自动化曲线编辑动作 ──
+            _ => {}
+        }
+    }
+
+    /// 自动化曲线编辑动作（应用 / 批量应用 / 拖拽开始 / 垂直缩放）：全部不需要重绘。
+    ///
+    /// 调用方保证只传入自动化族动作，其余变体由 catch-all 忽略。
+    fn handle_automation_action(root: &mut Root, action: VelocityAction) {
+        use crate::message::VelocityAction as VA;
+
+        match action {
             VA::AutomationEdit(edit) => {
                 root.editor.push_history();
                 root.editor.editor_state.data.apply_automation_edit(edit);
                 root.update_playback_notes();
                 tracing::debug!("自动化面板: 应用编辑");
-                return;
             }
             VA::AutomationBatch(edits) => {
                 for edit in edits {
                     root.editor.editor_state.data.apply_automation_edit(edit);
                 }
                 root.update_playback_notes();
-                return;
             }
             VA::AutomationDragStart => {
                 root.editor.push_history();
                 tracing::debug!("自动化面板: 拖拽开始");
-                return;
             }
             VA::AutomationZoom(factor) => {
                 let panel = &mut root.editor.velocity_panel;
@@ -147,34 +192,31 @@ impl VelocityHandler {
                     panel.clamp_value_scroll(max_val);
                 }
                 tracing::debug!("自动化面板: 垂直缩放 {}", panel.value_zoom);
-                return;
             }
-            VA::WheelScrolled { delta_x, delta_y } => {
-                // 水平分量：时间轴滚动（与钢琴卷帘网格一致的自然滚动；支持双向同时滚动）
-                if delta_x != 0.0 {
-                    root.handle_editor_action(EditorAction::Scrolled {
-                        delta_x,
-                        delta_y: 0.0,
-                    });
-                }
-                // 垂直分量：自动化曲线滚动（仅 CC/Bend 模式生效；Velocity/Tempo 保持无操作）
-                if delta_y != 0.0 {
-                    let panel = &mut root.editor.velocity_panel;
-                    if let Some(max_val) = Self::automation_max_value(panel.edit_mode) {
-                        let amount = -delta_y * max_val * 0.05;
-                        panel.value_scroll += amount;
-                        panel.clamp_value_scroll(max_val);
-                        tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
-                    }
-                }
-                return;
-            }
+            _ => {}
         }
+    }
 
-        // 同步播放引擎：力度修改必须实时反映到播放中
-        if root.editor.notes_changed() {
-            root.update_playback_notes();
-            root.editor.clear_notes_changed();
+    /// 双向滚轮：水平分量滚动时间轴，垂直分量滚动自动化曲线。
+    ///
+    /// 垂直分量仅在 CC / Bend 模式生效，力度 / Tempo 模式保持无操作。
+    fn handle_wheel_scrolled(root: &mut Root, delta_x: f32, delta_y: f32) {
+        // 水平分量：时间轴滚动（与钢琴卷帘网格一致的自然滚动；支持双向同时滚动）
+        if delta_x != 0.0 {
+            root.handle_editor_action(EditorAction::Scrolled {
+                delta_x,
+                delta_y: 0.0,
+            });
+        }
+        // 垂直分量：自动化曲线滚动（仅 CC/Bend 模式生效；Velocity/Tempo 保持无操作）
+        if delta_y != 0.0 {
+            let panel = &mut root.editor.velocity_panel;
+            if let Some(max_val) = Self::automation_max_value(panel.edit_mode) {
+                let amount = -delta_y * max_val * 0.05;
+                panel.value_scroll += amount;
+                panel.clamp_value_scroll(max_val);
+                tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
+            }
         }
     }
 

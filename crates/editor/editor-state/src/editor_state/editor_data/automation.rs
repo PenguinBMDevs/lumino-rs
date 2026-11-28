@@ -144,26 +144,7 @@ impl EditorData {
                 tick,
                 value,
                 shape,
-            } => {
-                // 弯音跳变对（同 tick 两事件形成直角突变）：PitchBend 允许
-                // 同 tick 多事件；其他 target（CC 等）保持同 tick 唯一（替换）。
-                // 排序为稳定排序，同 tick 保持创建顺序（与本地 anchors 一致）。
-                let is_pitchbend = target == AutomationTarget::PitchBend;
-                let idx = self.find_or_create_automation_lane(track_idx, target);
-                let lane = Arc::make_mut(&mut self.automation_lanes[idx]);
-                // 如果 lane 尚未设置 channel，更新为事件的 channel
-                lane.channel = channel;
-                if !is_pitchbend {
-                    lane.events.retain(|e| e.tick != tick);
-                }
-                lane.events
-                    .push(lumino_note_core::automation::AutomationEvent::new(
-                        tick, value, shape,
-                    ));
-                lane.events.sort_by_key(|e| e.tick);
-                lane.recompute_auto_handles();
-                true
-            }
+            } => self.apply_automation_add(track_idx, target, channel, tick, value, shape),
             AutomationEdit::Move {
                 track_idx,
                 lane_idx,
@@ -171,137 +152,200 @@ impl EditorData {
                 old_value,
                 new_tick,
                 new_value,
-            } => {
-                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
-                    return false;
-                };
-                let lane = Arc::make_mut(arc_lane);
-                if lane.track != track_idx {
-                    return false;
-                }
-                // 精确匹配：弯音跳变对（同 tick 两事件）用 old_value 区分
-                // 目标；其他场景仅按 tick（同 tick 唯一）
-                let Some(pos) = lane
-                    .events
-                    .iter()
-                    .position(|e| e.tick == old_tick && old_value.is_none_or(|v| e.value == v))
-                else {
-                    return false;
-                };
-                if new_tick == old_tick {
-                    // 同 tick 移动（弯音拖动 tick 锁定）：原地更新 value，
-                    // 顺序不变（跳变对组内顺序保持）
-                    lane.events[pos].value = new_value;
-                    lane.recompute_auto_handles();
-                    return true;
-                }
-                // 先取出旧事件（避免 retain 删除自身导致索引越界），
-                // 再移除目标 tick 的冲突事件，最后写回。
-                let mut evt = lane.events.remove(pos);
-                evt.tick = new_tick;
-                evt.value = new_value;
-                // 弯音跳变对：移动不替换同 tick 已有事件（保持跳变对）；
-                // 其他 target（CC 等）保持同 tick 唯一（替换）
-                if lane.target != AutomationTarget::PitchBend {
-                    lane.events.retain(|e| e.tick != new_tick);
-                }
-                // 插入到排序位置：同 tick 组末尾（作为组内后建事件）
-                let insert_pos = lane.events.partition_point(|e| e.tick <= new_tick);
-                lane.events.insert(insert_pos, evt);
-                lane.recompute_auto_handles();
-                true
-            }
+            } => self.apply_automation_move(
+                track_idx, lane_idx, old_tick, old_value, new_tick, new_value,
+            ),
             AutomationEdit::CycleShape {
                 track_idx,
                 lane_idx,
                 tick,
-            } => {
-                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
-                    return false;
-                };
-                let lane = Arc::make_mut(arc_lane);
-                if lane.track != track_idx {
-                    return false;
-                }
-                let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
-                    return false;
-                };
-                evt.shape = match evt.shape {
-                    SegmentShape::Step => SegmentShape::Curve { tension: 0 },
-                    SegmentShape::Curve { .. } => SegmentShape::Step,
-                };
-                true
-            }
+            } => self.apply_automation_cycle_shape(track_idx, lane_idx, tick),
             AutomationEdit::Delete {
                 track_idx,
                 lane_idx,
                 tick,
-            } => {
-                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
-                    return false;
-                };
-                let lane = Arc::make_mut(arc_lane);
-                if lane.track != track_idx {
-                    return false;
-                }
-                let old_len = lane.events.len();
-                lane.events.retain(|e| e.tick != tick);
-                let changed = lane.events.len() != old_len;
-                if changed {
-                    lane.recompute_auto_handles();
-                }
-                changed
-            }
+            } => self.apply_automation_delete(track_idx, lane_idx, tick),
             AutomationEdit::UpdateHandles {
                 track_idx,
                 lane_idx,
                 tick,
                 out_handle,
                 in_handle,
-            } => {
-                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
-                    return false;
-                };
-                let lane = Arc::make_mut(arc_lane);
-                if lane.track != track_idx {
-                    return false;
-                }
-                // 走 setter：钳制柄不越过自身锚点垂直切线（防曲线回环），
-                // 并标记自定义（不再被自动重算覆盖）。
-                // 弯音跳变对（同 tick 两事件）：更新全部同 tick 事件的柄——
-                // 竖直段（span 0）的柄无视觉/播放效果，更新全部保证本地
-                // 拖动的柄（可能是同 tick 第二个锚点）在 lane 中生效。
-                let mut found = false;
-                for evt in lane.events.iter_mut().filter(|e| e.tick == tick) {
-                    evt.set_out_handle(out_handle);
-                    evt.set_in_handle(in_handle);
-                    found = true;
-                }
-                if !found {
-                    return false;
-                }
-                // 相邻锚点钳制：柄的 tick 不能越过相邻锚点（否则控制柄 x
-                // 超出段端点，贝塞尔 x(t) 非单调 → 曲线回环 → 同一 tick
-                // 多个弯音值 / 视觉多条曲线）。
-                clamp_handles_to_neighbors(lane, tick);
-                true
-            }
+            } => self
+                .apply_automation_update_handles(track_idx, lane_idx, tick, out_handle, in_handle),
             AutomationEdit::Clear {
                 track_idx,
                 lane_idx,
-            } => {
-                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
-                    return false;
-                };
-                let lane = Arc::make_mut(arc_lane);
-                if lane.track != track_idx {
-                    return false;
-                }
-                let old_len = lane.events.len();
-                lane.events.clear();
-                lane.events.len() != old_len
-            }
+            } => self.apply_automation_clear(track_idx, lane_idx),
         }
+    }
+
+    /// 添加事件：lane 不存在则创建，并按 target 决定同 tick 去重语义。
+    fn apply_automation_add(
+        &mut self,
+        track_idx: u16,
+        target: AutomationTarget,
+        channel: u8,
+        tick: u32,
+        value: u16,
+        shape: SegmentShape,
+    ) -> bool {
+        // 弯音跳变对（同 tick 两事件形成直角突变）：PitchBend 允许
+        // 同 tick 多事件；其他 target（CC 等）保持同 tick 唯一（替换）。
+        // 排序为稳定排序，同 tick 保持创建顺序（与本地 anchors 一致）。
+        let is_pitchbend = target == AutomationTarget::PitchBend;
+        let idx = self.find_or_create_automation_lane(track_idx, target);
+        let lane = Arc::make_mut(&mut self.automation_lanes[idx]);
+        // 如果 lane 尚未设置 channel，更新为事件的 channel
+        lane.channel = channel;
+        if !is_pitchbend {
+            lane.events.retain(|e| e.tick != tick);
+        }
+        lane.events
+            .push(lumino_note_core::automation::AutomationEvent::new(
+                tick, value, shape,
+            ));
+        lane.events.sort_by_key(|e| e.tick);
+        lane.recompute_auto_handles();
+        true
+    }
+
+    /// 移动事件：同 tick 只改值；跨 tick 摘除后按排序位置插回。
+    fn apply_automation_move(
+        &mut self,
+        track_idx: u16,
+        lane_idx: usize,
+        old_tick: u32,
+        old_value: Option<u16>,
+        new_tick: u32,
+        new_value: u16,
+    ) -> bool {
+        let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+            return false;
+        };
+        let lane = Arc::make_mut(arc_lane);
+        if lane.track != track_idx {
+            return false;
+        }
+        // 精确匹配：弯音跳变对（同 tick 两事件）用 old_value 区分
+        // 目标；其他场景仅按 tick（同 tick 唯一）
+        let Some(pos) = lane
+            .events
+            .iter()
+            .position(|e| e.tick == old_tick && old_value.is_none_or(|v| e.value == v))
+        else {
+            return false;
+        };
+        if new_tick == old_tick {
+            // 同 tick 移动（弯音拖动 tick 锁定）：原地更新 value，
+            // 顺序不变（跳变对组内顺序保持）
+            lane.events[pos].value = new_value;
+            lane.recompute_auto_handles();
+            return true;
+        }
+        // 先取出旧事件（避免 retain 删除自身导致索引越界），
+        // 再移除目标 tick 的冲突事件，最后写回。
+        let mut evt = lane.events.remove(pos);
+        evt.tick = new_tick;
+        evt.value = new_value;
+        // 弯音跳变对：移动不替换同 tick 已有事件（保持跳变对）；
+        // 其他 target（CC 等）保持同 tick 唯一（替换）
+        if lane.target != AutomationTarget::PitchBend {
+            lane.events.retain(|e| e.tick != new_tick);
+        }
+        // 插入到排序位置：同 tick 组末尾（作为组内后建事件）
+        let insert_pos = lane.events.partition_point(|e| e.tick <= new_tick);
+        lane.events.insert(insert_pos, evt);
+        lane.recompute_auto_handles();
+        true
+    }
+
+    /// 切换事件线段形状（双击循环 Step / Curve）。
+    fn apply_automation_cycle_shape(&mut self, track_idx: u16, lane_idx: usize, tick: u32) -> bool {
+        let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+            return false;
+        };
+        let lane = Arc::make_mut(arc_lane);
+        if lane.track != track_idx {
+            return false;
+        }
+        let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
+            return false;
+        };
+        evt.shape = match evt.shape {
+            SegmentShape::Step => SegmentShape::Curve { tension: 0 },
+            SegmentShape::Curve { .. } => SegmentShape::Step,
+        };
+        true
+    }
+
+    /// 删除指定 tick 的事件。
+    fn apply_automation_delete(&mut self, track_idx: u16, lane_idx: usize, tick: u32) -> bool {
+        let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+            return false;
+        };
+        let lane = Arc::make_mut(arc_lane);
+        if lane.track != track_idx {
+            return false;
+        }
+        let old_len = lane.events.len();
+        lane.events.retain(|e| e.tick != tick);
+        let changed = lane.events.len() != old_len;
+        if changed {
+            lane.recompute_auto_handles();
+        }
+        changed
+    }
+
+    /// 更新指定 tick 事件的贝塞尔控制柄。
+    fn apply_automation_update_handles(
+        &mut self,
+        track_idx: u16,
+        lane_idx: usize,
+        tick: u32,
+        out_handle: (f32, f32),
+        in_handle: (f32, f32),
+    ) -> bool {
+        let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+            return false;
+        };
+        let lane = Arc::make_mut(arc_lane);
+        if lane.track != track_idx {
+            return false;
+        }
+        // 走 setter：钳制柄不越过自身锚点垂直切线（防曲线回环），
+        // 并标记自定义（不再被自动重算覆盖）。
+        // 弯音跳变对（同 tick 两事件）：更新全部同 tick 事件的柄——
+        // 竖直段（span 0）的柄无视觉/播放效果，更新全部保证本地
+        // 拖动的柄（可能是同 tick 第二个锚点）在 lane 中生效。
+        let mut found = false;
+        for evt in lane.events.iter_mut().filter(|e| e.tick == tick) {
+            evt.set_out_handle(out_handle);
+            evt.set_in_handle(in_handle);
+            found = true;
+        }
+        if !found {
+            return false;
+        }
+        // 相邻锚点钳制：柄的 tick 不能越过相邻锚点（否则控制柄 x
+        // 超出段端点，贝塞尔 x(t) 非单调 → 曲线回环 → 同一 tick
+        // 多个弯音值 / 视觉多条曲线）。
+        clamp_handles_to_neighbors(lane, tick);
+        true
+    }
+
+    /// 清空指定 lane 的全部事件。
+    fn apply_automation_clear(&mut self, track_idx: u16, lane_idx: usize) -> bool {
+        let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+            return false;
+        };
+        let lane = Arc::make_mut(arc_lane);
+        if lane.track != track_idx {
+            return false;
+        }
+        let old_len = lane.events.len();
+        lane.events.clear();
+        lane.events.len() != old_len
     }
 
     /// 从 automation_lanes 构建当前音轨的 CC 控制点列表（兼容旧渲染管线）。

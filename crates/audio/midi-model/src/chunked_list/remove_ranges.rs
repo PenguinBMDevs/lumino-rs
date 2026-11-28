@@ -53,32 +53,7 @@ impl<T: EventTick> ChunkedList<T> {
             let cend = off + clen;
             local.clear();
             // 收集与当前块相交的区间（ranges 降序 → 相交区间连续）
-            let mut j = ri;
-            while j < ranges.len() {
-                let (s, count) = ranges[j];
-                let e = s.saturating_add(count);
-                if s >= cend {
-                    // 区间起点在更高块：已处理完（含完全越界的尾部区间）→ 跳过
-                    j += 1;
-                    continue;
-                }
-                if e <= off {
-                    // 完全位于更低块 → 后续区间更靠前，全部留待后续块
-                    break;
-                }
-                // 与当前块相交
-                let lo = s.max(off) - off;
-                let hi = e.min(cend) - off;
-                if hi > lo {
-                    local.push((lo, hi));
-                }
-                if s < off {
-                    // 区间起点在更低块 → 游标停在此区间，下一（更低）块继续处理其下半段
-                    break;
-                }
-                j += 1;
-            }
-            ri = j;
+            ri = collect_local_ranges(ranges, ri, off, cend, &mut local);
             if local.is_empty() {
                 continue;
             }
@@ -99,22 +74,7 @@ impl<T: EventTick> ChunkedList<T> {
                 chunk.drain(lo..hi);
             } else {
                 // 单遍原地压缩：保留段左移（swap 免 Clone 约束；源位置随后不再读取）
-                let mut read = 0usize;
-                let mut write = 0usize;
-                for &(lo, hi) in &local {
-                    let keep = lo - read;
-                    for k in 0..keep {
-                        chunk.swap(read + k, write + k);
-                    }
-                    write += keep;
-                    read = hi;
-                }
-                let tail = chunk.len() - read;
-                for k in 0..tail {
-                    chunk.swap(read + k, write + k);
-                }
-                write += tail;
-                chunk.truncate(write);
+                compact_ranges(chunk, &local);
             }
             removed_total += removed;
             if chunk.is_empty() {
@@ -133,4 +93,62 @@ impl<T: EventTick> ChunkedList<T> {
         self.rebuild_index();
         removed_total
     }
+}
+
+/// 收集与块 `[off, cend)` 相交的删除区间，写入 `local`（仍按降序），返回下一个未处理游标
+///
+/// `ranges` 已按起始索引降序，故与同一块相交的区间连续：起点高于本块的跳过
+/// （含完全越界的尾部区间），起点低于本块的留待下一（更低）块继续处理其下半段。
+fn collect_local_ranges(
+    ranges: &[(usize, usize)],
+    mut j: usize,
+    off: usize,
+    cend: usize,
+    local: &mut Vec<(usize, usize)>,
+) -> usize {
+    while j < ranges.len() {
+        let (s, count) = ranges[j];
+        let e = s.saturating_add(count);
+        if s >= cend {
+            // 区间起点在更高块：已处理完（含完全越界的尾部区间）→ 跳过
+            j += 1;
+            continue;
+        }
+        if e <= off {
+            // 完全位于更低块 → 后续区间更靠前，全部留待后续块
+            break;
+        }
+        // 与当前块相交
+        let lo = s.max(off) - off;
+        let hi = e.min(cend) - off;
+        if hi > lo {
+            local.push((lo, hi));
+        }
+        if s < off {
+            // 区间起点在更低块 → 游标停在此区间，下一（更低）块继续处理其下半段
+            break;
+        }
+        j += 1;
+    }
+    j
+}
+
+/// 单遍原地压缩：`local` 为块内升序、互不重叠的删除区间，保留段左移后截断块尾
+fn compact_ranges<T>(chunk: &mut Vec<T>, local: &[(usize, usize)]) {
+    let mut read = 0usize;
+    let mut write = 0usize;
+    for &(lo, hi) in local {
+        let keep = lo - read;
+        for k in 0..keep {
+            chunk.swap(read + k, write + k);
+        }
+        write += keep;
+        read = hi;
+    }
+    let tail = chunk.len() - read;
+    for k in 0..tail {
+        chunk.swap(read + k, write + k);
+    }
+    write += tail;
+    chunk.truncate(write);
 }

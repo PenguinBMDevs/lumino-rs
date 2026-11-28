@@ -130,57 +130,73 @@ impl RunnerInner {
             DialogResult::RecoverTrackRestore {
                 path,
                 original_index,
-            } => {
-                tracing::info!(
-                    "找回删除音轨：恢复 path={:?} original_index={}",
-                    path,
-                    original_index
-                );
-                match lumino_project::load_deleted_track(&path) {
-                    Ok((meta, data)) => {
-                        let notes = data
-                            .notes
-                            .into_iter()
-                            .map(|n| lumino_ui::event::window::track::TrackDeletionNote {
-                                start_tick: n.start_tick,
-                                end_tick: n.end_tick,
-                                key: n.key,
-                                velocity: n.velocity,
-                                channel: n.channel,
-                                port: n.port,
-                            })
-                            .collect();
-                        let payload = lumino_ui::event::window::track::TrackDeletionPayload {
-                            track_id: meta.track_id,
-                            track_name: meta.track_name,
-                            port: meta.port,
-                            channel: meta.channel,
-                            is_drum: meta.is_drum,
-                            max_tick: meta.max_tick,
-                            original_index,
-                            notes,
-                        };
-                        ui.apply_track_restored(payload);
-                    }
-                    Err(e) => {
-                        tracing::error!("找回删除音轨：加载缓存失败 path={:?} err={}", path, e);
-                    }
-                }
-            }
+            } => Self::apply_track_restore(ui, path, original_index),
             DialogResult::RecoverTrackPermanentlyDelete { path, track_id } => {
-                tracing::info!(
-                    "找回删除音轨：永久删除 path={:?} track_id={}",
-                    path,
-                    track_id
-                );
-                if let Err(e) = lumino_project::delete_permanently(&path) {
-                    tracing::error!("找回删除音轨：永久删除缓存失败 path={:?} err={}", path, e);
-                }
-                // 无论磁盘删除是否成功，都释放 reserved track_id
-                // （文件不存在时 delete_permanently 静默返回 Ok，此处总能到达）
-                ui.apply_track_permanently_deleted(track_id);
+                Self::apply_track_permanent_delete(ui, path, track_id)
             }
         }
+    }
+
+    /// 找回删除音轨：从缓存文件恢复一条音轨并交回主窗口侧边栏。
+    fn apply_track_restore(
+        ui: &mut lumino_ui::Host,
+        path: std::path::PathBuf,
+        original_index: usize,
+    ) {
+        tracing::info!(
+            "找回删除音轨：恢复 path={:?} original_index={}",
+            path,
+            original_index
+        );
+        match lumino_project::load_deleted_track(&path) {
+            Ok((meta, data)) => {
+                let notes = data
+                    .notes
+                    .into_iter()
+                    .map(|n| lumino_ui::event::window::track::TrackDeletionNote {
+                        start_tick: n.start_tick,
+                        end_tick: n.end_tick,
+                        key: n.key,
+                        velocity: n.velocity,
+                        channel: n.channel,
+                        port: n.port,
+                    })
+                    .collect();
+                let payload = lumino_ui::event::window::track::TrackDeletionPayload {
+                    track_id: meta.track_id,
+                    track_name: meta.track_name,
+                    port: meta.port,
+                    channel: meta.channel,
+                    is_drum: meta.is_drum,
+                    max_tick: meta.max_tick,
+                    original_index,
+                    notes,
+                };
+                ui.apply_track_restored(payload);
+            }
+            Err(e) => {
+                tracing::error!("找回删除音轨：加载缓存失败 path={:?} err={}", path, e);
+            }
+        }
+    }
+
+    /// 找回删除音轨：永久删除缓存文件，并始终释放该条轨道占用的 reserved track_id。
+    fn apply_track_permanent_delete(
+        ui: &mut lumino_ui::Host,
+        path: std::path::PathBuf,
+        track_id: u16,
+    ) {
+        tracing::info!(
+            "找回删除音轨：永久删除 path={:?} track_id={}",
+            path,
+            track_id
+        );
+        if let Err(e) = lumino_project::delete_permanently(&path) {
+            tracing::error!("找回删除音轨：永久删除缓存失败 path={:?} err={}", path, e);
+        }
+        // 无论磁盘删除是否成功，都释放 reserved track_id
+        // （文件不存在时 delete_permanently 静默返回 Ok，此处总能到达）
+        ui.apply_track_permanently_deleted(track_id);
     }
 
     /// 重启窗口（标题栏设置变更后）

@@ -97,66 +97,71 @@ impl Editor {
             {
                 self.editor_state.shape_select.select_only(id);
             }
-            // DRAW-049：第一次撤销 Bake 后回到「黄色 8 手柄」放置态，
-            // 而不是只留一个选择框；第二次撤销再由 `Editor::undo` 退出到
-            // pending 音符合集预览。
+            self.rearm_bake_placement_after_restore(index);
+        }
+        true
+    }
+
+    /// 撤销 Bake 后按本次放置流程重新布防 8 手柄（DRAW-049）
+    ///
+    /// 只接管单支 Single 组合；Slice/Mould 多支组合与抽屉 Insert 各撤销各的。
+    fn rearm_bake_placement_after_restore(&mut self, index: usize) {
+        // DRAW-049：第一次撤销 Bake 后回到「黄色 8 手柄」放置态，
+        // 而不是只留一个选择框；第二次撤销再由 `Editor::undo` 退出到
+        // pending 音符合集预览。
+        //
+        // 只对**本次放置流程**产生的单支 Single 组合接管：Slice/Mould 等
+        // 多支组合、抽屉 Insert 有各自的撤销语义，不能被 8 手柄会话截胡。
+        let is_placement = self
+            .editor_state
+            .pending_composed
+            .get(index)
+            .is_some_and(|composed| {
+                composed.kind == ComposedKind::Single && composed.results.len() == 1
+            });
+        if is_placement {
+            // DRAW-049 A：只有当前轨就是归属轨才自动布防手柄。
             //
-            // 只对**本次放置流程**产生的单支 Single 组合接管：Slice/Mould 等
-            // 多支组合、抽屉 Insert 有各自的撤销语义，不能被 8 手柄会话截胡。
-            let is_placement =
-                self.editor_state
-                    .pending_composed
-                    .get(index)
-                    .is_some_and(|composed| {
-                        composed.kind == ComposedKind::Single && composed.results.len() == 1
-                    });
-            if is_placement {
-                // DRAW-049 A：只有当前轨就是归属轨才自动布防手柄。
-                //
-                // 「✓ 提交 → 切轨 → 撤销」时 pending 属于旧轨：这里只恢复 pending
-                // 预览，绝不把 8 手柄布到新轨上——否则下一次 ✓ 又会错轨提交。
-                let snapshot = self
-                    .editor_state
-                    .pending_composed
-                    .get(index)
-                    .and_then(|composed| composed.results.first())
-                    .map(|part| {
-                        (
-                            part.model.track as usize,
-                            part.model.clone(),
-                            part.notes.clone(),
-                        )
-                    });
-                match snapshot {
-                    Some((owner, original_model, original_notes))
-                        if owner == self.current_track() =>
-                    {
-                        if self.editor_state.current_tool() != Tool::ShapeSelect {
-                            self.set_tool(Tool::ShapeSelect);
-                        }
-                        self.shape_tools.bake_placement = Some(
-                            crate::interaction::shape_bake_placement::BakePlacementSession {
-                                pending_index: index,
-                                original_model,
-                                original_notes,
-                                marquee_active: false,
-                            },
-                        );
-                        self.shape_tools.edit = None;
-                        self.shape_tools.edit_armed = None;
-                        self.shape_tools.group_edit = None;
-                        let _ = self.enable_shape_edit();
+            // 「✓ 提交 → 切轨 → 撤销」时 pending 属于旧轨：这里只恢复 pending
+            // 预览，绝不把 8 手柄布到新轨上——否则下一次 ✓ 又会错轨提交。
+            let snapshot = self
+                .editor_state
+                .pending_composed
+                .get(index)
+                .and_then(|composed| composed.results.first())
+                .map(|part| {
+                    (
+                        part.model.track as usize,
+                        part.model.clone(),
+                        part.notes.clone(),
+                    )
+                });
+            match snapshot {
+                Some((owner, original_model, original_notes)) if owner == self.current_track() => {
+                    if self.editor_state.current_tool() != Tool::ShapeSelect {
+                        self.set_tool(Tool::ShapeSelect);
                     }
-                    _ => {
-                        // 归属在别的轨：会话不建立、手柄不布防、黄色框不残留；
-                        // pending 保留，切回归属轨后按 ✓ 可重新进入放置态。
-                        self.shape_tools.bake_placement = None;
-                        self.editor_state.shape_select.clear_selection();
-                    }
+                    self.shape_tools.bake_placement = Some(
+                        crate::interaction::shape_bake_placement::BakePlacementSession {
+                            pending_index: index,
+                            original_model,
+                            original_notes,
+                            marquee_active: false,
+                        },
+                    );
+                    self.shape_tools.edit = None;
+                    self.shape_tools.edit_armed = None;
+                    self.shape_tools.group_edit = None;
+                    let _ = self.enable_shape_edit();
+                }
+                _ => {
+                    // 归属在别的轨：会话不建立、手柄不布防、黄色框不残留；
+                    // pending 保留，切回归属轨后按 ✓ 可重新进入放置态。
+                    self.shape_tools.bake_placement = None;
+                    self.editor_state.shape_select.clear_selection();
                 }
             }
         }
-        true
     }
 
     /// redo 一个 Bake group：再次丢弃矢量

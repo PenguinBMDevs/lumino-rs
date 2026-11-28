@@ -136,133 +136,7 @@ fn i2m_model(root: &Root) -> I2mPanelModel {
         select_image: tr!("选择图片文件").to_string(),
         selected_hint: selected.then(|| tr!("选择了一个图片文件").to_string()),
         config_title: tr!("转换参数").to_string(),
-        rows: vec![
-            I2mRowModel {
-                label: tr!("Key 范围").to_string(),
-                control: I2mControlModel::KeyRange {
-                    start_field: I2mField::StartKey,
-                    start_text: cfg.start_key_text.clone(),
-                    end_field: I2mField::EndKey,
-                    end_text: cfg.end_key_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("目标高度").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::TargetHeight,
-                    text: cfg.target_height_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("每像素 tick").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::TicksPerPixel,
-                    text: cfg.ticks_per_pixel_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("颜色数").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::ColorCount,
-                    text: cfg.color_count_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("最长音符").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::MaxNoteLength,
-                    text: cfg.max_note_length_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: String::new(),
-                control: I2mControlModel::Section {
-                    title: tr!("观感调整").to_string(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("亮度").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::Brightness,
-                    text: cfg.brightness_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("对比度").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::Contrast,
-                    text: cfg.contrast_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("饱和度").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::Saturation,
-                    text: cfg.saturation_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("锐化").to_string(),
-                control: I2mControlModel::Input {
-                    field: I2mField::Sharpen,
-                    text: cfg.sharpen_text.clone(),
-                },
-            },
-            I2mRowModel {
-                label: String::new(),
-                control: I2mControlModel::Section {
-                    title: tr!("算法").to_string(),
-                },
-            },
-            I2mRowModel {
-                label: tr!("调色板").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::Palette,
-                    options: option_names(palette_algorithms()),
-                    selected: cfg.palette_index,
-                },
-            },
-            I2mRowModel {
-                label: tr!("混合模式").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::Blend,
-                    options: option_names(blend_modes()),
-                    selected: cfg.blend_index,
-                },
-            },
-            I2mRowModel {
-                label: tr!("key 映射").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::KeyMode,
-                    options: option_names(key_modes()),
-                    selected: cfg.key_mode_index,
-                },
-            },
-            I2mRowModel {
-                label: tr!("音符长度").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::NoteLengthMode,
-                    options: option_names(note_length_modes()),
-                    selected: cfg.note_length_mode_index,
-                },
-            },
-            I2mRowModel {
-                label: tr!("重采样").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::ResizeAlgorithm,
-                    options: option_names(resize_algorithms()),
-                    selected: cfg.resize_algorithm_index,
-                },
-            },
-            I2mRowModel {
-                label: tr!("颜色匹配").to_string(),
-                control: I2mControlModel::Select {
-                    field: I2mSelectField::ColorIdMethod,
-                    options: option_names(color_id_methods()),
-                    selected: cfg.color_id_method_index,
-                },
-            },
-        ],
+        rows: i2m_rows(cfg),
         convert: selected.then(|| I2mConvertModel {
             label: if sidebar.converting {
                 tr!("转换中...").to_string()
@@ -272,6 +146,157 @@ fn i2m_model(root: &Root) -> I2mPanelModel {
             enabled: !sidebar.converting,
         }),
     }
+}
+
+/// 转换参数总表：基础参数 → 观感调整 → 算法，顺序与面板绘制一致。
+fn i2m_rows(cfg: &crate::right_sidebar::I2mConfig) -> Vec<I2mRowModel> {
+    let mut rows = i2m_basic_rows(cfg);
+    rows.extend(i2m_look_rows(cfg));
+    rows.extend(i2m_algorithm_rows(cfg));
+    rows
+}
+
+/// 基础参数行：Key 范围 / 目标高度 / 每像素 tick / 颜色数 / 最长音符。
+fn i2m_basic_rows(cfg: &crate::right_sidebar::I2mConfig) -> Vec<I2mRowModel> {
+    vec![
+        I2mRowModel {
+            label: tr!("Key 范围").to_string(),
+            control: I2mControlModel::KeyRange {
+                start_field: I2mField::StartKey,
+                start_text: cfg.start_key_text.clone(),
+                end_field: I2mField::EndKey,
+                end_text: cfg.end_key_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("目标高度").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::TargetHeight,
+                text: cfg.target_height_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("每像素 tick").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::TicksPerPixel,
+                text: cfg.ticks_per_pixel_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("颜色数").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::ColorCount,
+                text: cfg.color_count_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("最长音符").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::MaxNoteLength,
+                text: cfg.max_note_length_text.clone(),
+            },
+        },
+    ]
+}
+
+/// 观感调整小节：亮度 / 对比度 / 饱和度 / 锐化。
+fn i2m_look_rows(cfg: &crate::right_sidebar::I2mConfig) -> Vec<I2mRowModel> {
+    vec![
+        I2mRowModel {
+            label: String::new(),
+            control: I2mControlModel::Section {
+                title: tr!("观感调整").to_string(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("亮度").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::Brightness,
+                text: cfg.brightness_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("对比度").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::Contrast,
+                text: cfg.contrast_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("饱和度").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::Saturation,
+                text: cfg.saturation_text.clone(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("锐化").to_string(),
+            control: I2mControlModel::Input {
+                field: I2mField::Sharpen,
+                text: cfg.sharpen_text.clone(),
+            },
+        },
+    ]
+}
+
+/// 算法小节：调色板 / 混合模式 / key 映射 / 音符长度 / 重采样 / 颜色匹配。
+fn i2m_algorithm_rows(cfg: &crate::right_sidebar::I2mConfig) -> Vec<I2mRowModel> {
+    vec![
+        I2mRowModel {
+            label: String::new(),
+            control: I2mControlModel::Section {
+                title: tr!("算法").to_string(),
+            },
+        },
+        I2mRowModel {
+            label: tr!("调色板").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::Palette,
+                options: option_names(palette_algorithms()),
+                selected: cfg.palette_index,
+            },
+        },
+        I2mRowModel {
+            label: tr!("混合模式").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::Blend,
+                options: option_names(blend_modes()),
+                selected: cfg.blend_index,
+            },
+        },
+        I2mRowModel {
+            label: tr!("key 映射").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::KeyMode,
+                options: option_names(key_modes()),
+                selected: cfg.key_mode_index,
+            },
+        },
+        I2mRowModel {
+            label: tr!("音符长度").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::NoteLengthMode,
+                options: option_names(note_length_modes()),
+                selected: cfg.note_length_mode_index,
+            },
+        },
+        I2mRowModel {
+            label: tr!("重采样").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::ResizeAlgorithm,
+                options: option_names(resize_algorithms()),
+                selected: cfg.resize_algorithm_index,
+            },
+        },
+        I2mRowModel {
+            label: tr!("颜色匹配").to_string(),
+            control: I2mControlModel::Select {
+                field: I2mSelectField::ColorIdMethod,
+                options: option_names(color_id_methods()),
+                selected: cfg.color_id_method_index,
+            },
+        },
+    ]
 }
 
 /// 面板动作 → 生产 `Message`。

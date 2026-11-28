@@ -79,6 +79,20 @@ fn parse_f32_or_log(raw: &str, name: &str, default: f32) -> f32 {
     }
 }
 
+/// 计数文字字体：系统字体 / 自定义字体文件 / 位图字体（模式字符串分派）。
+fn counter_font(
+    mode: &str,
+    family: String,
+    path: String,
+) -> lumino_message::events::window::video::CounterFont {
+    use lumino_message::events::window::video::*;
+    match mode {
+        "系统字体" => CounterFont::System { family },
+        "自定义字体" => CounterFont::File { path },
+        _ => CounterFont::Bitmap,
+    }
+}
+
 /// 从对话框状态组装视频导出配置（纯函数，可单测）。
 ///
 /// `ppq`/`key_count` 来自编辑器视图；非法输入回退默认值并记录 warn（见 `parse_enum_or_log`）。
@@ -88,11 +102,6 @@ pub(crate) fn build_video_config(
     key_count: u16,
 ) -> lumino_message::events::window::dialog::VideoExportConfig {
     use lumino_message::events::window::video::*;
-    let counter_font = |mode: &str, family: String, path: String| match mode {
-        "系统字体" => CounterFont::System { family },
-        "自定义字体" => CounterFont::File { path },
-        _ => CounterFont::Bitmap,
-    };
     VideoExportConfig {
         output_path: st.basic.output_path.clone(),
         midi_path: st.basic.midi_path.clone(),
@@ -112,93 +121,8 @@ pub(crate) fn build_video_config(
         miditrail_top_speed: st.miditrail.top_speed.max(0.1),
         miditrail_z_far: st.miditrail.z_far,
         miditrail_3d_notes: st.miditrail.notes_3d,
-        note_counter: NoteCounterConfig {
-            text: st.counter.text.clone(),
-            alignment: parse_enum_or_log(&st.counter.alignment, "counter_alignment"),
-            font_size: st.counter.font_size,
-            font: counter_font(
-                &st.counter.font_mode,
-                st.counter.font_family.clone(),
-                st.counter.font_path.clone(),
-            ),
-            separator: if st.counter.use_commas {
-                CounterSeparator::Comma
-            } else {
-                CounterSeparator::Nothing
-            },
-            padding_zeroes: st.counter.padding_zeroes,
-            bpm_int_pad: st.counter.bpm_int_pad,
-            bpm_dec_pad: st.counter.bpm_dec_pad,
-            note_count_pad: st.counter.note_count_pad,
-            polyphony_pad: st.counter.polyphony_pad,
-            nps_pad: st.counter.nps_pad,
-            ticks_pad: st.counter.ticks_pad,
-            bars_pad: st.counter.bars_pad,
-            frames_pad: st.counter.frames_pad,
-            save_csv: st.counter.save_csv,
-            csv_output: st.counter.csv_output.clone(),
-            csv_format: st.counter.csv_format.clone(),
-        },
-        data_curve: DataCurveConfig {
-            metric: parse_enum_or_log(&st.data_curve.metric, "dc_metric"),
-            graph_duration: parse_f32_or_log(
-                &st.data_curve.graph_duration,
-                "dc_graph_duration",
-                2.0,
-            )
-            .clamp(0.5, 30.0),
-            zoom_smoothness: parse_f32_or_log(
-                &st.data_curve.zoom_smoothness,
-                "dc_zoom_smoothness",
-                8.0,
-            )
-            .clamp(1.0, 64.0),
-            graph_smoothness: parse_f32_or_log(
-                &st.data_curve.graph_smoothness,
-                "dc_graph_smoothness",
-                0.0,
-            )
-            .clamp(0.0, 32.0) as u32,
-            padding_mul: parse_f32_or_log(&st.data_curve.padding_mul, "dc_padding_mul", 0.1)
-                .clamp(0.0, 1.0),
-            bg_color: hex_to_rgba(&st.data_curve.bg_color).unwrap_or([0, 0, 0, 255]),
-            line_color: hex_to_rgba(&st.data_curve.line_color).unwrap_or([0, 255, 255, 255]),
-            text_color: hex_to_rgba(&st.data_curve.text_color).unwrap_or([255, 255, 255, 127]),
-            bar_color: hex_to_rgba(&st.data_curve.bar_color).unwrap_or([255, 255, 255, 127]),
-            line_thickness: parse_f32_or_log(
-                &st.data_curve.line_thickness,
-                "dc_line_thickness",
-                3.0,
-            )
-            .clamp(1.0, 20.0) as u32,
-            bar_thickness: parse_f32_or_log(&st.data_curve.bar_thickness, "dc_bar_thickness", 1.0)
-                .clamp(1.0, 10.0) as u32,
-            font_size: st.data_curve.font_size,
-            font: counter_font(
-                &st.data_curve.font_mode,
-                st.data_curve.font_family.clone(),
-                st.data_curve.font_path.clone(),
-            ),
-            text_x_offset: parse_f32_or_log(&st.data_curve.text_x_offset, "dc_text_x_offset", 2.0)
-                .clamp(0.0, 100.0) as u32,
-            text_y_offset: parse_f32_or_log(&st.data_curve.text_y_offset, "dc_text_y_offset", 2.0)
-                .clamp(0.0, 100.0) as u32,
-            milestone_scale_mul: parse_f32_or_log(
-                &st.data_curve.milestone_scale_mul,
-                "dc_milestone_scale_mul",
-                1.5,
-            )
-            .clamp(1.0, 5.0),
-            abbreviate: st.data_curve.abbreviate,
-            abbreviate_digits: parse_f32_or_log(
-                &st.data_curve.abbreviate_digits,
-                "dc_abbreviate_digits",
-                3.0,
-            )
-            .clamp(0.0, 10.0) as u32,
-            show_text: st.data_curve.show_text,
-            show_bars: st.data_curve.show_bars,
-        },
+        note_counter: build_note_counter(st),
+        data_curve: build_data_curve(st),
         midi_console: MidiConsoleConfig {
             render_backend: parse_enum_or_log(
                 &st.basic.midi_console_backend,
@@ -206,5 +130,98 @@ pub(crate) fn build_video_config(
             ),
             ..MidiConsoleConfig::default()
         },
+    }
+}
+
+/// 组装计数文字（note counter）配置。
+fn build_note_counter(
+    st: &VideoExportDialogState,
+) -> lumino_message::events::window::video::NoteCounterConfig {
+    use lumino_message::events::window::video::*;
+    NoteCounterConfig {
+        text: st.counter.text.clone(),
+        alignment: parse_enum_or_log(&st.counter.alignment, "counter_alignment"),
+        font_size: st.counter.font_size,
+        font: counter_font(
+            &st.counter.font_mode,
+            st.counter.font_family.clone(),
+            st.counter.font_path.clone(),
+        ),
+        separator: if st.counter.use_commas {
+            CounterSeparator::Comma
+        } else {
+            CounterSeparator::Nothing
+        },
+        padding_zeroes: st.counter.padding_zeroes,
+        bpm_int_pad: st.counter.bpm_int_pad,
+        bpm_dec_pad: st.counter.bpm_dec_pad,
+        note_count_pad: st.counter.note_count_pad,
+        polyphony_pad: st.counter.polyphony_pad,
+        nps_pad: st.counter.nps_pad,
+        ticks_pad: st.counter.ticks_pad,
+        bars_pad: st.counter.bars_pad,
+        frames_pad: st.counter.frames_pad,
+        save_csv: st.counter.save_csv,
+        csv_output: st.counter.csv_output.clone(),
+        csv_format: st.counter.csv_format.clone(),
+    }
+}
+
+/// 组装数据曲线（data curve）配置，数值字段解析后按原区间 clamp。
+fn build_data_curve(
+    st: &VideoExportDialogState,
+) -> lumino_message::events::window::video::DataCurveConfig {
+    use lumino_message::events::window::video::*;
+    DataCurveConfig {
+        metric: parse_enum_or_log(&st.data_curve.metric, "dc_metric"),
+        graph_duration: parse_f32_or_log(&st.data_curve.graph_duration, "dc_graph_duration", 2.0)
+            .clamp(0.5, 30.0),
+        zoom_smoothness: parse_f32_or_log(
+            &st.data_curve.zoom_smoothness,
+            "dc_zoom_smoothness",
+            8.0,
+        )
+        .clamp(1.0, 64.0),
+        graph_smoothness: parse_f32_or_log(
+            &st.data_curve.graph_smoothness,
+            "dc_graph_smoothness",
+            0.0,
+        )
+        .clamp(0.0, 32.0) as u32,
+        padding_mul: parse_f32_or_log(&st.data_curve.padding_mul, "dc_padding_mul", 0.1)
+            .clamp(0.0, 1.0),
+        bg_color: hex_to_rgba(&st.data_curve.bg_color).unwrap_or([0, 0, 0, 255]),
+        line_color: hex_to_rgba(&st.data_curve.line_color).unwrap_or([0, 255, 255, 255]),
+        text_color: hex_to_rgba(&st.data_curve.text_color).unwrap_or([255, 255, 255, 127]),
+        bar_color: hex_to_rgba(&st.data_curve.bar_color).unwrap_or([255, 255, 255, 127]),
+        line_thickness: parse_f32_or_log(&st.data_curve.line_thickness, "dc_line_thickness", 3.0)
+            .clamp(1.0, 20.0) as u32,
+        bar_thickness: parse_f32_or_log(&st.data_curve.bar_thickness, "dc_bar_thickness", 1.0)
+            .clamp(1.0, 10.0) as u32,
+        font_size: st.data_curve.font_size,
+        font: counter_font(
+            &st.data_curve.font_mode,
+            st.data_curve.font_family.clone(),
+            st.data_curve.font_path.clone(),
+        ),
+        text_x_offset: parse_f32_or_log(&st.data_curve.text_x_offset, "dc_text_x_offset", 2.0)
+            .clamp(0.0, 100.0) as u32,
+        text_y_offset: parse_f32_or_log(&st.data_curve.text_y_offset, "dc_text_y_offset", 2.0)
+            .clamp(0.0, 100.0) as u32,
+        milestone_scale_mul: parse_f32_or_log(
+            &st.data_curve.milestone_scale_mul,
+            "dc_milestone_scale_mul",
+            1.5,
+        )
+        .clamp(1.0, 5.0),
+        abbreviate: st.data_curve.abbreviate,
+        abbreviate_digits: parse_f32_or_log(
+            &st.data_curve.abbreviate_digits,
+            "dc_abbreviate_digits",
+            3.0,
+        )
+        .clamp(0.0, 10.0) as u32,
+        show_text: st.data_curve.show_text,
+        show_bars: st.data_curve.show_bars,
     }
 }

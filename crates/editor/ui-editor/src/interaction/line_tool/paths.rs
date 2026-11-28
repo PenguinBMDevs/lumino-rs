@@ -268,29 +268,7 @@ fn parts_notes(r: &[Pt], first: &[usize], tails: &[bool]) -> Vec<RawNote> {
     let n_pts = r.len();
     let pitch: Vec<i32> = r.iter().map(|p| pitch_of(p.1)).collect();
 
-    // 每片的末点下标
-    let mut part_last: Vec<usize> = Vec::with_capacity(k_parts);
-    for k in 0..k_parts {
-        part_last.push(if k + 1 < k_parts {
-            first[k + 1] - 1
-        } else {
-            n_pts - 1
-        });
-    }
-    // 片内段（跨片跳变的那个段不算）
-    let mut in_part = vec![true; n_pts.saturating_sub(1)];
-    for k in 0..k_parts.saturating_sub(1) {
-        if part_last[k] < in_part.len() {
-            in_part[part_last[k]] = false;
-        }
-    }
-    // 跨越音高行的段
-    let mut seg: Vec<usize> = Vec::new();
-    for j in 0..n_pts.saturating_sub(1) {
-        if in_part[j] && pitch[j] != pitch[j + 1] {
-            seg.push(j);
-        }
-    }
+    let (part_last, seg) = part_segments(first, &pitch, n_pts);
 
     // 每个跨界段展开成「逐行穿越」：目标行 qq、行边界 key `yy`、边界 tick `tt`
     let mut cross_t: Vec<f64> = Vec::new();
@@ -349,6 +327,56 @@ fn parts_notes(r: &[Pt], first: &[usize], tails: &[bool]) -> Vec<RawNote> {
         .collect();
     let e_last: Vec<usize> = (0..k_parts).map(|k| off[k] + per[k] - 1).collect();
 
+    let ends = note_ends(&starts, &part, &part_end, &e_last, &per, tails);
+
+    (0..m)
+        .map(|i| RawNote {
+            start: starts[i],
+            end: ends[i],
+            key: ep[i],
+        })
+        .collect()
+}
+
+/// 每片的末点下标与片内跨音高行的段；跨片跳变的那个段不算
+fn part_segments(first: &[usize], pitch: &[i32], n_pts: usize) -> (Vec<usize>, Vec<usize>) {
+    let k_parts = first.len();
+    // 每片的末点下标
+    let mut part_last: Vec<usize> = Vec::with_capacity(k_parts);
+    for k in 0..k_parts {
+        part_last.push(if k + 1 < k_parts {
+            first[k + 1] - 1
+        } else {
+            n_pts - 1
+        });
+    }
+    // 片内段（跨片跳变的那个段不算）
+    let mut in_part = vec![true; n_pts.saturating_sub(1)];
+    for k in 0..k_parts.saturating_sub(1) {
+        if part_last[k] < in_part.len() {
+            in_part[part_last[k]] = false;
+        }
+    }
+    // 跨越音高行的段
+    let mut seg: Vec<usize> = Vec::new();
+    for j in 0..n_pts.saturating_sub(1) {
+        if in_part[j] && pitch[j] != pitch[j + 1] {
+            seg.push(j);
+        }
+    }
+    (part_last, seg)
+}
+
+/// 每条音符的结束 tick：一直响到下一条**起点更晚**的同片音符开始
+fn note_ends(
+    starts: &[i64],
+    part: &[usize],
+    part_end: &[i64],
+    e_last: &[usize],
+    per: &[usize],
+    tails: &[bool],
+) -> Vec<i64> {
+    let m = starts.len();
     // 一条音符一直响到下一条**起点更晚**的音符开始
     // （很陡的线上好几个音高落在同一个 tick：除最后一条外都只给 1 tick，
     //  这样紧折角后面接平坦段时不会把两条长音符叠成一个实心块）
@@ -377,7 +405,7 @@ fn parts_notes(r: &[Pt], first: &[usize], tails: &[bool]) -> Vec<RawNote> {
         }
     }
     // 末点尾巴：末音符起于片的末点，取与前一音符相同的门长
-    for k in 0..k_parts {
+    for k in 0..per.len() {
         if tails.get(k).copied().unwrap_or(false) && per[k] >= 2 {
             let l = e_last[k];
             if l > 0 && starts[l] == part_end[k] {
@@ -386,14 +414,7 @@ fn parts_notes(r: &[Pt], first: &[usize], tails: &[bool]) -> Vec<RawNote> {
             }
         }
     }
-
-    (0..m)
-        .map(|i| RawNote {
-            start: starts[i],
-            end: ends[i],
-            key: ep[i],
-        })
-        .collect()
+    ends
 }
 
 /// (tick, key) 点列 → 音符（未去重）。路径在**时间反向**处切开（每一片都从左到右），

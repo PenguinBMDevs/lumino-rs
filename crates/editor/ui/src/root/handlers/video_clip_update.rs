@@ -134,9 +134,29 @@ impl Root {
 
     /// 处理视频剪辑面板交互动作
     ///
-    /// 全部动作只读写 [`VideoClipState`]（剪辑面板独立状态域），
-    /// 不触碰卷帘的 `PlaybackManager` / `playback_position`。
+    /// 按交互域（视口 / 传输 / 素材带 / 时间轴）分派到私有助手。全部动作只读写
+    /// [`VideoClipState`]（剪辑面板独立状态域），不触碰卷帘的
+    /// `PlaybackManager` / `playback_position`。
     pub(crate) fn handle_video_clip_action(&mut self, action: VideoClipAction) -> bool {
+        match action {
+            action @ (VideoClipAction::ZoomChanged(_)
+            | VideoClipAction::ZoomSet(_)
+            | VideoClipAction::PanChanged { .. }
+            | VideoClipAction::ZoomAround { .. }
+            | VideoClipAction::ResetView) => self.apply_clip_view_action(action),
+            action @ (VideoClipAction::TimelineSeek { .. }
+            | VideoClipAction::ClipPlayToggled
+            | VideoClipAction::ClipRewound) => self.apply_clip_transport_action(action),
+            action @ (VideoClipAction::ClipTrackOffsetChanged { .. }
+            | VideoClipAction::ClipTrimChanged { .. }
+            | VideoClipAction::PreviewSizeChanged { .. }) => self.apply_clip_band_action(action),
+            action @ (VideoClipAction::TimelineScroll { .. }
+            | VideoClipAction::TimelineZoom { .. }) => self.apply_clip_timeline_action(action),
+        }
+    }
+
+    /// 视口动作：缩放 / 平移 / 重置，只改剪辑面板的视图状态。
+    fn apply_clip_view_action(&mut self, action: VideoClipAction) -> bool {
         match action {
             VideoClipAction::ZoomChanged(factor) => {
                 self.state.video_clip.apply_zoom(factor);
@@ -168,6 +188,13 @@ impl Root {
                 self.state.video_clip.reset_view();
                 true
             }
+            _ => true,
+        }
+    }
+
+    /// 传输动作：标尺定位 / 播放暂停 / 回零，只写剪辑面板独立传输时钟。
+    fn apply_clip_transport_action(&mut self, action: VideoClipAction) -> bool {
+        match action {
             VideoClipAction::TimelineSeek { secs } => {
                 // 标尺定位：写剪辑面板独立传输时钟（与卷帘完全无关）。
                 // 播放头可落在时间轴任意 X 位置，不因素材带区间而受限；
@@ -190,6 +217,13 @@ impl Root {
                 self.state.video_clip.clip_rewind();
                 true
             }
+            _ => true,
+        }
+    }
+
+    /// 素材带动作：整体偏移、首尾裁剪、预览尺寸。
+    fn apply_clip_band_action(&mut self, action: VideoClipAction) -> bool {
+        match action {
             VideoClipAction::ClipTrackOffsetChanged { track, offset_secs } => {
                 self.state
                     .video_clip
@@ -218,6 +252,13 @@ impl Root {
                 self.state.video_clip.preview_height = height;
                 true
             }
+            _ => true,
+        }
+    }
+
+    /// 时间轴动作：滚动条定位与以锚点缩放。
+    fn apply_clip_timeline_action(&mut self, action: VideoClipAction) -> bool {
+        match action {
             VideoClipAction::TimelineScroll { x, viewport_w } => {
                 let zoom = self.state.video_clip.zoom;
                 let content_w = self.clip_timeline_base_width() * zoom;
@@ -242,6 +283,7 @@ impl Root {
                 );
                 true
             }
+            _ => true,
         }
     }
 }

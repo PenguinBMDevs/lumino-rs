@@ -43,6 +43,27 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
         return Err(SynthError::Config("not a RIFF/WAVE file".into()));
     }
 
+    let ((tag, channels, sample_rate, bits), raw) = read_chunks(r)?;
+    if channels == 0 || channels > 2 {
+        return Err(SynthError::Config(format!(
+            "unsupported channel count {channels}"
+        )));
+    }
+
+    let samples = decode_samples(tag, bits, &raw)?;
+
+    Ok(WavData {
+        sample_rate,
+        channels,
+        samples,
+    })
+}
+
+/// 读取 `fmt ` 与 `data` 块，返回格式四元组与原始 data 字节。
+/// WAV 头字段（format / channels / sample_rate / bits）与 data 块字节。
+type WavChunks = ((u16, u16, u32, u16), Vec<u8>);
+
+fn read_chunks(r: &mut impl Read) -> Result<WavChunks, SynthError> {
     let mut fmt: Option<(u16, u16, u32, u16)> = None; // tag, ch, rate, bits
     let mut data: Option<Vec<u8>> = None;
 
@@ -98,15 +119,13 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
         }
     }
 
-    let (tag, channels, sample_rate, bits) =
-        fmt.ok_or_else(|| SynthError::Config("missing fmt chunk".into()))?;
+    let fmt = fmt.ok_or_else(|| SynthError::Config("missing fmt chunk".into()))?;
     let raw = data.ok_or_else(|| SynthError::Config("missing data chunk".into()))?;
-    if channels == 0 || channels > 2 {
-        return Err(SynthError::Config(format!(
-            "unsupported channel count {channels}"
-        )));
-    }
+    Ok((fmt, raw))
+}
 
+/// 按格式标签与位深把原始 data 字节解码为交织 f32 样本。
+fn decode_samples(tag: u16, bits: u16, raw: &[u8]) -> Result<Vec<f32>, SynthError> {
     let samples = match (tag, bits) {
         (1, 8) => raw.iter().map(|b| (*b as f32 / 128.0) - 1.0).collect(),
         (1, 16) => raw
@@ -147,11 +166,7 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
         }
     };
 
-    Ok(WavData {
-        sample_rate,
-        channels,
-        samples,
-    })
+    Ok(samples)
 }
 
 /// Writes interleaved float samples as a 32-bit IEEE float WAV file.

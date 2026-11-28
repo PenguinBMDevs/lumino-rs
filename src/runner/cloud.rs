@@ -117,18 +117,10 @@ pub(super) fn lock_cloud(
 impl RunnerInner {
     // ── 事件分发 ──
 
-    /// 处理云存储事件
+    /// 处理云存储事件：只做分流，落地动作见各私有助手（match 保持穷尽）
     pub(super) fn handle_cloud_event(&mut self, ev: cloud_event::Event) {
         match ev {
-            cloud_event::Event::OpenCloudPanel { intent } => {
-                let intent = match intent.as_str() {
-                    "save" => CloudIntent::Save,
-                    "material" => CloudIntent::Material,
-                    "material_upload" => CloudIntent::UploadMaterial,
-                    _ => CloudIntent::Import,
-                };
-                self.ensure_cloud_ready(intent);
-            }
+            cloud_event::Event::OpenCloudPanel { intent } => self.handle_open_panel(intent),
             cloud_event::Event::ConnectRequest {
                 name,
                 protocol,
@@ -138,21 +130,7 @@ impl RunnerInner {
                 password,
             } => self.run_cloud_connect(name, protocol, address, port, username, password),
             cloud_event::Event::DisconnectRequest(id) => self.run_cloud_disconnect(id),
-            cloud_event::Event::ListDirRequest { id, path } => {
-                // 云浏览状态唯一数据源为主窗口 Root：对话框的导航操作
-                // （切设备/进目录/返回/刷新）经事件回传并更新主窗口，
-                // 保证后续广播（snapshot 覆盖）值与对话框一致——
-                // 否则保存模式切换文件夹后会被广播覆盖回根目录。
-                {
-                    let state = self.window_state.window.ui_mut().cloud_state_mut();
-                    state.selected_id = Some(id.clone());
-                    state.current_path = path.clone();
-                    state.busy = true;
-                    state.notice = None;
-                    state.entries.clear();
-                }
-                self.run_cloud_list(id, path);
-            }
+            cloud_event::Event::ListDirRequest { id, path } => self.request_cloud_list(id, path),
             cloud_event::Event::DownloadRequest {
                 id,
                 remote_path,
@@ -185,54 +163,13 @@ impl RunnerInner {
                 to_dir,
                 is_cut,
             } => self.run_cloud_copy(id, from, to_dir, is_cut),
-            cloud_event::Event::OpenConnectPanel => {
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(crate::runner::dialog_manager::DialogType::CloudConnect);
-            }
-            cloud_event::Event::OpenBrowserPanel { intent } => {
-                let intent = match intent.as_str() {
-                    "save" => CloudIntent::Save,
-                    "material" => CloudIntent::Material,
-                    "material_upload" => CloudIntent::UploadMaterial,
-                    _ => CloudIntent::Import,
-                };
-                self.refresh_cloud_connections();
-                self.open_cloud_browser(intent);
-            }
-            cloud_event::Event::ConnectExisting { id } => {
-                self.run_cloud_connect_existing(id);
-            }
-            cloud_event::Event::DeleteConnection { id } => {
-                let mgr = Arc::clone(&self.cloud);
-                let status = Arc::clone(&self.cloud_status);
-                let id_for_thread = id.clone();
-                std::thread::spawn(move || {
-                    let mut mgr = lock_cloud(&mgr);
-                    if let Err(e) = mgr.remove_connection(&id_for_thread) {
-                        tracing::warn!("删除云连接失败 {id_for_thread}: {e}");
-                    }
-                    // 删除完成后发布最新快照，UI 立即看到结果
-                    publish_cloud_snapshot(&status, &mgr);
-                });
-                // 乐观更新 UI 快照（不等后台线程，也不抢业务锁）
-                {
-                    let mut snap = self.cloud_status.write().unwrap_or_else(|e| e.into_inner());
-                    snap.remove_connection(&id);
-                }
-                self.window_state.window.ui_mut().cloud_state_mut().notice =
-                    Some(tr!("连接已删除").to_string());
-                self.refresh_cloud_connections();
-            }
-            cloud_event::Event::DismissAlert => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudNotice);
-            }
-            cloud_event::Event::AutoConnectFinished => {
-                // 启动自动连接完成：静默刷新 UI 快照（不弹提醒，仅显示状态标志）
-                self.refresh_cloud_connections();
-            }
+            cloud_event::Event::OpenConnectPanel => self.open_cloud_connect_panel(),
+            cloud_event::Event::OpenBrowserPanel { intent } => self.handle_browser_panel(intent),
+            cloud_event::Event::ConnectExisting { id } => self.run_cloud_connect_existing(id),
+            cloud_event::Event::DeleteConnection { id } => self.delete_cloud_connection(id),
+            cloud_event::Event::DismissAlert => self.dismiss_cloud_alert(),
+            // 启动自动连接完成：静默刷新 UI 快照（不弹提醒，仅显示状态标志）
+            cloud_event::Event::AutoConnectFinished => self.refresh_cloud_connections(),
 
             // ── 结果回传（后台线程 → 本函数 → UI 注入） ──
             cloud_event::Event::ConnectResult { id, ok, error } => {
@@ -261,6 +198,83 @@ impl RunnerInner {
                 self.apply_cloud_operation_result(ok, error, kind);
             }
         }
+    }
+
+    /// 打开云面板入口：解析意图字符串后统一分流
+    fn handle_open_panel(&mut self, intent: String) {
+        let intent = match intent.as_str() {
+            "save" => CloudIntent::Save,
+            "material" => CloudIntent::Material,
+            "material_upload" => CloudIntent::UploadMaterial,
+            _ => CloudIntent::Import,
+        };
+        self.ensure_cloud_ready(intent);
+    }
+
+    /// 打开云浏览器面板入口：刷新连接快照后按意图打开
+    fn handle_browser_panel(&mut self, intent: String) {
+        let intent = match intent.as_str() {
+            "save" => CloudIntent::Save,
+            "material" => CloudIntent::Material,
+            "material_upload" => CloudIntent::UploadMaterial,
+            _ => CloudIntent::Import,
+        };
+        self.refresh_cloud_connections();
+        self.open_cloud_browser(intent);
+    }
+
+    /// 列目录请求：先同步云浏览状态，再投递后台任务
+    fn request_cloud_list(&mut self, id: String, path: String) {
+        // 云浏览状态唯一数据源为主窗口 Root：对话框的导航操作
+        // （切设备/进目录/返回/刷新）经事件回传并更新主窗口，
+        // 保证后续广播（snapshot 覆盖）值与对话框一致——
+        // 否则保存模式切换文件夹后会被广播覆盖回根目录。
+        {
+            let state = self.window_state.window.ui_mut().cloud_state_mut();
+            state.selected_id = Some(id.clone());
+            state.current_path = path.clone();
+            state.busy = true;
+            state.notice = None;
+            state.entries.clear();
+        }
+        self.run_cloud_list(id, path);
+    }
+
+    /// 打开"新建云连接"面板
+    fn open_cloud_connect_panel(&mut self) {
+        self.window_state
+            .dialog_manager
+            .open_dialog(crate::runner::dialog_manager::DialogType::CloudConnect);
+    }
+
+    /// 关闭云提示对话框
+    fn dismiss_cloud_alert(&mut self) {
+        self.window_state
+            .dialog_manager
+            .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudNotice);
+    }
+
+    /// 删除云连接：后台移除并发布快照，同时乐观更新 UI
+    fn delete_cloud_connection(&mut self, id: String) {
+        let mgr = Arc::clone(&self.cloud);
+        let status = Arc::clone(&self.cloud_status);
+        let id_for_thread = id.clone();
+        std::thread::spawn(move || {
+            let mut mgr = lock_cloud(&mgr);
+            if let Err(e) = mgr.remove_connection(&id_for_thread) {
+                tracing::warn!("删除云连接失败 {id_for_thread}: {e}");
+            }
+            // 删除完成后发布最新快照，UI 立即看到结果
+            publish_cloud_snapshot(&status, &mgr);
+        });
+        // 乐观更新 UI 快照（不等后台线程，也不抢业务锁）
+        {
+            let mut snap = self.cloud_status.write().unwrap_or_else(|e| e.into_inner());
+            snap.remove_connection(&id);
+        }
+        self.window_state.window.ui_mut().cloud_state_mut().notice =
+            Some(tr!("连接已删除").to_string());
+        self.refresh_cloud_connections();
     }
 
     // ── 入口分流 ──

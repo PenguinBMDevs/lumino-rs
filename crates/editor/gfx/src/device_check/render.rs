@@ -54,22 +54,12 @@ pub(super) fn render_test(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
     let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
 
-    // 相机参数与生产一致：zoom_x=1、zoom_y=4，使音符落于视口内且高度可回读
     let notes = [
         crate::NoteInstance::new(0.0, 126, 200.0, [1.0, 0.0, 0.0, 1.0], 0),
         crate::NoteInstance::new(0.0, 118, 200.0, [0.0, 1.0, 0.0, 1.0], 0),
         crate::NoteInstance::new(0.0, 110, 200.0, [0.0, 0.0, 1.0, 1.0], 0),
     ];
-    let camera = crate::CameraUniform::new(crate::CameraParams {
-        scroll: [0.0, 0.0],
-        zoom: [1.0, 4.0],
-        viewport: [TEST_WIDTH as f32, TEST_HEIGHT as f32],
-        offset: [0.0, 0.0],
-        canvas_size: [TEST_WIDTH as f32, TEST_HEIGHT as f32],
-        keyboard_width: 0.0,
-        ruler_height: 0.0,
-        max_key_index: 127.0,
-    });
+    let camera = test_camera();
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("device_check_encoder"),
@@ -101,6 +91,32 @@ pub(super) fn render_test(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         renderer.draw(&mut pass, true, None);
     }
 
+    submit_and_readback(device, queue, encoder, &color, size)
+}
+
+/// 检测用相机：参数与生产一致，音符落于视口内且高度可回读。
+fn test_camera() -> crate::CameraUniform {
+    // 相机参数与生产一致：zoom_x=1、zoom_y=4，使音符落于视口内且高度可回读
+    crate::CameraUniform::new(crate::CameraParams {
+        scroll: [0.0, 0.0],
+        zoom: [1.0, 4.0],
+        viewport: [TEST_WIDTH as f32, TEST_HEIGHT as f32],
+        offset: [0.0, 0.0],
+        canvas_size: [TEST_WIDTH as f32, TEST_HEIGHT as f32],
+        keyboard_width: 0.0,
+        ruler_height: 0.0,
+        max_key_index: 127.0,
+    })
+}
+
+/// 分配回读暂存缓冲、登记纹理→缓冲拷贝、提交队列并校验像素内容。
+fn submit_and_readback(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    mut encoder: wgpu::CommandEncoder,
+    texture: &wgpu::Texture,
+    size: wgpu::Extent3d,
+) -> Result<(), String> {
     let bytes_per_row = TEST_WIDTH * 4;
     let buffer_size = (bytes_per_row * TEST_HEIGHT) as u64;
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -111,7 +127,7 @@ pub(super) fn render_test(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
-            texture: &color,
+            texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,

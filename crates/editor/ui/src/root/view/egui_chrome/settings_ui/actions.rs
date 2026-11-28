@@ -15,56 +15,9 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
     let _ = root;
     Some(match action {
         SettingsAction::UiTheme(value) => Message::Window(window::Event::Theme(value.clone())),
-        SettingsAction::UiCombo { field, index } => match field {
-            UiField::Language => {
-                let preference = if *index == 0 {
-                    LanguagePreference::System
-                } else {
-                    LanguagePreference::Fixed(*Language::all().get(index - 1)?)
-                };
-                Message::Settings(Event::LanguagePreferenceChanged(preference))
-            }
-            UiField::NoteCountDisplay => {
-                let value = if *index == 0 {
-                    NoteCountDisplay::ProjectSettings
-                } else {
-                    NoteCountDisplay::StatusBar
-                };
-                Message::Settings(Event::NoteCountDisplayChanged(value))
-            }
-            UiField::SelectionBoxMode => {
-                let mode = if *index == 0 {
-                    SelectionBoxMode::Direct
-                } else {
-                    SelectionBoxMode::Spring
-                };
-                Message::Settings(Event::SelectionBoxModeChanged(mode))
-            }
-            UiField::ProgramFontName => {
-                // UI-001（egui 版）：下拉框此前漏接 → 选系统字体不产生事件。
-                // 选项列表与 `settings_ui::page` 同源（`get_cached_fonts` 顺序）。
-                let name = lumino_note_core::font_scanner::get_cached_fonts()
-                    .get(*index)?
-                    .name
-                    .clone();
-                Message::Settings(Event::ProgramFontNameChanged(name))
-            }
-            UiField::TempoMaxBpm => {
-                const PRESETS: [f64; 9] = [
-                    256.0, 512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32767.0, 65536.0,
-                ];
-                if let Some(bpm) = PRESETS.get(*index) {
-                    Message::Settings(Event::TempoMaxBpmChanged(*bpm))
-                } else {
-                    Message::Settings(Event::TempoMaxBpmCustomOpen)
-                }
-            }
-            UiField::Palette => {
-                let name = (*root.settings.display.available_palettes.get(*index)?).to_owned();
-                Message::Settings(Event::PaletteChanged(name))
-            }
-            _ => return None,
-        },
+        SettingsAction::UiCombo { field, index } => combo_message(root, field, index)?,
+        // 文本输入留在原位：`value` 的绑定类型是 `&String`，独立助手会触发
+        // `clippy::ptr_arg`，而这里必须保持 `value.clone()` 原样回传。
         SettingsAction::UiText { field, value } => match field {
             UiField::ProgramFontName => {
                 Message::Settings(Event::ProgramFontNameChanged(value.clone()))
@@ -93,34 +46,8 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
             }
             _ => return None,
         },
-        SettingsAction::UiToggle { field, checked } => match field {
-            UiField::NativeTitlebar => Message::Settings(Event::NativeTitlebarChanged(*checked)),
-            UiField::IconHidpi => Message::Settings(Event::IconHiDPIChanged(*checked)),
-            UiField::Enable256Key => Message::Settings(Event::Enable256keyChanged(*checked)),
-            UiField::VelocityCurveStyle => {
-                Message::Settings(Event::VelocityCurveStyleChanged(*checked))
-            }
-            UiField::PlaybackKeyColors => {
-                Message::Settings(Event::PlaybackKeyColorsEnabledChanged(*checked))
-            }
-            UiField::AutosaveEnabled => Message::Settings(Event::AutosaveEnabledChanged(*checked)),
-            UiField::InterceptNotification => {
-                Message::Settings(Event::InterceptNotificationChanged(*checked))
-            }
-            _ => return None,
-        },
-        SettingsAction::UiSlider { field, value } => match field {
-            UiField::AutomationLineThickness => {
-                Message::Settings(Event::AutomationLineThicknessChanged(*value))
-            }
-            UiField::MonitorRefreshInterval => {
-                Message::Settings(Event::MonitorRefreshIntervalChanged(*value))
-            }
-            UiField::FirstScreenOpacity => {
-                Message::Settings(Event::FirstScreenOpacityChanged(*value))
-            }
-            _ => return None,
-        },
+        SettingsAction::UiToggle { field, checked } => toggle_message(field, checked)?,
+        SettingsAction::UiSlider { field, value } => slider_message(field, value)?,
         SettingsAction::UiButton { field } if *field == UiField::BrowseProgramFont => {
             Message::Settings(Event::BrowseProgramFont)
         }
@@ -130,6 +57,94 @@ pub(crate) fn action_message(root: &Root, action: &SettingsAction) -> Option<Mes
         SettingsAction::UiButton { field } if *field == UiField::EchoCaveClicked => {
             Message::Settings(Event::EchoCaveClicked)
         }
+        _ => return None,
+    })
+}
+
+/// 下拉框动作：语言、音符计数、框选方式、字体、BPM 上限与主题。
+fn combo_message(root: &Root, field: &UiField, index: &usize) -> Option<Message> {
+    Some(match field {
+        UiField::Language => {
+            let preference = if *index == 0 {
+                LanguagePreference::System
+            } else {
+                LanguagePreference::Fixed(*Language::all().get(index - 1)?)
+            };
+            Message::Settings(Event::LanguagePreferenceChanged(preference))
+        }
+        UiField::NoteCountDisplay => {
+            let value = if *index == 0 {
+                NoteCountDisplay::ProjectSettings
+            } else {
+                NoteCountDisplay::StatusBar
+            };
+            Message::Settings(Event::NoteCountDisplayChanged(value))
+        }
+        UiField::SelectionBoxMode => {
+            let mode = if *index == 0 {
+                SelectionBoxMode::Direct
+            } else {
+                SelectionBoxMode::Spring
+            };
+            Message::Settings(Event::SelectionBoxModeChanged(mode))
+        }
+        UiField::ProgramFontName => {
+            // UI-001（egui 版）：下拉框此前漏接 → 选系统字体不产生事件。
+            // 选项列表与 `settings_ui::page` 同源（`get_cached_fonts` 顺序）。
+            let name = lumino_note_core::font_scanner::get_cached_fonts()
+                .get(*index)?
+                .name
+                .clone();
+            Message::Settings(Event::ProgramFontNameChanged(name))
+        }
+        UiField::TempoMaxBpm => {
+            const PRESETS: [f64; 9] = [
+                256.0, 512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32767.0, 65536.0,
+            ];
+            if let Some(bpm) = PRESETS.get(*index) {
+                Message::Settings(Event::TempoMaxBpmChanged(*bpm))
+            } else {
+                Message::Settings(Event::TempoMaxBpmCustomOpen)
+            }
+        }
+        UiField::Palette => {
+            let name = (*root.settings.display.available_palettes.get(*index)?).to_owned();
+            Message::Settings(Event::PaletteChanged(name))
+        }
+        _ => return None,
+    })
+}
+
+/// 开关动作。
+fn toggle_message(field: &UiField, checked: &bool) -> Option<Message> {
+    Some(match field {
+        UiField::NativeTitlebar => Message::Settings(Event::NativeTitlebarChanged(*checked)),
+        UiField::IconHidpi => Message::Settings(Event::IconHiDPIChanged(*checked)),
+        UiField::Enable256Key => Message::Settings(Event::Enable256keyChanged(*checked)),
+        UiField::VelocityCurveStyle => {
+            Message::Settings(Event::VelocityCurveStyleChanged(*checked))
+        }
+        UiField::PlaybackKeyColors => {
+            Message::Settings(Event::PlaybackKeyColorsEnabledChanged(*checked))
+        }
+        UiField::AutosaveEnabled => Message::Settings(Event::AutosaveEnabledChanged(*checked)),
+        UiField::InterceptNotification => {
+            Message::Settings(Event::InterceptNotificationChanged(*checked))
+        }
+        _ => return None,
+    })
+}
+
+/// 滑杆动作。
+fn slider_message(field: &UiField, value: &f32) -> Option<Message> {
+    Some(match field {
+        UiField::AutomationLineThickness => {
+            Message::Settings(Event::AutomationLineThicknessChanged(*value))
+        }
+        UiField::MonitorRefreshInterval => {
+            Message::Settings(Event::MonitorRefreshIntervalChanged(*value))
+        }
+        UiField::FirstScreenOpacity => Message::Settings(Event::FirstScreenOpacityChanged(*value)),
         _ => return None,
     })
 }

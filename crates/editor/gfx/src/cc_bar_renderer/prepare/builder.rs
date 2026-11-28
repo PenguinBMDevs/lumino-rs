@@ -14,6 +14,15 @@ const PANEL_PADDING_Y: f32 = 12.0;
 const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
 const H_SCROLLBAR_HEIGHT: f32 = 20.0;
 
+/// 数据条绘制共用的面板几何量（打包传递，使各助手参数不超过 6 个）。
+#[derive(Clone, Copy)]
+struct BarGeometry {
+    panel_x: f32,
+    actual_panel_y: f32,
+    max_y: f32,
+    graph_height: f32,
+}
+
 /// Build CC bar instances from editor state data.
 ///
 /// All colors are passed as parameters (UI layer extracts from theme).
@@ -60,112 +69,17 @@ pub fn build_cc_bar_instances(
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
     let graph_height = max_y - min_y;
 
-    let automation_view = AutomationViewParams {
-        panel_height: view_params.panel_height,
-        pixels_per_tick: view_params.zoom_x,
-        scroll_x: view_params.scroll_x,
-        keyboard_width: view_params.keyboard_width,
-        value_zoom: view_params.value_zoom,
-        value_scroll: view_params.value_scroll,
-        panel_offset_x: panel_x,
-        panel_offset_y: actual_panel_y,
-        toolbar_height: TOOLBAR_HEIGHT,
-        line_thickness: view_params.line_thickness,
+    let geometry = BarGeometry {
+        panel_x,
+        actual_panel_y,
+        max_y,
+        graph_height,
     };
 
     if is_velocity {
-        if data.velocity_curve_style {
-            push_velocity_curve_instances(
-                &mut instances,
-                &VelocityCurveContext {
-                    panel_x,
-                    actual_panel_y,
-                    max_y,
-                    graph_height,
-                    bar_color: colors.bar_color,
-                    keyboard_width: view_params.keyboard_width,
-                    zoom_x: view_params.zoom_x,
-                    scroll_x: view_params.scroll_x,
-                    canvas_size_x: view_params.canvas_size_x,
-                    velocity_points: data.velocity_points,
-                    line_thickness: view_params.line_thickness,
-                },
-            );
-        } else {
-            push_velocity_bar_instances(
-                &mut instances,
-                &VelocityBarContext {
-                    panel_x,
-                    actual_panel_y,
-                    toolbar_height: TOOLBAR_HEIGHT,
-                    max_y,
-                    graph_height,
-                    bar_color: colors.bar_color,
-                    keyboard_width: view_params.keyboard_width,
-                    zoom_x: view_params.zoom_x,
-                    scroll_x: view_params.scroll_x,
-                    canvas_size_x: view_params.canvas_size_x,
-                    velocity_points: data.velocity_points,
-                },
-            );
-        }
-    } else if let Some(lane) = data.automation_lane {
-        // CC / Bend 曲线模式：使用 AutomationLane 生成 Step/Curve 实例与锚点。
-        // 节点颜色统一使用主音轨音符蓝（AUTOMATION_NODE_COLOR），
-        // 与主音轨已放置音符视觉一致。
-        build_lane_instances(
-            &mut instances,
-            view_params.canvas_size_x,
-            &automation_view,
-            lane,
-            AUTOMATION_NODE_COLOR,
-            true,
-        );
-    } else if is_bend {
-        // Bend 柱状条兼容路径（无 automation lane 时降级）
-        const BEND_MAX: f32 = 8191.0;
-        const BEND_MIN: f32 = -8192.0;
-        let points = data
-            .bend_points
-            .iter()
-            .map(|p| (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN)));
-        push_value_bars(
-            &mut instances,
-            ValueBarContext {
-                points,
-                panel_x,
-                actual_panel_y,
-                keyboard_width: view_params.keyboard_width,
-                zoom_x: view_params.zoom_x,
-                scroll_x: view_params.scroll_x,
-                canvas_size_x: view_params.canvas_size_x,
-                max_y,
-                graph_height,
-                bar_color: colors.bar_color,
-            },
-        );
+        push_velocity_data_instances(&mut instances, view_params, data, colors, geometry);
     } else {
-        // CC 柱状条兼容路径（无 automation lane 时降级）
-        const MAX_VALUE: f32 = 127.0;
-        let points = data
-            .cc_points
-            .iter()
-            .map(|p| (p.tick, p.value as f32 / MAX_VALUE));
-        push_value_bars(
-            &mut instances,
-            ValueBarContext {
-                points,
-                panel_x,
-                actual_panel_y,
-                keyboard_width: view_params.keyboard_width,
-                zoom_x: view_params.zoom_x,
-                scroll_x: view_params.scroll_x,
-                canvas_size_x: view_params.canvas_size_x,
-                max_y,
-                graph_height,
-                bar_color: colors.bar_color,
-            },
-        );
+        push_curve_data_instances(&mut instances, view_params, data, colors, geometry, is_bend);
     }
 
     instances
@@ -212,4 +126,145 @@ fn push_base_overlay_instances(
         bar_h,
         colors.grab_color,
     ));
+}
+
+/// 生成力度面板的数据条 / 曲线实例（几何量由父函数统一计算后打包传入）。
+fn push_velocity_data_instances(
+    instances: &mut Vec<CcBarInstance>,
+    view_params: &CcBarViewParams,
+    data: &CcBarData<'_>,
+    colors: &CcBarColors,
+    geometry: BarGeometry,
+) {
+    let BarGeometry {
+        panel_x,
+        actual_panel_y,
+        max_y,
+        graph_height,
+    } = geometry;
+
+    if data.velocity_curve_style {
+        push_velocity_curve_instances(
+            instances,
+            &VelocityCurveContext {
+                panel_x,
+                actual_panel_y,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                velocity_points: data.velocity_points,
+                line_thickness: view_params.line_thickness,
+            },
+        );
+    } else {
+        push_velocity_bar_instances(
+            instances,
+            &VelocityBarContext {
+                panel_x,
+                actual_panel_y,
+                toolbar_height: TOOLBAR_HEIGHT,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                velocity_points: data.velocity_points,
+            },
+        );
+    }
+}
+
+/// 生成 CC / Bend 的自动化曲线实例，或无 automation lane 时的降级柱状条实例。
+fn push_curve_data_instances(
+    instances: &mut Vec<CcBarInstance>,
+    view_params: &CcBarViewParams,
+    data: &CcBarData<'_>,
+    colors: &CcBarColors,
+    geometry: BarGeometry,
+    is_bend: bool,
+) {
+    let BarGeometry {
+        panel_x,
+        actual_panel_y,
+        max_y,
+        graph_height,
+    } = geometry;
+
+    let automation_view = AutomationViewParams {
+        panel_height: view_params.panel_height,
+        pixels_per_tick: view_params.zoom_x,
+        scroll_x: view_params.scroll_x,
+        keyboard_width: view_params.keyboard_width,
+        value_zoom: view_params.value_zoom,
+        value_scroll: view_params.value_scroll,
+        panel_offset_x: panel_x,
+        panel_offset_y: actual_panel_y,
+        toolbar_height: TOOLBAR_HEIGHT,
+        line_thickness: view_params.line_thickness,
+    };
+
+    if let Some(lane) = data.automation_lane {
+        // CC / Bend 曲线模式：使用 AutomationLane 生成 Step/Curve 实例与锚点。
+        // 节点颜色统一使用主音轨音符蓝（AUTOMATION_NODE_COLOR），
+        // 与主音轨已放置音符视觉一致。
+        build_lane_instances(
+            instances,
+            view_params.canvas_size_x,
+            &automation_view,
+            lane,
+            AUTOMATION_NODE_COLOR,
+            true,
+        );
+    } else if is_bend {
+        // Bend 柱状条兼容路径（无 automation lane 时降级）
+        const BEND_MAX: f32 = 8191.0;
+        const BEND_MIN: f32 = -8192.0;
+        let points = data
+            .bend_points
+            .iter()
+            .map(|p| (p.tick, (p.value as f32 - BEND_MIN) / (BEND_MAX - BEND_MIN)));
+        push_value_bars(
+            instances,
+            ValueBarContext {
+                points,
+                panel_x,
+                actual_panel_y,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+            },
+        );
+    } else {
+        // CC 柱状条兼容路径（无 automation lane 时降级）
+        const MAX_VALUE: f32 = 127.0;
+        let points = data
+            .cc_points
+            .iter()
+            .map(|p| (p.tick, p.value as f32 / MAX_VALUE));
+        push_value_bars(
+            instances,
+            ValueBarContext {
+                points,
+                panel_x,
+                actual_panel_y,
+                keyboard_width: view_params.keyboard_width,
+                zoom_x: view_params.zoom_x,
+                scroll_x: view_params.scroll_x,
+                canvas_size_x: view_params.canvas_size_x,
+                max_y,
+                graph_height,
+                bar_color: colors.bar_color,
+            },
+        );
+    }
 }

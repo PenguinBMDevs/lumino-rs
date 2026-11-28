@@ -52,27 +52,7 @@ pub(crate) fn rasterize_glyph_alpha_params(
 
     // 1) 字号 → 像素：Font 单位直接按 keys；Rows 单位按大写 H 的高度换算。
     let px_per_key = scale.px_per_key;
-    let px_size = match params.unit {
-        TextUnit::Font => params.size * px_per_key,
-        TextUnit::Rows => {
-            // 与旧实现同一算式（参考尺寸 1000px 测 cap height），保证旧形状逐字节兼容
-            let reference = 1000.0_f32;
-            let cap = font
-                .outline_glyph(
-                    font.glyph_id('H')
-                        .with_scale_and_position(PxScale::from(reference), AbPoint::default()),
-                )
-                .map(|outline| {
-                    let b = outline.px_bounds();
-                    (b.max.y - b.min.y).max(1e-3)
-                })
-                .unwrap_or(reference * 0.7);
-            params.size * px_per_key * reference / cap
-        }
-    };
-    if !px_size.is_finite() || px_size <= 0.0 {
-        return None;
-    }
+    let px_size = glyph_px_size(&font, params, px_per_key)?;
 
     let scale_px = PxScale::from(px_size);
     let scaled = font.as_scaled(scale_px);
@@ -109,15 +89,7 @@ pub(crate) fn rasterize_glyph_alpha_params(
             if let Some(outline) =
                 font.outline_glyph(gid.with_scale_and_position(scale_px, AbPoint::default()))
             {
-                let b = outline.px_bounds();
-                outline.draw(|px, py, alpha| {
-                    let x = (x_cursor + px as f32 + b.min.x).round() as i32;
-                    let y = (baseline + py as f32 + b.min.y).round() as i32;
-                    if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
-                        let idx = y as usize * w as usize + x as usize;
-                        buf[idx] = buf[idx].max((alpha * 255.0) as u8);
-                    }
-                });
+                draw_glyph_at(&outline, x_cursor, baseline, w, h, &mut buf);
             }
             x_cursor += scaled.h_advance(gid) + tracking_px;
         }
@@ -133,6 +105,52 @@ pub(crate) fn rasterize_glyph_alpha_params(
         }
     }
     Some((w, h, buf))
+}
+
+/// 把 `params.size` 按单位换算成 ab_glyph 的像素字号。
+fn glyph_px_size(font: &ab_glyph::FontArc, params: &TextParams, px_per_key: f32) -> Option<f32> {
+    let px_size = match params.unit {
+        TextUnit::Font => params.size * px_per_key,
+        TextUnit::Rows => {
+            // 与旧实现同一算式（参考尺寸 1000px 测 cap height），保证旧形状逐字节兼容
+            let reference = 1000.0_f32;
+            let cap = font
+                .outline_glyph(
+                    font.glyph_id('H')
+                        .with_scale_and_position(PxScale::from(reference), AbPoint::default()),
+                )
+                .map(|outline| {
+                    let b = outline.px_bounds();
+                    (b.max.y - b.min.y).max(1e-3)
+                })
+                .unwrap_or(reference * 0.7);
+            params.size * px_per_key * reference / cap
+        }
+    };
+    if !px_size.is_finite() || px_size <= 0.0 {
+        return None;
+    }
+    Some(px_size)
+}
+
+/// 把一个 glyph 的灰度按取最大值写入缓冲区（越界像素丢弃）。
+fn draw_glyph_at(
+    outline: &ab_glyph::OutlinedGlyph,
+    x_cursor: f32,
+    baseline: f32,
+    w: u32,
+    h: u32,
+    buf: &mut [u8],
+) {
+    let b = outline.px_bounds();
+    outline.draw(|px, py, alpha| {
+        let x = (x_cursor + px as f32 + b.min.x).round() as i32;
+        let y = (baseline + py as f32 + b.min.y).round() as i32;
+        if x >= 0 && x < w as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
+            let idx = y as usize * w as usize + x as usize;
+            buf[idx] = buf[idx].max((alpha * 255.0) as u8);
+        }
+    });
 }
 
 /// 参数化占用网格：每个采样格按 threshold% 的 **key 轴覆盖率**判定

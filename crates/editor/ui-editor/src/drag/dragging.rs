@@ -94,6 +94,43 @@ impl Editor {
             tracing::debug!("Editor: 单音符拖动未产生实际变更（snap 后 delta 为零）");
             return false;
         }
+        self.reselect_moved_note(original_event, current_track, &drag_state, max_key);
+
+        if !ops.is_empty() {
+            self.editor_state.data.push_move_op(ops);
+        }
+
+        tracing::info!(
+            "Editor: 音符移动完成 - original=({}, {}), offset=({}, {})",
+            original_tick,
+            original_key,
+            tick_offset,
+            key_offset
+        );
+        // 协作同步关闭时跳过单音符移动广播（消费端未连接会短路丢弃，按值）。
+        if self.editor_state.data.collab_sync_enabled() {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_moved(
+                    original_tick,
+                    original_key,
+                    length,
+                    tick_offset,
+                    key_offset,
+                    current_track,
+                ),
+            ));
+        }
+        true
+    }
+
+    /// ghost 提交后让选中跟随新值（删加语义，按新值窗口定位）。
+    fn reselect_moved_note(
+        &mut self,
+        original_event: Option<lumino_midi_loader::NoteEvent>,
+        current_track: usize,
+        drag_state: &DragState,
+        max_key: u16,
+    ) {
         // 移动后选中跟随新值（删加语义下旧值已不存在，通用旧值重映射必空；
         // 此处按新值窗口定位，无全扫）。
         self.selection_clear();
@@ -121,32 +158,6 @@ impl Editor {
                 self.selection_insert(idx);
             }
         }
-
-        if !ops.is_empty() {
-            self.editor_state.data.push_move_op(ops);
-        }
-
-        tracing::info!(
-            "Editor: 音符移动完成 - original=({}, {}), offset=({}, {})",
-            original_tick,
-            original_key,
-            tick_offset,
-            key_offset
-        );
-        // 协作同步关闭时跳过单音符移动广播（消费端未连接会短路丢弃，按值）。
-        if self.editor_state.data.collab_sync_enabled() {
-            lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_note_moved(
-                    original_tick,
-                    original_key,
-                    length,
-                    tick_offset,
-                    key_offset,
-                    current_track,
-                ),
-            ));
-        }
-        true
     }
 
     // 注：原 `finalize_selection_dragging` 已移除——延迟提交方案下，松手保存到

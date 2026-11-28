@@ -37,6 +37,35 @@ impl ArrangementRenderer {
         );
 
         // 覆盖层每帧重建并上传
+        self.upload_overlay(device, queue, overlay, overlay_back_len, t0);
+
+        // ── 音符层：复用常驻 GPU 缓冲，GPU 裁剪 + draw_indirect ──
+        let note_t0 = Instant::now();
+
+        self.bind_note_source(device, queue, note_source, note_instance_count, lane_index);
+        self.upload_note_cull_inputs(device, queue, note_instance_count, note_uniform);
+
+        let upload_ms = note_t0.elapsed().as_secs_f64() * 1000.0;
+        tracing::debug!(
+            target: "perf::arrangement",
+            visible_tracks = lane_index.len(),
+            note_instance_count,
+            upload_ms,
+            "gpu_upload_notes(reused_gpu_buffer)"
+        );
+    }
+
+    /// 上传覆盖层实例并按需扩容
+    ///
+    /// `t0` 为本次 `prepare` 的起始时刻，用于统计覆盖层上传耗时。
+    fn upload_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        overlay: &[ArrangementNoteInstance],
+        overlay_back_len: usize,
+        t0: Instant,
+    ) {
         let overlay_count = overlay.len();
         if overlay_count > 0 {
             let cap_t0 = Instant::now();
@@ -65,10 +94,19 @@ impl ArrangementRenderer {
         }
         self.overlay_count = overlay_count as u32;
         self.overlay_back_len = overlay_back_len as u32;
+    }
 
-        // ── 音符层：复用常驻 GPU 缓冲，GPU 裁剪 + draw_indirect ──
-        let note_t0 = Instant::now();
-
+    /// 保存共享音符缓冲引用，并上传 `lane_index` 泳道映射
+    ///
+    /// 泳道映射缓冲需在此处扩容并写入，重建 bind group 时才能引用到最新大小。
+    fn bind_note_source(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        note_source: &wgpu::Buffer,
+        note_instance_count: u32,
+        lane_index: &[f32],
+    ) {
         // 共享音符缓冲（GPU，按 NoteInstance 分段）；保存引用
         self.note_source = note_source.clone();
         self.note_instance_count = note_instance_count;
@@ -87,7 +125,19 @@ impl ArrangementRenderer {
                 bytemuck::cast_slice(lane_index),
             );
         }
+    }
 
+    /// 上传音符 uniform、可见索引容量、bind group、裁剪 uniform 与间接参数
+    ///
+    /// 顺序不可调换：先扩容可见索引缓冲，再重建 bind group，最后写入裁剪输入
+    /// 并重置间接绘制参数。
+    fn upload_note_cull_inputs(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        note_instance_count: u32,
+        note_uniform: ArrangementNoteUniform,
+    ) {
         // 音符着色器 uniform（滚动/缩放/泳道高/画布偏移）
         queue.write_buffer(
             self.note_uniform_buffer.inner(),
@@ -124,15 +174,6 @@ impl ArrangementRenderer {
             self.note_indirect_buffer.inner(),
             0,
             bytemuck::cast_slice(&[DrawIndirectArgs::default()]),
-        );
-
-        let upload_ms = note_t0.elapsed().as_secs_f64() * 1000.0;
-        tracing::debug!(
-            target: "perf::arrangement",
-            visible_tracks = lane_index.len(),
-            note_instance_count,
-            upload_ms,
-            "gpu_upload_notes(reused_gpu_buffer)"
         );
     }
 

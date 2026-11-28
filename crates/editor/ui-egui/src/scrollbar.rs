@@ -226,76 +226,13 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
     let pointer_owned = hit.contains_pointer() && !overlay_above;
 
     if pressed && inside && pointer_owned {
-        let start_pos = if model.vertical { pos.y } else { pos.x };
-        if thumb.contains(pos) {
-            if let Some(edge) = model.edge_at(pos, thumb) {
-                state = DragState::DraggingEdge {
-                    start_pos,
-                    start_zoom: model.zoom,
-                    start_thumb: thumb_len,
-                    edge_is_end: edge,
-                };
-            } else {
-                state = DragState::Dragging {
-                    start_pos,
-                    start_scroll: model.scroll.clamp(0.0, model.actual_max_scroll(track)),
-                };
-            }
-        } else {
-            // 点击轨道：直接跳到对应比例。
-            let relative = if model.vertical {
-                (pos.y - model.rect.top() - THUMB_EDGE_GAP) / (track - thumb_len).max(1.0)
-            } else {
-                (pos.x - model.rect.left() - THUMB_EDGE_GAP) / (track - thumb_len).max(1.0)
-            };
-            let target = relative.clamp(0.0, 1.0) * model.actual_max_scroll(track);
-            action = Some(ScrollbarAction::Scroll(target));
-        }
+        action = start_drag(model, pos, track, thumb_len, thumb, &mut state);
         ctx.data_mut(|d| d.insert_temp(state_id, state));
     } else if down {
-        let current = if model.vertical { pos.y } else { pos.x };
-        match state {
-            DragState::Dragging {
-                start_pos,
-                start_scroll,
-            } => {
-                let delta = current - start_pos;
-                let scrollable = model.actual_max_scroll(track);
-                let ratio = delta / (track - thumb_len).max(1.0);
-                let target = (start_scroll + ratio * scrollable).clamp(0.0, scrollable);
-                action = Some(ScrollbarAction::Scroll(target));
-            }
-            DragState::DraggingEdge {
-                start_pos,
-                start_zoom,
-                start_thumb,
-                edge_is_end,
-            } => {
-                let delta = current - start_pos;
-                // 与 上一代 一致：结束边向右/下拖为放大，起始边反向。
-                let effective = if edge_is_end { delta } else { -delta };
-                let content_fits = model.content_fits(track);
-                if content_fits && effective > 0.0 {
-                    // 内容已满屏：阻止继续缩小，基线跟随当前位置避免抽动。
-                    state = DragState::DraggingEdge {
-                        start_pos: current,
-                        start_zoom: model.zoom,
-                        start_thumb,
-                        edge_is_end,
-                    };
-                    ctx.data_mut(|d| d.insert_temp(state_id, state));
-                } else {
-                    let max_delta = (track - start_thumb).max(track * 0.5);
-                    let clamped = effective.clamp(-track * 0.9, max_delta);
-                    let ratio = (1.0 + clamped / start_thumb.max(1.0)).max(0.05);
-                    let zoom = start_zoom / ratio;
-                    action = Some(ScrollbarAction::Zoom {
-                        zoom,
-                        fixed_ratio: if edge_is_end { 0.0 } else { 1.0 },
-                    });
-                }
-            }
-            DragState::Idle => {}
+        let (next_action, rebased) = continue_drag(model, pos, track, thumb_len, &mut state);
+        action = next_action;
+        if rebased {
+            ctx.data_mut(|d| d.insert_temp(state_id, state));
         }
     }
 
@@ -306,27 +243,131 @@ pub fn show_raw(ui: &egui::Ui, id: &str, model: &ScrollbarModel) -> Option<Scrol
 
     // 光标反馈（仅悬停且本层拥有指针时：被弹层盖住不得显示滚动光标）。
     if inside && pointer_owned {
-        let icon = if !matches!(state, DragState::Idle) {
+        ctx.set_cursor_icon(hover_cursor(model, state, pos, thumb));
+    }
+
+    action
+}
+
+/// 按下时的拖拽起点：命中滑块进拖拽（边缘为缩放），否则点击轨道跳转。
+/// 返回本帧动作（轨道点击时给出目标位置）。
+fn start_drag(
+    model: &ScrollbarModel,
+    pos: egui::Pos2,
+    track: f32,
+    thumb_len: f32,
+    thumb: Rect,
+    state: &mut DragState,
+) -> Option<ScrollbarAction> {
+    let start_pos = if model.vertical { pos.y } else { pos.x };
+    if thumb.contains(pos) {
+        if let Some(edge) = model.edge_at(pos, thumb) {
+            *state = DragState::DraggingEdge {
+                start_pos,
+                start_zoom: model.zoom,
+                start_thumb: thumb_len,
+                edge_is_end: edge,
+            };
+        } else {
+            *state = DragState::Dragging {
+                start_pos,
+                start_scroll: model.scroll.clamp(0.0, model.actual_max_scroll(track)),
+            };
+        }
+        return None;
+    }
+
+    // 点击轨道：直接跳到对应比例。
+    let relative = if model.vertical {
+        (pos.y - model.rect.top() - THUMB_EDGE_GAP) / (track - thumb_len).max(1.0)
+    } else {
+        (pos.x - model.rect.left() - THUMB_EDGE_GAP) / (track - thumb_len).max(1.0)
+    };
+    let target = relative.clamp(0.0, 1.0) * model.actual_max_scroll(track);
+    Some(ScrollbarAction::Scroll(target))
+}
+
+/// 按住期间的拖拽推进；第二个返回值表示拖拽基线被重写。
+fn continue_drag(
+    model: &ScrollbarModel,
+    pos: egui::Pos2,
+    track: f32,
+    thumb_len: f32,
+    state: &mut DragState,
+) -> (Option<ScrollbarAction>, bool) {
+    let current = if model.vertical { pos.y } else { pos.x };
+    match *state {
+        DragState::Dragging {
+            start_pos,
+            start_scroll,
+        } => {
+            let delta = current - start_pos;
+            let scrollable = model.actual_max_scroll(track);
+            let ratio = delta / (track - thumb_len).max(1.0);
+            let target = (start_scroll + ratio * scrollable).clamp(0.0, scrollable);
+            (Some(ScrollbarAction::Scroll(target)), false)
+        }
+        DragState::DraggingEdge {
+            start_pos,
+            start_zoom,
+            start_thumb,
+            edge_is_end,
+        } => {
+            let delta = current - start_pos;
+            // 与 上一代 一致：结束边向右/下拖为放大，起始边反向。
+            let effective = if edge_is_end { delta } else { -delta };
+            let content_fits = model.content_fits(track);
+            if content_fits && effective > 0.0 {
+                // 内容已满屏：阻止继续缩小，基线跟随当前位置避免抽动。
+                *state = DragState::DraggingEdge {
+                    start_pos: current,
+                    start_zoom: model.zoom,
+                    start_thumb,
+                    edge_is_end,
+                };
+                (None, true)
+            } else {
+                let max_delta = (track - start_thumb).max(track * 0.5);
+                let clamped = effective.clamp(-track * 0.9, max_delta);
+                let ratio = (1.0 + clamped / start_thumb.max(1.0)).max(0.05);
+                let zoom = start_zoom / ratio;
+                (
+                    Some(ScrollbarAction::Zoom {
+                        zoom,
+                        fixed_ratio: if edge_is_end { 0.0 } else { 1.0 },
+                    }),
+                    false,
+                )
+            }
+        }
+        DragState::Idle => (None, false),
+    }
+}
+
+/// 悬停光标：拖拽中或命中边缘为缩放，命中滑块为抓取，其余为默认。
+fn hover_cursor(
+    model: &ScrollbarModel,
+    state: DragState,
+    pos: egui::Pos2,
+    thumb: Rect,
+) -> CursorIcon {
+    if !matches!(state, DragState::Idle) {
+        if model.vertical {
+            CursorIcon::ResizeVertical
+        } else {
+            CursorIcon::ResizeHorizontal
+        }
+    } else if thumb.contains(pos) {
+        if model.edge_at(pos, thumb).is_some() {
             if model.vertical {
                 CursorIcon::ResizeVertical
             } else {
                 CursorIcon::ResizeHorizontal
             }
-        } else if thumb.contains(pos) {
-            if model.edge_at(pos, thumb).is_some() {
-                if model.vertical {
-                    CursorIcon::ResizeVertical
-                } else {
-                    CursorIcon::ResizeHorizontal
-                }
-            } else {
-                CursorIcon::Grab
-            }
         } else {
-            CursorIcon::Default
-        };
-        ctx.set_cursor_icon(icon);
+            CursorIcon::Grab
+        }
+    } else {
+        CursorIcon::Default
     }
-
-    action
 }

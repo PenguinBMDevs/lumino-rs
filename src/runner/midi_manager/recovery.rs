@@ -277,6 +277,40 @@ impl MidiManager {
 
         self.needs_reinit = false;
 
+        self.invalidate_backend_generation();
+
+        // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
+        self.drain_layout_apply(true);
+        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（整后端即将重建，
+        // 取消暂存/退避请求）
+        self.drain_lgs_rebuild(true);
+
+        let target = self.apply_reinit_config(ui_config);
+
+        // 关闭旧的 MIDI 输出和备用 API
+        if let Some(old_output) = self.output.take() {
+            drop(old_output);
+        }
+        self.fallback_api = None;
+        self.pending_init = None;
+        self.maestro_stats = None;
+
+        // 重新初始化
+        self.start_backend_init(target, ui_config);
+
+        // AUD-011：CPU 降级目标为 System 且连 API 都建不起来时，不能只报
+        // 「已切换到 CPU」——给出可操作的最终失败提示。
+        if target == SynthBackend::System && self.api.is_none() {
+            self.pending_backend_notice = Some(
+                tr!("CPU 合成也不可用：未找到可用的 MIDI 输出，请检查系统 MIDI 设备").to_string(),
+            );
+        }
+
+        tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);
+    }
+
+    /// 后端代际切换：作废旧代际的合成应用结果并重置端口音色库落定状态。
+    fn invalidate_backend_generation(&mut self) {
         // REND-005：后端代际 +1。旧后端在途的合成应用 worker 结果（可能带着
         // “当前后端不支持按端口音色库”的提示）必须作废，否则切到 XSynth 后
         // 状态栏仍会显示旧后端的能力提示。
@@ -291,13 +325,10 @@ impl MidiManager {
             "MIDI: 后端代际切换 -> {}（作废旧合成应用结果）",
             self.synth_epoch
         );
+    }
 
-        // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
-        self.drain_layout_apply(true);
-        // REND-019 PR-D：同步路径同样等待 LGS 重建归还 API（整后端即将重建，
-        // 取消暂存/退避请求）
-        self.drain_lgs_rebuild(true);
-
+    /// 应用新的 UI 配置到各后端参数，返回本次要初始化到的后端。
+    fn apply_reinit_config(&mut self, ui_config: &UiConfig) -> SynthBackend {
         // AUD-011：优先使用会话级覆盖（LGS 耗尽后临时降级到 CPU），
         // 否则跟随用户偏好；覆盖不写盘，`preferred_backend` 仍是用户选择。
         let target = self.effective_backend(ui_config.preferred_backend);
@@ -332,15 +363,11 @@ impl MidiManager {
         // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
         lumino_midi_io::soundfont_cache::clear_cache();
 
-        // 关闭旧的 MIDI 输出和备用 API
-        if let Some(old_output) = self.output.take() {
-            drop(old_output);
-        }
-        self.fallback_api = None;
-        self.pending_init = None;
-        self.maestro_stats = None;
+        target
+    }
 
-        // 重新初始化
+    /// 按目标后端执行初始化（异步后端未能启动时立即回退 System）。
+    fn start_backend_init(&mut self, target: SynthBackend, ui_config: &UiConfig) {
         match target {
             SynthBackend::XSynth => {
                 // 返工 #149：软件后端初始化期间不触碰 System(WinMM)——不再做 System
@@ -385,15 +412,5 @@ impl MidiManager {
                 self.active_backend = backend_result.backend;
             }
         }
-
-        // AUD-011：CPU 降级目标为 System 且连 API 都建不起来时，不能只报
-        // 「已切换到 CPU」——给出可操作的最终失败提示。
-        if target == SynthBackend::System && self.api.is_none() {
-            self.pending_backend_notice = Some(
-                tr!("CPU 合成也不可用：未找到可用的 MIDI 输出，请检查系统 MIDI 设备").to_string(),
-            );
-        }
-
-        tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);
     }
 }

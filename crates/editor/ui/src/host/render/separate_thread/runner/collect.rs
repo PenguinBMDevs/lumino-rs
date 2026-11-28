@@ -56,80 +56,11 @@ impl Host {
             .collect();
 
         // 从主题提取走带视图颜色
-        let theme = self.root.theme();
-        use crate::editor::grid::theme::ThemeExt;
-        let is_light = theme.is_light();
-        let palette = theme.extended_palette().background;
-        let arr_bg = if is_light {
-            palette.weak.color
-        } else {
-            palette.base.color
-        };
-        let arr_lane_even = if is_light {
-            palette.weakest.color
-        } else {
-            palette.weak.color
-        };
-        let arr_lane_odd = if is_light {
-            palette.strong.color
-        } else {
-            palette.base.color
-        };
-        let arr_measure_line = if is_light {
-            lumino_ui_core::geom::Color {
-                a: 0.8,
-                ..lumino_ui_core::geom::Color::BLACK
-            }
-        } else {
-            lumino_ui_core::geom::Color {
-                a: 0.8,
-                ..lumino_ui_core::geom::Color::WHITE
-            }
-        };
-        let colors = ArrangementViewColors {
-            // gfx 离屏目标是 sRGB 纹理：uniform/实例颜色必须是线性值，否则会被
-            // 硬件再编码一次（深色主题整体提亮，与 GridColors::from_theme 同口径）。
-            bg: linear_rgb(arr_bg),
-            lane_even: linear_rgb(arr_lane_even),
-            lane_odd: linear_rgb(arr_lane_odd),
-            measure_line: arr_measure_line.into_linear(),
-            playhead: [
-                lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
-                lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
-                lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
-                lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
-            ],
-            sel_rect: [
-                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.r,
-                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.g,
-                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.b,
-            ],
-        };
+        let colors = self.arrangement_view_colors();
 
         // 走带视图轨道颜色：统一使用当前调色板（与 ArrangementUniform 一致），
         // 避免与 gfx 硬编码 ARRANGEMENT_PALETTE 双轨制造成颜色不同步。
-        //
-        // 用**文档音轨索引**直查，长度必须覆盖 `track_order` 中出现的全部文档轨 id：
-        // 取色规则本体是 `current_track_color_f32(doc_track)`（音符层同规则，内部按
-        // 调色板长度取模）。旧的 12 项定长镜像在调色板非 12 色、或文档轨 id ≥ 12 时
-        // 会串色/越界——ghost 预览与真实音符就会不同色。
-        //
-        // 唯一消费者是 ghost 取色，故**未拖动时不分配**：非拖动态保持零新增分配。
-        let track_colors: Vec<[f32; 3]> = if self.root.arrangement_view.ghost_notes.is_empty() {
-            Vec::new()
-        } else {
-            let color_slots = track_order
-                .iter()
-                .copied()
-                .max()
-                .map_or(0, |max_doc| max_doc.saturating_add(1));
-            (0..color_slots)
-                .map(|i| {
-                    let c = lumino_extras::palette::current_track_color_f32(i);
-                    [c[0], c[1], c[2]]
-                })
-                .collect()
-        };
+        let track_colors = self.arrangement_track_colors(&track_order);
 
         let scene_params = ArrangementSceneParams {
             viewport: &viewport,
@@ -167,6 +98,84 @@ impl Host {
         (overlay, overlay_back_len, track_order)
     }
 
+    /// 走带视图颜色：主题色板 → 线性 uniform / 实例颜色。
+    fn arrangement_view_colors(&self) -> ArrangementViewColors {
+        let theme = self.root.theme();
+        use crate::editor::grid::theme::ThemeExt;
+        let is_light = theme.is_light();
+        let palette = theme.extended_palette().background;
+        let arr_bg = if is_light {
+            palette.weak.color
+        } else {
+            palette.base.color
+        };
+        let arr_lane_even = if is_light {
+            palette.weakest.color
+        } else {
+            palette.weak.color
+        };
+        let arr_lane_odd = if is_light {
+            palette.strong.color
+        } else {
+            palette.base.color
+        };
+        let arr_measure_line = if is_light {
+            lumino_ui_core::geom::Color {
+                a: 0.8,
+                ..lumino_ui_core::geom::Color::BLACK
+            }
+        } else {
+            lumino_ui_core::geom::Color {
+                a: 0.8,
+                ..lumino_ui_core::geom::Color::WHITE
+            }
+        };
+        ArrangementViewColors {
+            // gfx 离屏目标是 sRGB 纹理：uniform/实例颜色必须是线性值，否则会被
+            // 硬件再编码一次（深色主题整体提亮，与 GridColors::from_theme 同口径）。
+            bg: linear_rgb(arr_bg),
+            lane_even: linear_rgb(arr_lane_even),
+            lane_odd: linear_rgb(arr_lane_odd),
+            measure_line: arr_measure_line.into_linear(),
+            playhead: [
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.0,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.1,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.2,
+                lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
+            ],
+            sel_rect: [
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.r,
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.g,
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.b,
+            ],
+        }
+    }
+
+    /// 走带视图轨道颜色表（按文档音轨索引取模当前调色板；仅 ghost 取色使用）。
+    fn arrangement_track_colors(&self, track_order: &[usize]) -> Vec<[f32; 3]> {
+        // 用**文档音轨索引**直查，长度必须覆盖 `track_order` 中出现的全部文档轨 id：
+        // 取色规则本体是 `current_track_color_f32(doc_track)`（音符层同规则，内部按
+        // 调色板长度取模）。旧的 12 项定长镜像在调色板非 12 色、或文档轨 id ≥ 12 时
+        // 会串色/越界——ghost 预览与真实音符就会不同色。
+        //
+        // 唯一消费者是 ghost 取色，故**未拖动时不分配**：非拖动态保持零新增分配。
+        if self.root.arrangement_view.ghost_notes.is_empty() {
+            Vec::new()
+        } else {
+            let color_slots = track_order
+                .iter()
+                .copied()
+                .max()
+                .map_or(0, |max_doc| max_doc.saturating_add(1));
+            (0..color_slots)
+                .map(|i| {
+                    let c = lumino_extras::palette::current_track_color_f32(i);
+                    [c[0], c[1], c[2]]
+                })
+                .collect()
+        }
+    }
+
     /// 收集渲染所需的数据
     pub(crate) fn collect_render_data(&mut self) -> RenderData {
         let viewport_size = self.render_ctx.viewport.logical_size();
@@ -175,20 +184,7 @@ impl Host {
         // 这些值用于 handlers.rs 的滚动范围钳制和 view.rs 的滚动条滑块计算
         // 而 collect_viewport_info() 每帧计算正确值但不会自动写回
         if self.root.is_arrangement_mode() {
-            let sidebar_width = self.root.sidebar.width() as f32;
-            let th = self.root.toolbar.height();
-            let tbo = if cfg!(target_os = "macos") { 0.0 } else { 30.0 };
-            let geometry = crate::host::render::arrangement_geometry::arrangement_canvas_geometry(
-                viewport_size.width,
-                viewport_size.height,
-                sidebar_width,
-                th,
-                tbo,
-            );
-            self.root.arrangement_view.viewport.canvas_size =
-                lumino_message::types::geometry::Point2::new(geometry.size.x, geometry.size.y);
-            self.root.arrangement_view.viewport.canvas_offset =
-                lumino_message::types::geometry::Point2::new(geometry.offset.x, geometry.offset.y);
+            self.sync_arrangement_canvas_geometry(viewport_size.width, viewport_size.height);
         }
 
         let (mut scroll, zoom) = if self.root.is_arrangement_mode() {
@@ -231,26 +227,10 @@ impl Host {
             };
 
         // 各泳道可见性（静音/隐藏）与 side bar 对齐；非走带模式为空
-        let arrangement_track_visible: Vec<bool> = if self.root.is_arrangement_mode() {
-            self.root
-                .sidebar
-                .tracks
-                .iter()
-                .map(|t| !t.is_muted)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let arrangement_track_visible = self.collect_arrangement_track_visible();
 
-        // 构建 CC 柱状条实例（背景/网格/中心线）
-        // 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算
-        let cc_bar_instances =
-            if self.root.is_arrangement_mode() || !self.root.sidebar.automation_panel_visible {
-                vec![]
-            } else {
-                puffin::profile_scope!("build_cc_bar_instances");
-                self.build_cc_bar_instances()
-            };
+        // 构建 CC 柱状条实例（背景/网格/中心线），仅在自动化面板可见时构建
+        let cc_bar_instances = self.collect_cc_bar_instances();
 
         // 洋葱皮流式上传：由 stream_onion_skin_instances 在检测到变化时
         // 分块构建 + send 到 WGPU 线程的 streaming channel，不再通过 RenderData 传输。
@@ -271,6 +251,53 @@ impl Host {
             arrangement_track_visible,
             cc_bar_instances,
             cpu_onion_frame,
+        }
+    }
+
+    /// 走带模式下把 canvas 几何写回 `arrangement_view.viewport`。
+    ///
+    /// `canvas_size` / `canvas_offset` 供 handlers.rs 的滚动范围钳制与 view.rs 的
+    /// 滚动条滑块计算；`collect_viewport_info()` 每帧算出正确值但不会自动写回。
+    fn sync_arrangement_canvas_geometry(&mut self, logical_width: f32, logical_height: f32) {
+        let sidebar_width = self.root.sidebar.width() as f32;
+        let th = self.root.toolbar.height();
+        let tbo = if cfg!(target_os = "macos") { 0.0 } else { 30.0 };
+        let geometry = crate::host::render::arrangement_geometry::arrangement_canvas_geometry(
+            logical_width,
+            logical_height,
+            sidebar_width,
+            th,
+            tbo,
+        );
+        self.root.arrangement_view.viewport.canvas_size =
+            lumino_message::types::geometry::Point2::new(geometry.size.x, geometry.size.y);
+        self.root.arrangement_view.viewport.canvas_offset =
+            lumino_message::types::geometry::Point2::new(geometry.offset.x, geometry.offset.y);
+    }
+
+    /// 各泳道可见性（静音/隐藏）与 side bar 对齐；非走带模式为空。
+    fn collect_arrangement_track_visible(&self) -> Vec<bool> {
+        if self.root.is_arrangement_mode() {
+            self.root
+                .sidebar
+                .tracks
+                .iter()
+                .map(|t| !t.is_muted)
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// CC 柱状条实例（背景/网格/中心线）。
+    ///
+    /// 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算。
+    fn collect_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
+        if self.root.is_arrangement_mode() || !self.root.sidebar.automation_panel_visible {
+            vec![]
+        } else {
+            puffin::profile_scope!("build_cc_bar_instances");
+            self.build_cc_bar_instances()
         }
     }
 }

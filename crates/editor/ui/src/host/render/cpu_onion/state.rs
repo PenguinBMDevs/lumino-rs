@@ -225,23 +225,7 @@ impl CpuOnionState {
             self.index_gen = Some(key.track_notes_gen);
         }
 
-        // 简化层（彩色覆盖/热力图）逐屏幕列重采样，单音符脏区覆盖不了受影响的
-        // 整列；且覆盖统计覆盖全部音轨，当前轨编辑也会改简化层 → 代次一变就必须
-        // 整帧。每帧都重算档位，复用帧也必须保持 `overview_active`，否则空闲
-        // 一帧就会误判「退出总览」。
-        let overview = self
-            .index
-            .as_ref()
-            .is_some_and(|index| lumino_cpu_onion::uses_overview(index, &key.geometry.camera));
-        // 彩色覆盖光栅在 <30 小节也会接管；它和热力图一样是整帧重采样，绝不能
-        // 让单音符 Region/Scroll 路径去改（否则会留下 Exact 像素与覆盖块混合）。
-        let coverage_zoom = self.coverage_zoom(&key.geometry.camera);
-        let simplified = overview || coverage_zoom;
-        let mode_changed = simplified != self.simplified_active;
-        self.simplified_active = simplified;
-        let redraw = overview_redraw(simplified, mode_changed, gen_changed, plan.redraw);
-
-        let Some(redraw) = redraw else {
+        let Some(redraw) = self.simplify_redraw(&key, gen_changed, plan.redraw) else {
             // 不重绘：把冻结键推到新代次，避免下一帧重复判断
             // （几何待补已在入口按「上一帧当前轨」登记）
             self.frozen = Some(key);
@@ -252,23 +236,69 @@ impl CpuOnionState {
             };
         };
 
-        let (Some(snapshot), Some(index)) = (self.document.clone(), self.index.clone()) else {
-            // 防御：索引/快照缺失（正常路径不会到达）
-            self.frame = None;
-            self.frozen = None;
-            return CpuOnionOutput {
+        self.compose_frame(&key, muted, plan.index, redraw)
+            .unwrap_or(CpuOnionOutput {
                 frame: None,
                 rebuilt: false,
                 dirty: None,
-            };
+            })
+    }
+
+    /// 计算本帧简化层档位并据此放大重绘范围（纯状态判定，不碰像素）。
+    ///
+    /// 简化层（彩色覆盖/热力图）逐屏幕列重采样，单音符脏区覆盖不了受影响的
+    /// 整列；且覆盖统计覆盖全部音轨，当前轨编辑也会改简化层 → 代次一变就必须
+    /// 整帧。每帧都重算档位，复用帧也必须保持 `overview_active`，否则空闲
+    /// 一帧就会误判「退出总览」。
+    fn simplify_redraw(
+        &mut self,
+        key: &CpuOnionFrameKey,
+        gen_changed: bool,
+        planned: Option<CpuOnionRedraw>,
+    ) -> Option<CpuOnionRedraw> {
+        let overview = self
+            .index
+            .as_ref()
+            .is_some_and(|index| lumino_cpu_onion::uses_overview(index, &key.geometry.camera));
+        // 彩色覆盖光栅在 <30 小节也会接管；它和热力图一样是整帧重采样，绝不能
+        // 让单音符 Region/Scroll 路径去改（否则会留下 Exact 像素与覆盖块混合）。
+        let coverage_zoom = self.coverage_zoom(&key.geometry.camera);
+        let simplified = overview || coverage_zoom;
+        let mode_changed = simplified != self.simplified_active;
+        self.simplified_active = simplified;
+        overview_redraw(simplified, mode_changed, gen_changed, planned)
+    }
+
+    /// 克隆当前文档快照与派生索引。
+    ///
+    /// 两者缺一（防御路径，正常路径不会到达）时清空帧并返回 `None`。
+    fn frame_inputs(&mut self) -> Option<(Arc<MidiDocument>, Arc<TrackIndex>)> {
+        let (Some(snapshot), Some(index)) = (self.document.clone(), self.index.clone()) else {
+            self.frame = None;
+            self.frozen = None;
+            return None;
         };
+        Some((snapshot, index))
+    }
+
+    /// 执行重绘计划：取得快照/索引、构建密度金字塔、光栅化并落帧。
+    ///
+    /// 返回 `None` = 快照/索引缺失（防御路径，正常路径不会到达）。
+    fn compose_frame(
+        &mut self,
+        key: &CpuOnionFrameKey,
+        muted: &[bool],
+        index_action: CpuOnionIndex,
+        redraw: CpuOnionRedraw,
+    ) -> Option<CpuOnionOutput> {
+        let (snapshot, index) = self.frame_inputs()?;
 
         let geometry = key.geometry;
         let track_count = snapshot.track_count().max(1);
         // 密度/覆盖金字塔只在真正可能用到时整建：总览档，或缩放到基础 bin
         // （8 tick）已不足 1px 的密集区间。后者正是 Exact 逐音符扫描会卡死的
         // 区间，彩色覆盖光栅在这里代替热力图/逐音符扫描。
-        let density = if simplified {
+        let density = if self.simplified_active {
             self.density.ensure(
                 key.track_notes_gen,
                 snapshot.as_ref(),
@@ -281,7 +311,7 @@ impl CpuOnionState {
         };
         // 调色板或轨数变化都要重建每轨颜色缓存（实例颜色固化在像素里）
         let refresh_palette =
-            self.palette_idx != Some(key.palette_idx) || plan.index == CpuOnionIndex::Rebuild;
+            self.palette_idx != Some(key.palette_idx) || index_action == CpuOnionIndex::Rebuild;
         let (pixels, dirty) = {
             let renderer = self
                 .renderer
@@ -342,13 +372,28 @@ impl CpuOnionState {
             (pixels, dirty)
         };
 
+        let frame = self.finalize_frame(*key, pixels, dirty);
+        Some(CpuOnionOutput {
+            frame: Some(frame),
+            rebuilt: true,
+            dirty,
+        })
+    }
+
+    /// 递增版本并落帧（脏区透传给 gfx：`Some` 只重写子矩形，`None` 全量上传）。
+    fn finalize_frame(
+        &mut self,
+        key: CpuOnionFrameKey,
+        pixels: Arc<Vec<u8>>,
+        dirty: Option<lumino_cpu_onion::CpuOnionRect>,
+    ) -> CpuOnionFrame {
         self.version = self.version.wrapping_add(1).max(1);
         self.palette_idx = Some(key.palette_idx);
         let frame = CpuOnionFrame::new(
-            geometry.x,
-            geometry.y,
-            geometry.width,
-            geometry.height,
+            key.geometry.x,
+            key.geometry.y,
+            key.geometry.width,
+            key.geometry.height,
             pixels,
             self.version,
         )
@@ -356,11 +401,7 @@ impl CpuOnionState {
         .with_dirty_rect(dirty.map(to_gfx_rect));
         self.frame = Some(frame.clone());
         self.frozen = Some(key);
-        CpuOnionOutput {
-            frame: Some(frame),
-            rebuilt: true,
-            dirty,
-        }
+        frame
     }
 
     /// 复用上一帧：**清掉旧脏区**后返回克隆。

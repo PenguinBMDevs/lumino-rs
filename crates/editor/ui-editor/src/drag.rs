@@ -27,10 +27,35 @@ impl Editor {
             self.update_selection();
             return (None, None, None, None);
         }
+        let (new_tick, new_length, note_to_play) =
+            self.apply_note_edit_state(tick, key, snapped_tick, snap_precision, visible_key_count);
+        let preview_signal =
+            self.apply_selection_edit_state(key, snapped_tick, snap_precision, visible_key_count);
+        // match 借用结束后统一处理预览序列（避免与 edit_state 的可变借用冲突）
+        if let Some(signal) = preview_signal {
+            let interaction = &mut self.editor_state.interaction;
+            if signal.is_empty() {
+                interaction.clear_preview_sequence();
+            } else {
+                interaction.set_preview_sequence(signal);
+            }
+        }
+        (new_tick, None, new_length, note_to_play)
+    }
+
+    /// 处理音符本体级别的编辑状态：绘制、单音符拖动、两端拉伸。
+    ///
+    /// `EditState` 各变体互斥，本方法只认领这四个变体；选择集级别的变体
+    /// 由 [`Self::apply_selection_edit_state`] 处理，其余变体保持 `_` 分支不动作。
+    fn apply_note_edit_state(
+        &mut self,
+        tick: f32,
+        key: u16,
+        snapped_tick: f32,
+        snap_precision: f32,
+        visible_key_count: u16,
+    ) -> (Option<f32>, Option<f32>, Option<u16>) {
         let (mut new_tick, mut new_length, mut note_to_play) = (None, None, None);
-        // 批量拖动预览序列信号：None=key 偏移无变化；Some(空)=回到原位需清空；
-        // Some(非空)=按 tick 顺序 + ghost key 构建的新序列。
-        let mut preview_signal: Option<Vec<PreviewSequenceNote>> = None;
         match &mut self.editor_state.interaction.edit_state {
             EditState::Drawing { current_tick, .. } => handle_drawing(current_tick, snapped_tick),
             EditState::Dragging {
@@ -74,6 +99,26 @@ impl Editor {
                     snap_precision,
                 );
             }
+            _ => {}
+        }
+        (new_tick, new_length, note_to_play)
+    }
+
+    /// 处理选择集级别的编辑状态：批量拖动、选择框两端拉伸。
+    ///
+    /// 返回批量拖动预览序列：`None` = key 偏移无变化（不发声）；
+    /// `Some(空)` = 回到原位需清空；`Some(非空)` = 按 tick 顺序构建的新序列。
+    fn apply_selection_edit_state(
+        &mut self,
+        key: u16,
+        snapped_tick: f32,
+        snap_precision: f32,
+        visible_key_count: u16,
+    ) -> Option<Vec<PreviewSequenceNote>> {
+        // 批量拖动预览序列信号：None=key 偏移无变化；Some(空)=回到原位需清空；
+        // Some(非空)=按 tick 顺序 + ghost key 构建的新序列。
+        let mut preview_signal: Option<Vec<PreviewSequenceNote>> = None;
+        match &mut self.editor_state.interaction.edit_state {
             EditState::DraggingSelection { drag_state }
             | EditState::DraggingSelectionCopy { drag_state } => {
                 // 复制拖动：偏移计算与移动拖动一致（原始音符不动，副本按 delta 渲染）。
@@ -137,16 +182,7 @@ impl Editor {
             }
             _ => {}
         }
-        // match 借用结束后统一处理预览序列（避免与 edit_state 的可变借用冲突）
-        if let Some(signal) = preview_signal {
-            let interaction = &mut self.editor_state.interaction;
-            if signal.is_empty() {
-                interaction.clear_preview_sequence();
-            } else {
-                interaction.set_preview_sequence(signal);
-            }
-        }
-        (new_tick, None, new_length, note_to_play)
+        preview_signal
     }
 }
 

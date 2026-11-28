@@ -23,35 +23,9 @@ impl Root {
             return None;
         }
         let vp = &self.arrangement_view.viewport;
-        // 左缘 = 左侧栏（48 + 面板宽）；顶缘 = 标题栏 + **实际**工具栏高度。
-        let left_inset = 48.0
-            + if self.sidebar.panel_visible {
-                self.sidebar.panel_width
-            } else {
-                0.0
-            };
-        let top_inset = if self.settings.synth.use_native_titlebar {
-            0.0
-        } else {
-            lumino_ui_egui::layout::TITLEBAR_H
-        } + self.toolbar.height;
+        let (left_inset, top_inset) = self.arrangement_insets();
 
-        let tracks = self
-            .sidebar
-            .tracks
-            .iter()
-            .map(|track| ArrangementTrackRow {
-                id: track.id,
-                name: track.name.clone(),
-                label: track.display_label.clone(),
-                channel: track.channel,
-                conductor: track.is_conductor,
-                selected: track.id == self.sidebar.selected_track,
-                muted: track.is_muted,
-                soloed: track.is_soloed,
-                color: track.color.map(color32),
-            })
-            .collect();
+        let tracks = self.arrangement_track_rows();
 
         let reorder = self
             .sidebar
@@ -59,14 +33,7 @@ impl Root {
             .as_ref()
             .filter(|state| state.active);
 
-        // 两条滚动条：与 上一代 `view_arrangement` 同口径。
-        const TRACK_HEIGHT: f32 = 48.0;
-        let max_tick_val = vp
-            .cached_max_tick_end
-            .max(vp.total_ticks as f32)
-            .max(960.0 * 4.0);
-        let max_scroll_x = (max_tick_val * vp.zoom_x).max(vp.canvas_size.x);
-        let max_scroll_y = self.sidebar.tracks.len() as f32 * TRACK_HEIGHT * vp.zoom_y;
+        let (max_scroll_x, max_scroll_y) = self.arrangement_scroll_extents();
 
         Some(ArrangementModel {
             scrollbars: Some(ArrangementScrollbarsModel {
@@ -124,6 +91,56 @@ impl Root {
                 drop_index: reorder.and_then(|state| state.hover_index),
             },
         })
+    }
+
+    /// 走带左缘 / 顶缘内边距。
+    fn arrangement_insets(&self) -> (f32, f32) {
+        // 左缘 = 左侧栏（48 + 面板宽）；顶缘 = 标题栏 + **实际**工具栏高度。
+        let left_inset = 48.0
+            + if self.sidebar.panel_visible {
+                self.sidebar.panel_width
+            } else {
+                0.0
+            };
+        let top_inset = if self.settings.synth.use_native_titlebar {
+            0.0
+        } else {
+            lumino_ui_egui::layout::TITLEBAR_H
+        } + self.toolbar.height;
+        (left_inset, top_inset)
+    }
+
+    /// 侧边栏音轨 → 走带轨道列行。
+    fn arrangement_track_rows(&self) -> Vec<ArrangementTrackRow> {
+        self.sidebar
+            .tracks
+            .iter()
+            .map(|track| ArrangementTrackRow {
+                id: track.id,
+                name: track.name.clone(),
+                label: track.display_label.clone(),
+                channel: track.channel,
+                conductor: track.is_conductor,
+                selected: track.id == self.sidebar.selected_track,
+                muted: track.is_muted,
+                soloed: track.is_soloed,
+                color: track.color.map(color32),
+            })
+            .collect()
+    }
+
+    /// 两条滚动条的最大滚动量。
+    fn arrangement_scroll_extents(&self) -> (f32, f32) {
+        let vp = &self.arrangement_view.viewport;
+        // 两条滚动条：与 上一代 `view_arrangement` 同口径。
+        const TRACK_HEIGHT: f32 = 48.0;
+        let max_tick_val = vp
+            .cached_max_tick_end
+            .max(vp.total_ticks as f32)
+            .max(960.0 * 4.0);
+        let max_scroll_x = (max_tick_val * vp.zoom_x).max(vp.canvas_size.x);
+        let max_scroll_y = self.sidebar.tracks.len() as f32 * TRACK_HEIGHT * vp.zoom_y;
+        (max_scroll_x, max_scroll_y)
     }
 }
 

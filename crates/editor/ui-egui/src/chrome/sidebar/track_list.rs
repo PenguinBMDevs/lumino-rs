@@ -29,110 +29,18 @@ pub(super) fn show_model(
     model: &SidebarModel,
     icons: &mut IconCache,
 ) {
-    let list_left = content.left() + 8.0;
-    // 上一代 的滚动条不占布局宽度（内容溢出时覆盖在右侧 8px 上），
-    // 因此行宽 = 面板内容宽 - 左右各 8px 内边距。
-    let list_right = content.right() - 8.0;
-    let list_top = content.top() + layout::TRACK_LIST_HEADER_H;
-
-    ui.painter().text(
-        egui::pos2(list_left, content.top() + 15.0),
-        Align2::LEFT_CENTER,
-        crate::text::truncate_to_width(
-            ui,
-            &model.track_list_title,
-            12.0,
-            (list_right - list_left).max(1.0),
-        ),
-        FontId::proportional(12.0),
-        theme::text(),
-    );
-
-    // 面板空白右键：行在内层会上移（egui 后注册者优先命中），因此这里先注册背景层。
-    let backdrop = ui.interact(
-        content,
-        egui::Id::unique("lumino.sidebar.panel-bg"),
-        Sense::click(),
-    );
-    if backdrop.secondary_clicked() {
-        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenPanelMenu);
-    }
-
-    // 内容底色只铺「音轨行 + 添加行」的高度（与 上一代 的可滚动内容同高），
-    // 面板其余区域仍透出面板底色——否则整块面板会比 上一代 多一层底色。
-    let content_height = layout::TRACK_ROW_H * model.tracks.len() as f32 + layout::TRACK_ADD_ROW_H;
-    let background = Rect::from_min_size(
-        egui::pos2(list_left, list_top),
-        Vec2::new(list_right - list_left, content_height),
-    );
-    ui.painter().rect_filled(background, 0, theme::base_bg());
-
-    // 手工逐行布局（不再用 `TableBuilder`）：表格的行间距会把「添加音轨」行
-    // 推到最后一行的下半部分（实测行距 ≈ 41 vs 行高 36 → 10px 重叠）。
-    // 上一代 的 `column![...rows, add]` 是 0 间距，这里保持一致。
-    let list_area = Rect::from_min_max(
-        egui::pos2(list_left, list_top),
-        egui::pos2(list_right, content.bottom()),
-    );
-    let mut list_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(list_area)
-            .layout(Layout::top_down(Align::Min)),
-    );
-    list_ui.spacing_mut().item_spacing.y = 0.0;
-    let mut rows: Vec<(usize, Rect)> = Vec::new();
-    let mut reorder_started: Option<usize> = None;
-    let mut reorder_dragging: Option<usize> = None;
-    let mut reorder_ended = false;
-    egui::ScrollArea::vertical()
-        .id_salt("lumino-track-list")
-        .auto_shrink([false, false])
-        .show(&mut list_ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for track in &model.tracks {
-                let response = track_row(ui, track, icons, model.solo_tip);
-                rows.push((track.id, response.rect));
-                if response.drag_started() {
-                    reorder_started = Some(track.id);
-                }
-                if response.dragged() {
-                    reorder_dragging = Some(track.id);
-                }
-                if response.drag_stopped() {
-                    reorder_ended = true;
-                }
-                if response.drag_stopped() {
-                    reorder_dragging = Some(track.id);
-                }
-            }
-            let (add_rect, _) = ui.allocate_exact_size(
-                Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
-                Sense::hover(),
-            );
-            add_track_row(ui, add_rect, &model.add_track_label, icons);
-        });
-
-    // 拖拽排序：插入下标 = 指针上方的行数（含滚动与行的真实矩形）。
-    let insert_index = |ui: &egui::Ui| -> Option<usize> {
-        let pos = ui.ctx().pointer_latest_pos()?;
-        Some(
-            rows.iter()
-                .filter(|(_, rect)| rect.center().y < pos.y)
-                .count(),
-        )
-    };
-    if let Some(track_id) = reorder_started {
-        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderStarted(track_id));
-    }
-    if reorder_ended {
-        if let Some(index) = insert_index(ui) {
-            panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderEnded { index });
-        }
-    } else if reorder_dragging.is_some()
-        && let Some(index) = insert_index(ui)
-    {
-        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderMoved { index });
-    }
+    let list_area = show_header(ui, content, model);
+    // 指示线沿用列表区的左右边界与顶沿。
+    let list_left = list_area.left();
+    let list_right = list_area.right();
+    let list_top = list_area.top();
+    let RowLayout {
+        rows,
+        reorder_started,
+        reorder_dragging,
+        reorder_ended,
+    } = show_rows(ui, list_area, model, icons);
+    push_reorder_actions(ui, &rows, reorder_started, reorder_dragging, reorder_ended);
 
     // 插入指示线：3px 强调色，画在目标行上沿（末位画在最后一行下沿）。
     if let Some(reorder) = &model.reorder
@@ -180,6 +88,150 @@ pub(super) fn show_model(
     {
         let action = super::picker::numeric_picker(ui, content, *anchor, picker);
         super::picker::emit(ui.ctx(), action);
+    }
+}
+
+/// 列表滚动区收集到的行矩形与拖拽状态。
+struct RowLayout {
+    /// 每行 (音轨 ID, 行矩形)，按绘制顺序。
+    rows: Vec<(usize, Rect)>,
+    /// 本次拖拽起始的音轨 ID。
+    reorder_started: Option<usize>,
+    /// 正在拖拽的音轨 ID。
+    reorder_dragging: Option<usize>,
+    /// 本次拖拽是否结束。
+    reorder_ended: bool,
+}
+
+/// 标题、面板空白右键层与内容底色，返回列表区域（标题下沿到内容底部）。
+fn show_header(ui: &mut egui::Ui, content: Rect, model: &SidebarModel) -> Rect {
+    let list_left = content.left() + 8.0;
+    // 上一代 的滚动条不占布局宽度（内容溢出时覆盖在右侧 8px 上），
+    // 因此行宽 = 面板内容宽 - 左右各 8px 内边距。
+    let list_right = content.right() - 8.0;
+    let list_top = content.top() + layout::TRACK_LIST_HEADER_H;
+
+    ui.painter().text(
+        egui::pos2(list_left, content.top() + 15.0),
+        Align2::LEFT_CENTER,
+        crate::text::truncate_to_width(
+            ui,
+            &model.track_list_title,
+            12.0,
+            (list_right - list_left).max(1.0),
+        ),
+        FontId::proportional(12.0),
+        theme::text(),
+    );
+
+    // 面板空白右键：行在内层会上移（egui 后注册者优先命中），因此这里先注册背景层。
+    let backdrop = ui.interact(
+        content,
+        egui::Id::unique("lumino.sidebar.panel-bg"),
+        Sense::click(),
+    );
+    if backdrop.secondary_clicked() {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::OpenPanelMenu);
+    }
+
+    // 内容底色只铺「音轨行 + 添加行」的高度（与 上一代 的可滚动内容同高），
+    // 面板其余区域仍透出面板底色——否则整块面板会比 上一代 多一层底色。
+    let content_height = layout::TRACK_ROW_H * model.tracks.len() as f32 + layout::TRACK_ADD_ROW_H;
+    let background = Rect::from_min_size(
+        egui::pos2(list_left, list_top),
+        Vec2::new(list_right - list_left, content_height),
+    );
+    ui.painter().rect_filled(background, 0, theme::base_bg());
+
+    Rect::from_min_max(
+        egui::pos2(list_left, list_top),
+        egui::pos2(list_right, content.bottom()),
+    )
+}
+
+/// 滚动区：音轨行与「添加音轨」行，收集行矩形与拖拽状态。
+fn show_rows(
+    ui: &mut egui::Ui,
+    area: Rect,
+    model: &SidebarModel,
+    icons: &mut IconCache,
+) -> RowLayout {
+    // 手工逐行布局（不再用 `TableBuilder`）：表格的行间距会把「添加音轨」行
+    // 推到最后一行的下半部分（实测行距 ≈ 41 vs 行高 36 → 10px 重叠）。
+    // 上一代 的 `column![...rows, add]` 是 0 间距，这里保持一致。
+    let mut list_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(area)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    list_ui.spacing_mut().item_spacing.y = 0.0;
+    let mut rows: Vec<(usize, Rect)> = Vec::new();
+    let mut reorder_started: Option<usize> = None;
+    let mut reorder_dragging: Option<usize> = None;
+    let mut reorder_ended = false;
+    egui::ScrollArea::vertical()
+        .id_salt("lumino-track-list")
+        .auto_shrink([false, false])
+        .show(&mut list_ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for track in &model.tracks {
+                let response = track_row(ui, track, icons, model.solo_tip);
+                rows.push((track.id, response.rect));
+                if response.drag_started() {
+                    reorder_started = Some(track.id);
+                }
+                if response.dragged() {
+                    reorder_dragging = Some(track.id);
+                }
+                if response.drag_stopped() {
+                    reorder_ended = true;
+                }
+                if response.drag_stopped() {
+                    reorder_dragging = Some(track.id);
+                }
+            }
+            let (add_rect, _) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), layout::TRACK_ADD_ROW_H),
+                Sense::hover(),
+            );
+            add_track_row(ui, add_rect, &model.add_track_label, icons);
+        });
+    RowLayout {
+        rows,
+        reorder_started,
+        reorder_dragging,
+        reorder_ended,
+    }
+}
+
+/// 拖拽排序：把开始/移动/结束状态转成面板动作。
+fn push_reorder_actions(
+    ui: &egui::Ui,
+    rows: &[(usize, Rect)],
+    reorder_started: Option<usize>,
+    reorder_dragging: Option<usize>,
+    reorder_ended: bool,
+) {
+    // 拖拽排序：插入下标 = 指针上方的行数（含滚动与行的真实矩形）。
+    let insert_index = |ui: &egui::Ui| -> Option<usize> {
+        let pos = ui.ctx().pointer_latest_pos()?;
+        Some(
+            rows.iter()
+                .filter(|(_, rect)| rect.center().y < pos.y)
+                .count(),
+        )
+    };
+    if let Some(track_id) = reorder_started {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderStarted(track_id));
+    }
+    if reorder_ended {
+        if let Some(index) = insert_index(ui) {
+            panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderEnded { index });
+        }
+    } else if reorder_dragging.is_some()
+        && let Some(index) = insert_index(ui)
+    {
+        panel_action::push_panel_action(ui.ctx(), SidebarPanelAction::ReorderMoved { index });
     }
 }
 

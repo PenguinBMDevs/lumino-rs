@@ -55,8 +55,8 @@ fn hash_str(mut h: u64, s: &str) -> u64 {
     h
 }
 
-/// 文档指纹：音符/控制事件/文本类事件/音轨名/端口。
-fn print_fingerprint(doc: &MidiDocument) {
+/// 音符按「每轨文件序」哈希（顺序敏感），并统计音符总数与单轨最大数。
+fn hash_notes(doc: &MidiDocument) -> (u64, u64, usize) {
     let mut notes_h = FNV_OFFSET;
     let mut per_track_sum: u64 = 0;
     let mut per_track_max: usize = 0;
@@ -77,29 +77,43 @@ fn print_fingerprint(doc: &MidiDocument) {
             );
         }
     }
+    (notes_h, per_track_sum, per_track_max)
+}
 
-    // 同 tick 跨轨事件顺序不稳定（rayon 到达序 + 按 tick 稳定排序），故排序后哈希。
+fn sorted_tempo(doc: &MidiDocument) -> Vec<(u32, u32)> {
     let mut tempo: Vec<(u32, u32)> = doc
         .tempo_changes
         .iter()
         .map(|(tick, bpm)| (*tick, bpm.to_bits()))
         .collect();
     tempo.sort_unstable();
+    tempo
+}
 
+fn sorted_timesig(doc: &MidiDocument) -> Vec<(u32, u8, u8)> {
     let mut timesig: Vec<(u32, u8, u8)> = doc.time_signatures.clone();
     timesig.sort_unstable();
+    timesig
+}
 
+fn sorted_keysig(doc: &MidiDocument) -> Vec<(u32, i8, bool)> {
     let mut keysig: Vec<(u32, i8, bool)> = doc.key_signatures.clone();
     keysig.sort_unstable();
+    keysig
+}
 
+fn sorted_cc(doc: &MidiDocument) -> Vec<(u32, u16, u8, u8, u16)> {
     let mut cc: Vec<(u32, u16, u8, u8, u16)> = doc
         .control_events
         .iter()
         .map(|e| (e.tick, e.track, e.kind, e.channel, e.param))
         .collect();
     cc.sort_unstable();
+    cc
+}
 
-    // 歌词 / 标记 / 文本类元事件统一成 (tick, track, tag, 字节)
+/// 歌词 / 标记 / 文本类元事件统一成 (tick, track, tag, 字节)
+fn sorted_texts(doc: &MidiDocument) -> Vec<(u32, u16, u8, Vec<u8>)> {
     let mut texts: Vec<(u32, u16, u8, Vec<u8>)> = Vec::new();
     for (tick, track, bytes) in doc.lyrics.iter() {
         texts.push((*tick, *track, 0x05, bytes.clone()));
@@ -111,34 +125,53 @@ fn print_fingerprint(doc: &MidiDocument) {
         texts.push((*tick, *track, *ty, bytes.clone()));
     }
     texts.sort_unstable();
+    texts
+}
 
+fn sorted_sysex(doc: &MidiDocument) -> Vec<(u32, u16, Vec<u8>)> {
     let mut sysex: Vec<(u32, u16, Vec<u8>)> = doc
         .sys_ex
         .iter()
         .map(|(tick, track, bytes)| (*tick, *track, bytes.clone()))
         .collect();
     sysex.sort_unstable();
+    sysex
+}
 
+/// 速度变化哈希。
+fn hash_tempo(events: &[(u32, u32)]) -> u64 {
     let mut tempo_h = FNV_OFFSET;
-    for (tick, bits) in &tempo {
+    for (tick, bits) in events {
         mix(&mut tempo_h, *tick as u64);
         mix(&mut tempo_h, *bits as u64);
     }
+    tempo_h
+}
 
+/// 拍号变化哈希。
+fn hash_timesig(events: &[(u32, u8, u8)]) -> u64 {
     let mut ts_h = FNV_OFFSET;
-    for (tick, num, den) in &timesig {
+    for (tick, num, den) in events {
         mix(&mut ts_h, *tick as u64);
         mix(&mut ts_h, ((*num as u64) << 8) | *den as u64);
     }
+    ts_h
+}
 
+/// 调号变化哈希。
+fn hash_keysig(events: &[(u32, i8, bool)]) -> u64 {
     let mut ks_h = FNV_OFFSET;
-    for (tick, sharps, minor) in &keysig {
+    for (tick, sharps, minor) in events {
         mix(&mut ks_h, *tick as u64);
         mix(&mut ks_h, ((*sharps as i64 as u64) << 1) | *minor as u64);
     }
+    ks_h
+}
 
+/// 控制事件哈希。
+fn hash_cc(events: &[(u32, u16, u8, u8, u16)]) -> u64 {
     let mut cc_h = FNV_OFFSET;
-    for (tick, track, kind, channel, param) in &cc {
+    for (tick, track, kind, channel, param) in events {
         mix(&mut cc_h, *tick as u64);
         mix(&mut cc_h, *track as u64);
         mix(
@@ -146,21 +179,33 @@ fn print_fingerprint(doc: &MidiDocument) {
             ((*kind as u64) << 24) | ((*channel as u64) << 16) | *param as u64,
         );
     }
+    cc_h
+}
 
+/// 文本类事件哈希。
+fn hash_texts(events: &[(u32, u16, u8, Vec<u8>)]) -> u64 {
     let mut text_h = FNV_OFFSET;
-    for (tick, track, tag, bytes) in &texts {
+    for (tick, track, tag, bytes) in events {
         mix(&mut text_h, *tick as u64);
         mix(&mut text_h, ((*track as u64) << 8) | *tag as u64);
         text_h = hash_bytes(text_h, bytes);
     }
+    text_h
+}
 
+/// SysEx 事件哈希。
+fn hash_sysex(events: &[(u32, u16, Vec<u8>)]) -> u64 {
     let mut sysex_h = FNV_OFFSET;
-    for (tick, track, bytes) in &sysex {
+    for (tick, track, bytes) in events {
         mix(&mut sysex_h, *tick as u64);
         mix(&mut sysex_h, *track as u64);
         sysex_h = hash_bytes(sysex_h, bytes);
     }
+    sysex_h
+}
 
+/// 音轨名与端口哈希：返回 (names_h, ports_h)。
+fn hash_track_meta(doc: &MidiDocument) -> (u64, u64) {
     let mut names_h = FNV_OFFSET;
     for name in &doc.track_names {
         match name {
@@ -173,6 +218,29 @@ fn print_fingerprint(doc: &MidiDocument) {
     for port in &doc.track_ports {
         mix(&mut ports_h, *port as u64);
     }
+    (names_h, ports_h)
+}
+
+/// 文档指纹：音符/控制事件/文本类事件/音轨名/端口。
+fn print_fingerprint(doc: &MidiDocument) {
+    let (notes_h, per_track_sum, per_track_max) = hash_notes(doc);
+
+    // 同 tick 跨轨事件顺序不稳定（rayon 到达序 + 按 tick 稳定排序），故排序后哈希。
+    let tempo = sorted_tempo(doc);
+    let timesig = sorted_timesig(doc);
+    let keysig = sorted_keysig(doc);
+    let cc = sorted_cc(doc);
+    let texts = sorted_texts(doc);
+    let sysex = sorted_sysex(doc);
+
+    let tempo_h = hash_tempo(&tempo);
+    let ts_h = hash_timesig(&timesig);
+    let ks_h = hash_keysig(&keysig);
+    let cc_h = hash_cc(&cc);
+    let text_h = hash_texts(&texts);
+    let sysex_h = hash_sysex(&sysex);
+
+    let (names_h, ports_h) = hash_track_meta(doc);
 
     let input_mode = std::env::var("LUMINO_MIDI_INPUT").unwrap_or_else(|_| "mmap".to_string());
     println!("INPUT_MODE={input_mode}");

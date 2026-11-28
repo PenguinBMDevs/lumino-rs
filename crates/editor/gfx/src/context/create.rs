@@ -150,6 +150,118 @@ async fn init_shared_gpu(
     })
 }
 
+/// 解析共享 GPU：快照命中则复用，未初始化则建好并安装。
+///
+/// 快照读与写锁安装都只做 clone / 状态判断 / 赋值；`init_shared_gpu` 的 wgpu 调用
+/// 全部在锁外执行（G3：禁止持锁做 wgpu 调用）。
+async fn resolve_shared_gpu(
+    instance: &wgpu::Instance,
+    surface: &wgpu::Surface<'static>,
+) -> std::result::Result<(GpuEpoch, Arc<SharedGpu>), ContextError> {
+    // 快照读（锁内只做 clone / 状态判断，立即放锁——G3：禁止持锁做 wgpu 调用）
+    let existing = {
+        let guard = SHARED_GPU
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match guard.as_ref() {
+            Some(Ok(state)) => Some((state.epoch, Arc::clone(&state.inner))),
+            Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
+            None => None,
+        }
+    };
+
+    let (epoch, shared) = match existing {
+        Some(snapshot) => snapshot,
+        None => {
+            // 无锁初始化（init_shared_gpu 为 async + wgpu 调用，必须在锁外执行——G3）
+            let gpu = init_shared_gpu(instance, surface).await?;
+            // 注册 uncaptured error handler，避免 Metal 报错直接 abort（yinhe:84）
+            // 睡眠唤醒/maximize 大纹理时 Surface::configure 可能触发 idle 等待失败
+            gpu.device.on_uncaptured_error(Arc::new(|err| {
+                tracing::error!("wgpu uncaptured error: {err}")
+            }));
+            // REND-019（PR-A）：回调置位全局停帧标志（红线 C1：只做日志 +
+            // 原子写，禁止 wgpu 调用 / 锁 / 阻塞发送）。渲染线程与 UI 侧
+            // 依据该标志停止对死设备的盲重试；PR-C 将在此接线事件循环
+            // 通知与重连状态机。
+            gpu.device
+                .set_device_lost_callback(device_status::on_device_lost);
+            let gpu = Arc::new(gpu);
+            // 写锁安装（双检：并发初始化时沿用先到者、丢弃本实例——
+            // 与旧 OnceLock::set 语义一致；锁内只做赋值，无 wgpu 调用——G3）
+            let mut guard = SHARED_GPU
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match guard.as_ref() {
+                Some(Ok(state)) => (state.epoch, Arc::clone(&state.inner)),
+                _ => {
+                    let epoch = GpuEpoch::INITIAL;
+                    *guard = Some(Ok(SharedGpuState {
+                        epoch,
+                        inner: Arc::clone(&gpu),
+                    }));
+                    (epoch, gpu)
+                }
+            }
+        }
+    };
+
+    Ok((epoch, shared))
+}
+
+/// 依据 surface 能力与适配器上限构建交换链配置（含帧延迟策略）。
+fn build_surface_config(
+    capabilities: &wgpu::SurfaceCapabilities,
+    adapter: &wgpu::Adapter,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> wgpu::SurfaceConfiguration {
+    // 选择最优 PresentMode（macOS 上 Mailbox 优先，其他平台 Immediate 优先）
+    let present_mode = select_present_mode(&capabilities.present_modes);
+    tracing::info!("Selected present_mode: {:?}", present_mode);
+
+    // 视口物理尺寸上限裁剪（yinhe:181）：Retina 最大化可达 10k+，超 8192 硬上限会
+    // 导致 Metal 丢设备黑屏。按 adapter 上限裁剪，与离屏纹理保持一致。
+    let max_dim = adapter.limits().max_texture_dimension_2d;
+    let width = width.min(max_dim);
+    let height = height.min(max_dim);
+
+    // sRGB 需提供 linear view_format 供 shader 采样，否则 Metal 大纹理创建失败
+    #[cfg(not(target_os = "android"))]
+    let linear_view_format = match format {
+        wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+        wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+        _ => None,
+    };
+    // Android（2026-10-19 真机实测）：Adreno 的 surface format 列表不含线性
+    // view_format，申请它会让 `validate_surface_configuration` 失败并丢掉
+    // presentation（同 `select_present_mode` 注释）；已验证可渲染的探针
+    // （`crates/tools/android-probe`）也不申请，故 Android 下留空。
+    #[cfg(target_os = "android")]
+    let view_formats: Vec<wgpu::TextureFormat> = Vec::new();
+    #[cfg(not(target_os = "android"))]
+    let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
+
+    wgpu::SurfaceConfiguration {
+        // `COPY_DST` 由 `surface_usage()` 统一给出（不可省，见该函数注释）。
+        usage: crate::context::surface_usage(),
+        format,
+        width,
+        height,
+        present_mode,
+        alpha_mode: wgpu::CompositeAlphaMode::Auto,
+        view_formats,
+        // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
+        // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
+        // GPU 队列里堆积的深度。Android 固定为驱动安全值 2（探针同值）。
+        #[cfg(target_os = "android")]
+        desired_maximum_frame_latency: 2,
+        #[cfg(not(target_os = "android"))]
+        desired_maximum_frame_latency: desired_maximum_frame_latency(),
+    }
+}
+
 impl Context {
     /// 异步创建图形上下文。
     ///
@@ -202,53 +314,7 @@ impl Context {
         let surface =
             surface_factory(&instance).map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
 
-        // 快照读（锁内只做 clone / 状态判断，立即放锁——G3：禁止持锁做 wgpu 调用）
-        let existing = {
-            let guard = SHARED_GPU
-                .read()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            match guard.as_ref() {
-                Some(Ok(state)) => Some((state.epoch, Arc::clone(&state.inner))),
-                Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
-                None => None,
-            }
-        };
-
-        let (epoch, shared) = match existing {
-            Some(snapshot) => snapshot,
-            None => {
-                // 无锁初始化（init_shared_gpu 为 async + wgpu 调用，必须在锁外执行——G3）
-                let gpu = init_shared_gpu(&instance, &surface).await?;
-                // 注册 uncaptured error handler，避免 Metal 报错直接 abort（yinhe:84）
-                // 睡眠唤醒/maximize 大纹理时 Surface::configure 可能触发 idle 等待失败
-                gpu.device.on_uncaptured_error(Arc::new(|err| {
-                    tracing::error!("wgpu uncaptured error: {err}")
-                }));
-                // REND-019（PR-A）：回调置位全局停帧标志（红线 C1：只做日志 +
-                // 原子写，禁止 wgpu 调用 / 锁 / 阻塞发送）。渲染线程与 UI 侧
-                // 依据该标志停止对死设备的盲重试；PR-C 将在此接线事件循环
-                // 通知与重连状态机。
-                gpu.device
-                    .set_device_lost_callback(device_status::on_device_lost);
-                let gpu = Arc::new(gpu);
-                // 写锁安装（双检：并发初始化时沿用先到者、丢弃本实例——
-                // 与旧 OnceLock::set 语义一致；锁内只做赋值，无 wgpu 调用——G3）
-                let mut guard = SHARED_GPU
-                    .write()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                match guard.as_ref() {
-                    Some(Ok(state)) => (state.epoch, Arc::clone(&state.inner)),
-                    _ => {
-                        let epoch = GpuEpoch::INITIAL;
-                        *guard = Some(Ok(SharedGpuState {
-                            epoch,
-                            inner: Arc::clone(&gpu),
-                        }));
-                        (epoch, gpu)
-                    }
-                }
-            }
-        };
+        let (epoch, shared) = resolve_shared_gpu(&instance, &surface).await?;
 
         // R2 测试注入（`gpu-reconnect-test` 特性；默认构建为空操作，REND-019 §三 R2）
         device_status::maybe_spawn_device_lost_injection();
@@ -263,49 +329,8 @@ impl Context {
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(ContextError::PreferredFormatNotFound)?;
 
-        // 选择最优 PresentMode（macOS 上 Mailbox 优先，其他平台 Immediate 优先）
-        let present_mode = select_present_mode(&capabilities.present_modes);
-        tracing::info!("Selected present_mode: {:?}", present_mode);
-
-        // 视口物理尺寸上限裁剪（yinhe:181）：Retina 最大化可达 10k+，超 8192 硬上限会
-        // 导致 Metal 丢设备黑屏。按 adapter 上限裁剪，与离屏纹理保持一致。
-        let max_dim = shared.adapter.limits().max_texture_dimension_2d;
-        let width = width.min(max_dim);
-        let height = height.min(max_dim);
-
-        // sRGB 需提供 linear view_format 供 shader 采样，否则 Metal 大纹理创建失败
-        #[cfg(not(target_os = "android"))]
-        let linear_view_format = match format {
-            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
-            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
-            _ => None,
-        };
-        // Android（2026-10-19 真机实测）：Adreno 的 surface format 列表不含线性
-        // view_format，申请它会让 `validate_surface_configuration` 失败并丢掉
-        // presentation（同 `select_present_mode` 注释）；已验证可渲染的探针
-        // （`crates/tools/android-probe`）也不申请，故 Android 下留空。
-        #[cfg(target_os = "android")]
-        let view_formats: Vec<wgpu::TextureFormat> = Vec::new();
-        #[cfg(not(target_os = "android"))]
-        let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
-
-        let surface_config = wgpu::SurfaceConfiguration {
-            // `COPY_DST` 由 `surface_usage()` 统一给出（不可省，见该函数注释）。
-            usage: crate::context::surface_usage(),
-            format,
-            width,
-            height,
-            present_mode,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats,
-            // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
-            // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
-            // GPU 队列里堆积的深度。Android 固定为驱动安全值 2（探针同值）。
-            #[cfg(target_os = "android")]
-            desired_maximum_frame_latency: 2,
-            #[cfg(not(target_os = "android"))]
-            desired_maximum_frame_latency: desired_maximum_frame_latency(),
-        };
+        let surface_config =
+            build_surface_config(&capabilities, &shared.adapter, format, width, height);
         surface.configure(&shared.device, &surface_config);
 
         Ok(Self {

@@ -45,8 +45,10 @@
 //! 若将来需要亚毫秒级拖拽，可改为「二分定位同 tick + 局部替换」的增量实现；
 //! 当前刻意选择全量重建：**正确性优先，单点实现易验证**。
 
+use std::sync::Arc;
+
 use lumino_midi_model::{ChunkedList, PackedControlEvent};
-use lumino_note_core::automation::{AutomationEdit, AutomationTarget};
+use lumino_note_core::automation::{AutomationEdit, AutomationLane, AutomationTarget};
 
 use super::EditorData;
 
@@ -94,42 +96,7 @@ impl EditorData {
             *PROFILE_ENABLED.get_or_init(|| std::env::var_os("LUMINO_SYNC_PROFILE").is_some());
         let t0 = std::time::Instant::now();
 
-        // ── 1. 先在只读借用下生成「lane 视角」的事件与覆盖集合 ──────────────
-        // covered_cc: (track, controller) 由 lane 说了算的 CC
-        // covered_pb: track 由 lane 说了算的 PB
-        let mut covered_cc: Vec<(u16, u8)> = Vec::new();
-        let mut covered_pb: Vec<u16> = Vec::new();
-        let mut lane_events: Vec<PackedControlEvent> = Vec::new();
-
-        for lane in &self.automation_lanes {
-            match &lane.target {
-                AutomationTarget::CC { controller } => {
-                    covered_cc.push((lane.track, *controller));
-                    for ev in &lane.events {
-                        lane_events.push(PackedControlEvent::control_change(
-                            ev.tick,
-                            lane.track,
-                            lane.channel,
-                            *controller,
-                            ev.value.min(127) as u8,
-                        ));
-                    }
-                }
-                AutomationTarget::PitchBend => {
-                    covered_pb.push(lane.track);
-                    for ev in &lane.events {
-                        lane_events.push(PackedControlEvent::pitch_bend(
-                            ev.tick,
-                            lane.track,
-                            lane.channel,
-                            ev.value.min(16383),
-                        ));
-                    }
-                }
-                // RPN/NRPN 无对应 kind：播放时展开为 CC 序列，不入 document
-                AutomationTarget::Rpn { .. } | AutomationTarget::Nrpn { .. } => {}
-            }
-        }
+        let (covered_cc, covered_pb, lane_events) = collect_lane_events(&self.automation_lanes);
         let t_lane = t0.elapsed();
         let lane_n = lane_events.len();
 
@@ -145,28 +112,8 @@ impl EditorData {
         buckets[KIND_CC].reserve(doc_n.min(1 << 16));
         buckets[KIND_PB].reserve(lane_events.len().min(1 << 16));
 
-        let mut kept_n = 0usize;
-        for ev in doc.control_events.iter() {
-            // 注意：`PackedControlEvent` 是 packed 结构，字段引用可能未对齐
-            // （rustc E0793「reference to field of packed struct is unaligned」），
-            // 因此一律先按值拷出字段再使用，不做 `&ev.field`。
-            let kind = ev.kind as usize;
-            let track = ev.track;
-            let covered = match kind {
-                KIND_CC => {
-                    let (controller, _) = ev.as_control_change();
-                    covered_cc.iter().any(|(covered_track, covered_ctrl)| {
-                        *covered_track == track && *covered_ctrl == controller
-                    })
-                }
-                KIND_PB => covered_pb.contains(&track),
-                _ => false,
-            };
-            if !covered {
-                kept_n += 1;
-                buckets[kind.min(KNOWN_KINDS)].push(*ev);
-            }
-        }
+        let kept_n =
+            keep_uncovered_events(&doc.control_events, &covered_cc, &covered_pb, &mut buckets);
         let t_kept = t0.elapsed();
 
         for ev in lane_events {
@@ -260,4 +207,80 @@ impl EditorData {
             })
             .collect()
     }
+}
+
+// ── 1. 先在只读借用下生成「lane 视角」的事件与覆盖集合 ──────────────
+// covered_cc: (track, controller) 由 lane 说了算的 CC
+// covered_pb: track 由 lane 说了算的 PB
+//
+// 两者共同决定第 2 阶段哪些既有事件被丢弃。
+fn collect_lane_events(
+    lanes: &[Arc<AutomationLane>],
+) -> (Vec<(u16, u8)>, Vec<u16>, Vec<PackedControlEvent>) {
+    let mut covered_cc: Vec<(u16, u8)> = Vec::new();
+    let mut covered_pb: Vec<u16> = Vec::new();
+    let mut lane_events: Vec<PackedControlEvent> = Vec::new();
+
+    for lane in lanes {
+        match &lane.target {
+            AutomationTarget::CC { controller } => {
+                covered_cc.push((lane.track, *controller));
+                for ev in &lane.events {
+                    lane_events.push(PackedControlEvent::control_change(
+                        ev.tick,
+                        lane.track,
+                        lane.channel,
+                        *controller,
+                        ev.value.min(127) as u8,
+                    ));
+                }
+            }
+            AutomationTarget::PitchBend => {
+                covered_pb.push(lane.track);
+                for ev in &lane.events {
+                    lane_events.push(PackedControlEvent::pitch_bend(
+                        ev.tick,
+                        lane.track,
+                        lane.channel,
+                        ev.value.min(16383),
+                    ));
+                }
+            }
+            // RPN/NRPN 无对应 kind：播放时展开为 CC 序列，不入 document
+            AutomationTarget::Rpn { .. } | AutomationTarget::Nrpn { .. } => {}
+        }
+    }
+    (covered_cc, covered_pb, lane_events)
+}
+
+/// 第 2 阶段前半：把未被 lane 覆盖的既有事件按 kind 分桶，返回保留条数。
+fn keep_uncovered_events(
+    events: &ChunkedList<PackedControlEvent>,
+    covered_cc: &[(u16, u8)],
+    covered_pb: &[u16],
+    buckets: &mut [Vec<PackedControlEvent>; KIND_BUCKETS],
+) -> usize {
+    let mut kept_n = 0usize;
+    for ev in events.iter() {
+        // 注意：`PackedControlEvent` 是 packed 结构，字段引用可能未对齐
+        // （rustc E0793「reference to field of packed struct is unaligned」），
+        // 因此一律先按值拷出字段再使用，不做 `&ev.field`。
+        let kind = ev.kind as usize;
+        let track = ev.track;
+        let covered = match kind {
+            KIND_CC => {
+                let (controller, _) = ev.as_control_change();
+                covered_cc.iter().any(|(covered_track, covered_ctrl)| {
+                    *covered_track == track && *covered_ctrl == controller
+                })
+            }
+            KIND_PB => covered_pb.contains(&track),
+            _ => false,
+        };
+        if !covered {
+            kept_n += 1;
+            buckets[kind.min(KNOWN_KINDS)].push(*ev);
+        }
+    }
+    kept_n
 }

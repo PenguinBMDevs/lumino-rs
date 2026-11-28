@@ -107,6 +107,31 @@ impl Editor {
                 let snapped_tick = self.snap_tick(tick).max(0.0);
                 self.playback_position = snapped_tick;
             }
+            action @ (EditorAction::LineToolConfirm
+            | EditorAction::LineToolCancel
+            | EditorAction::LineToolBend(_)
+            | EditorAction::AreaPaintAt { .. }
+            | EditorAction::AreaPaintSetColour(_)
+            | EditorAction::AreaPaintEnd
+            | EditorAction::ShapeListClose
+            | EditorAction::BrushConfirm
+            | EditorAction::BrushCancel
+            | EditorAction::ShapeToolConfirm
+            | EditorAction::ShapeToolCancel
+            | EditorAction::TextToolTextChanged(_)
+            | EditorAction::TextToolConfirm
+            | EditorAction::TextToolCancel
+            | EditorAction::TextToolModeToggle
+            | EditorAction::TextParamsChanged(_)
+            | EditorAction::TextLayoutModeChanged(_)
+            | EditorAction::TextParamsReset) => self.handle_tool_action(action),
+        }
+    }
+
+    /// 工具面板动作：曲线 / 区域着色 / 形状 / 画刷 / 文字工具的 ✓、× 与参数变更。
+    /// 其余变体已在 `handle_action` 分派；末尾空臂只让匹配保持穷尽。
+    fn handle_tool_action(&mut self, action: EditorAction) {
+        match action {
             EditorAction::LineToolConfirm => {
                 self.confirm_line_tool();
             }
@@ -184,6 +209,7 @@ impl Editor {
             EditorAction::TextParamsReset => {
                 self.reset_text_params();
             }
+            _ => {}
         }
     }
 

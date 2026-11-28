@@ -124,6 +124,23 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
     if pps <= 0.0 {
         return;
     }
+    draw_ruler(&painter, rect, model, pps);
+
+    draw_tracks(&painter, rect, model, pps);
+
+    // 走带线：宽 2，纵贯全高。
+    let x = rect.left() + model.playhead_secs * pps - model.scroll_x;
+    if x >= rect.left() - 2.0 && x <= rect.right() + 2.0 {
+        painter.rect_filled(
+            Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(2.0, rect.height())),
+            0,
+            egui::Color32::from_rgb(242, 64, 64),
+        );
+    }
+}
+
+/// 绘制标尺刻度与主刻度标签。
+fn draw_ruler(painter: &egui::Painter, rect: Rect, model: &VideoTimelineModel, pps: f32) {
     // 标尺：刻度贴底，主 12px / 次 6px。
     let start_sec = (model.scroll_x / pps).floor().max(0.0);
     let end_sec = ((model.scroll_x + rect.width()) / pps).min(model.content_secs());
@@ -157,7 +174,10 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
         }
         t += MINOR_INTERVAL;
     }
+}
 
+/// 绘制视频 / 音频双轨条（含首尾把手与标签）。
+fn draw_tracks(painter: &egui::Painter, rect: Rect, model: &VideoTimelineModel, pps: f32) {
     // 双轨条。
     for (track, edit, color, label) in [
         (
@@ -212,15 +232,5 @@ pub fn show(ui: &egui::Ui, rect: Rect, model: &VideoTimelineModel) {
                 egui::Color32::WHITE,
             );
         }
-    }
-
-    // 走带线：宽 2，纵贯全高。
-    let x = rect.left() + model.playhead_secs * pps - model.scroll_x;
-    if x >= rect.left() - 2.0 && x <= rect.right() + 2.0 {
-        painter.rect_filled(
-            Rect::from_min_size(egui::pos2(x, rect.top()), egui::vec2(2.0, rect.height())),
-            0,
-            egui::Color32::from_rgb(242, 64, 64),
-        );
     }
 }

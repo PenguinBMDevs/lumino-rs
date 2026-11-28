@@ -30,191 +30,220 @@ impl MessageHandler for SettingsHandler {
 
         root.settings.update(event.clone());
 
-        match event {
-            crate::settings::Event::EraserBehaviorChanged(behavior) => {
-                root.editor.set_eraser_behavior(behavior);
+        apply_editor_settings(root, event);
+
+        None // 已处理
+    }
+}
+
+/// 编辑器视图 / 交互类设置：橡皮擦、框选框、力度过滤、自动滚动三个参数、
+/// HiDPI 图标、键数与界面语言。
+///
+/// 未命中本组的事件原样交给 `apply_panel_settings`，分派顺序与拆分前一致。
+fn apply_editor_settings(root: &mut Root, event: crate::settings::Event) {
+    match event {
+        crate::settings::Event::EraserBehaviorChanged(behavior) => {
+            root.editor.set_eraser_behavior(behavior);
+        }
+        crate::settings::Event::SelectionBoxModeChanged(mode) => {
+            root.editor.set_selection_box_mode(mode);
+            tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
+        }
+        crate::settings::Event::VelocityFilterThresholdChanged(value) => {
+            if let Ok(val) = value.parse::<u8>() {
+                root.visual.velocity_filter_threshold = val;
+                tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
+                // 立即传播到播放引擎，让力度过滤实时生效。
+                root.update_playback_notes();
             }
-            crate::settings::Event::SelectionBoxModeChanged(mode) => {
-                root.editor.set_selection_box_mode(mode);
-                tracing::debug!("Root: 框选框模式切换为 {:?}", mode);
+        }
+        crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
+            if let Ok(val) = value.parse::<u32>() {
+                let mut config = *root.editor.auto_scroll_config();
+                config.fixed_indicator_position = val;
+                root.editor.set_auto_scroll_config(config);
+                tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
             }
-            crate::settings::Event::VelocityFilterThresholdChanged(value) => {
-                if let Ok(val) = value.parse::<u8>() {
-                    root.visual.velocity_filter_threshold = val;
-                    tracing::debug!("Root: 力度过滤阈值同步为 {}", val);
-                    // 立即传播到播放引擎，让力度过滤实时生效。
-                    root.update_playback_notes();
-                }
+        }
+        crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
+            if let Ok(val) = value.parse::<u32>() {
+                let mut config = *root.editor.auto_scroll_config();
+                config.page_trigger_offset = val;
+                root.editor.set_auto_scroll_config(config);
+                tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
             }
-            crate::settings::Event::AutoScrollFixedPositionChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    let mut config = *root.editor.auto_scroll_config();
-                    config.fixed_indicator_position = val;
-                    root.editor.set_auto_scroll_config(config);
-                    tracing::debug!("Root: 自动滚动固定位置同步为 {}", val);
-                }
+        }
+        crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
+            if let Ok(val) = value.parse::<u32>() {
+                let mut config = *root.editor.auto_scroll_config();
+                config.page_return_position = val;
+                root.editor.set_auto_scroll_config(config);
+                tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
             }
-            crate::settings::Event::AutoScrollPageTriggerOffsetChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    let mut config = *root.editor.auto_scroll_config();
-                    config.page_trigger_offset = val;
-                    root.editor.set_auto_scroll_config(config);
-                    tracing::debug!("Root: 自动滚动翻页触发偏移同步为 {}", val);
-                }
-            }
-            crate::settings::Event::AutoScrollPageReturnPositionChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    let mut config = *root.editor.auto_scroll_config();
-                    config.page_return_position = val;
-                    root.editor.set_auto_scroll_config(config);
-                    tracing::debug!("Root: 自动滚动翻页返回位置同步为 {}", val);
-                }
-            }
-            crate::settings::Event::IconHiDPIChanged(enabled) => {
-                crate::resources::icon::set_hidpi_enabled(enabled);
-                tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
-            }
-            crate::settings::Event::Enable256keyChanged(enabled) => {
-                let new_count: u16 = if enabled { 256 } else { 128 };
-                root.editor.set_visible_key_count(new_count);
-                root.editor.editor_state.view.key_count = new_count;
-                tracing::debug!(
-                    "Root: 256键模式切换为 {}，琴键数调整为 {}",
-                    enabled,
-                    new_count
-                );
-            }
-            crate::settings::Event::LanguagePreferenceChanged(preference) => {
-                // 文案目录（`lumino_core::i18n`）读的是进程级当前语言，切换界面语言
-                // 必须在这里同步，否则新目录文案会停留在旧语言。
-                // UI-018：这里同时把偏好（跟随系统 / 固定语言）解析为生效语言。
-                let language = preference.resolve();
-                lumino_core::i18n::set_current_language(language);
-                tracing::debug!("Root: 界面语言偏好切换为 {preference:?}（生效语言 {language}）");
-            }
-            crate::settings::Event::AutomationLineThicknessChanged(v) => {
-                root.editor.velocity_panel.automation_line_thickness = v;
-                tracing::debug!("Root: 自动化曲线连线粗细设置为 {}", v);
-            }
-            crate::settings::Event::TempoMaxBpmChanged(v) => {
-                root.editor.velocity_panel.tempo_max_bpm = v;
-                tracing::debug!("Root: Tempo BPM 上限设置为 {}", v);
-            }
-            crate::settings::Event::TempoMaxBpmCustomOpen => {
-                // DRAW-045：自定义输入是独立窗口，面板不保存临时态；
-                // 当前值由设置窗口发出，Runner 用它预填对话框输入框。
-                let current = root.settings.editing.tempo_max_bpm;
-                crate::event::emit(crate::event::Event::Window(
-                    crate::event::window::Event::open_tempo_max_bpm_dialog(current),
-                ));
-            }
-            crate::settings::Event::MonitorRefreshIntervalChanged(v) => {
-                tracing::debug!("Root: 监控数据刷新间隔设置为 {}ms", v);
-            }
-            crate::settings::Event::ScanWinmmOutputs => {
-                // 系统播表自动扫描（WinMM 输出设备列表）
-                root.scan_winmm_outputs();
-            }
-            crate::settings::Event::ScanMidiDevices => {
-                // MIDI 输入设备扫描（录制输入列表；后台线程枚举 + 轮询回写）
-                root.scan_midi_input_devices();
-            }
-            crate::settings::Event::WinmmOutputSelected(_id) => {
-                tracing::debug!("Root: 已选择 WinMM 输出设备(播表)");
-            }
-            crate::settings::Event::ScanAudioOutputs => {
-                // 音频播放输出设备自动扫描（CPAL 音频设备列表）
-                root.scan_audio_outputs();
-            }
-            crate::settings::Event::AudioOutputSelected(_name) => {
-                tracing::debug!("Root: 已选择音频播放输出设备");
-            }
-            crate::settings::Event::OutputTypeChanged(OutputType::System)
-            | crate::settings::Event::SynthBackendChanged(SynthBackend::System) => {
-                // 进入 WinMM 模式时自动扫描播表
-                root.scan_winmm_outputs();
-            }
-            crate::settings::Event::OutputTypeChanged(OutputType::Builtin)
-            | crate::settings::Event::SynthBackendChanged(SynthBackend::XSynth)
-            | crate::settings::Event::SynthBackendChanged(SynthBackend::Lgs) => {
-                // 进入内置软件合成器时自动扫描音频播放输出设备
-                root.scan_audio_outputs();
-            }
-            crate::settings::Event::RunGpuCompatibilityCheck => {
-                tracing::info!("设置页请求执行 GPU 兼容性检查");
-                crate::event::emit(crate::event::Event::Window(
-                    crate::event::window::Event::gpu_check_run(),
-                ));
-            }
-            crate::settings::Event::CopyGpuDiagnostics => {
-                let detail = match &root.settings.compat.check_state {
-                    GpuCheckUiState::Done(result) => Some(result.detail.clone()),
-                    _ => None,
-                };
-                if let Some(detail) = detail {
-                    match lumino_platform::clipboard::set_text(detail) {
-                        Ok(()) => {
-                            root.settings.compat.copied = true;
-                            tracing::info!("GPU 诊断信息已复制到剪贴板");
-                        }
-                        Err(e) => tracing::warn!("复制 GPU 诊断信息失败: {e}"),
+        }
+        crate::settings::Event::IconHiDPIChanged(enabled) => {
+            crate::resources::icon::set_hidpi_enabled(enabled);
+            tracing::debug!("Root: HiDPI 图标渲染切换为 {}", enabled);
+        }
+        crate::settings::Event::Enable256keyChanged(enabled) => {
+            let new_count: u16 = if enabled { 256 } else { 128 };
+            root.editor.set_visible_key_count(new_count);
+            root.editor.editor_state.view.key_count = new_count;
+            tracing::debug!(
+                "Root: 256键模式切换为 {}，琴键数调整为 {}",
+                enabled,
+                new_count
+            );
+        }
+        crate::settings::Event::LanguagePreferenceChanged(preference) => {
+            // 文案目录（`lumino_core::i18n`）读的是进程级当前语言，切换界面语言
+            // 必须在这里同步，否则新目录文案会停留在旧语言。
+            // UI-018：这里同时把偏好（跟随系统 / 固定语言）解析为生效语言。
+            let language = preference.resolve();
+            lumino_core::i18n::set_current_language(language);
+            tracing::debug!("Root: 界面语言偏好切换为 {preference:?}（生效语言 {language}）");
+        }
+        other => apply_panel_settings(root, other),
+    }
+}
+
+/// 速度面板类设置：自动化连线粗细、Tempo BPM 上限与 BPM 自定义输入。
+fn apply_panel_settings(root: &mut Root, event: crate::settings::Event) {
+    match event {
+        crate::settings::Event::AutomationLineThicknessChanged(v) => {
+            root.editor.velocity_panel.automation_line_thickness = v;
+            tracing::debug!("Root: 自动化曲线连线粗细设置为 {}", v);
+        }
+        crate::settings::Event::TempoMaxBpmChanged(v) => {
+            root.editor.velocity_panel.tempo_max_bpm = v;
+            tracing::debug!("Root: Tempo BPM 上限设置为 {}", v);
+        }
+        crate::settings::Event::TempoMaxBpmCustomOpen => {
+            // DRAW-045：自定义输入是独立窗口，面板不保存临时态；
+            // 当前值由设置窗口发出，Runner 用它预填对话框输入框。
+            let current = root.settings.editing.tempo_max_bpm;
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_tempo_max_bpm_dialog(current),
+            ));
+        }
+        other => apply_device_settings(root, other),
+    }
+}
+
+/// 设备扫描 / 合成器后端切换 / GPU 兼容性检查类设置。
+fn apply_device_settings(root: &mut Root, event: crate::settings::Event) {
+    match event {
+        crate::settings::Event::MonitorRefreshIntervalChanged(v) => {
+            tracing::debug!("Root: 监控数据刷新间隔设置为 {}ms", v);
+        }
+        crate::settings::Event::ScanWinmmOutputs => {
+            // 系统播表自动扫描（WinMM 输出设备列表）
+            root.scan_winmm_outputs();
+        }
+        crate::settings::Event::ScanMidiDevices => {
+            // MIDI 输入设备扫描（录制输入列表；后台线程枚举 + 轮询回写）
+            root.scan_midi_input_devices();
+        }
+        crate::settings::Event::WinmmOutputSelected(_id) => {
+            tracing::debug!("Root: 已选择 WinMM 输出设备(播表)");
+        }
+        crate::settings::Event::ScanAudioOutputs => {
+            // 音频播放输出设备自动扫描（CPAL 音频设备列表）
+            root.scan_audio_outputs();
+        }
+        crate::settings::Event::AudioOutputSelected(_name) => {
+            tracing::debug!("Root: 已选择音频播放输出设备");
+        }
+        crate::settings::Event::OutputTypeChanged(OutputType::System)
+        | crate::settings::Event::SynthBackendChanged(SynthBackend::System) => {
+            // 进入 WinMM 模式时自动扫描播表
+            root.scan_winmm_outputs();
+        }
+        crate::settings::Event::OutputTypeChanged(OutputType::Builtin)
+        | crate::settings::Event::SynthBackendChanged(SynthBackend::XSynth)
+        | crate::settings::Event::SynthBackendChanged(SynthBackend::Lgs) => {
+            // 进入内置软件合成器时自动扫描音频播放输出设备
+            root.scan_audio_outputs();
+        }
+        crate::settings::Event::RunGpuCompatibilityCheck => {
+            tracing::info!("设置页请求执行 GPU 兼容性检查");
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::gpu_check_run(),
+            ));
+        }
+        crate::settings::Event::CopyGpuDiagnostics => {
+            let detail = match &root.settings.compat.check_state {
+                GpuCheckUiState::Done(result) => Some(result.detail.clone()),
+                _ => None,
+            };
+            if let Some(detail) = detail {
+                match lumino_platform::clipboard::set_text(detail) {
+                    Ok(()) => {
+                        root.settings.compat.copied = true;
+                        tracing::info!("GPU 诊断信息已复制到剪贴板");
                     }
+                    Err(e) => tracing::warn!("复制 GPU 诊断信息失败: {e}"),
                 }
             }
-            crate::settings::Event::AboutLogoClicked => {
-                // 关于页 logo 彩蛋（UI-007）：点击指针位置已由 Host 在路由前写入
-                // `state.about_egg`（`mouse_area::on_press` 不携带坐标）。
-                let clicks_before = root.state.about_egg.clicks();
-                let consumed = root.state.about_egg.on_logo_click(Instant::now());
-                if consumed {
-                    if root.state.about_egg.is_airborne() {
-                        tracing::info!(
-                            "关于页 logo 彩蛋触发：{} 连点（此前计数 {}）",
-                            lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD,
-                            clicks_before + 1
-                        );
-                        // 预热音效（解码 + 开流并保持暂停）：序列约 1.7s，足够覆盖初始化，
-                        // 落地瞬间只剩一次 `play`，避免开流延迟导致「落地后半天才响」。
-                        lumino_midi_io::ui_sfx::prewarm(
-                            root.settings.synth.selected_audio_output_device.as_deref(),
-                        );
-                    } else {
-                        tracing::debug!(
-                            "关于页 logo 单击反馈：计数 {}/{}",
-                            root.state.about_egg.clicks(),
-                            lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD
-                        );
-                    }
-                }
-            }
-            crate::settings::Event::MenuSelected(index)
-                if index == crate::settings::MENU_INDEX_ABOUT =>
-            {
-                // 关于页回声洞彩蛋（UI-006）：打字机播放的**唯一装填点**。
-                // 关于页永远不是设置面板的初始页（`SettingsPanel::new` 的
-                // `selected_menu_index` 硬编码为 0），故「进入关于页」只能由菜单切换到达；
-                // 重复进入等价于重播当前文案。
-                root.state.echo_cave.begin_typing(Instant::now());
-                tracing::debug!(
-                    "关于页回声洞（UI-006）：进入关于页，开始打字机播放（第 {} 条）",
-                    root.state.echo_cave.index() + 1
-                );
-            }
-            crate::settings::Event::EchoCaveClicked => {
-                // 关于页回声洞彩蛋（UI-006）：单击切换——当前内容闪烁退出，下一条打字机进入。
-                // 闪烁期内的点击会被状态机忽略（返回 false），保证连点不会把闪烁无限推迟。
-                let now = Instant::now();
-                let consumed = root.state.echo_cave.on_click(now);
-                if consumed {
+        }
+        other => apply_about_settings(root, other),
+    }
+}
+
+/// 关于页交互类设置：logo 彩蛋、进入关于页（回声洞装填）、回声洞单击切换。
+fn apply_about_settings(root: &mut Root, event: crate::settings::Event) {
+    match event {
+        crate::settings::Event::AboutLogoClicked => {
+            // 关于页 logo 彩蛋（UI-007）：点击指针位置已由 Host 在路由前写入
+            // `state.about_egg`（`mouse_area::on_press` 不携带坐标）。
+            let clicks_before = root.state.about_egg.clicks();
+            let consumed = root.state.about_egg.on_logo_click(Instant::now());
+            if consumed {
+                if root.state.about_egg.is_airborne() {
+                    tracing::info!(
+                        "关于页 logo 彩蛋触发：{} 连点（此前计数 {}）",
+                        lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD,
+                        clicks_before + 1
+                    );
+                    // 预热音效（解码 + 开流并保持暂停）：序列约 1.7s，足够覆盖初始化，
+                    // 落地瞬间只剩一次 `play`，避免开流延迟导致「落地后半天才响」。
+                    lumino_midi_io::ui_sfx::prewarm(
+                        root.settings.synth.selected_audio_output_device.as_deref(),
+                    );
+                } else {
                     tracing::debug!(
-                        "关于页回声洞（UI-006）：点击切换，第 {} 条进入闪烁退出",
-                        root.state.echo_cave.index() + 1
+                        "关于页 logo 单击反馈：计数 {}/{}",
+                        root.state.about_egg.clicks(),
+                        lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD
                     );
                 }
             }
-            _ => {} // 其他设置变更由 settings.update() 同步
         }
-
-        None // 已处理
+        crate::settings::Event::MenuSelected(index)
+            if index == crate::settings::MENU_INDEX_ABOUT =>
+        {
+            // 关于页回声洞彩蛋（UI-006）：打字机播放的**唯一装填点**。
+            // 关于页永远不是设置面板的初始页（`SettingsPanel::new` 的
+            // `selected_menu_index` 硬编码为 0），故「进入关于页」只能由菜单切换到达；
+            // 重复进入等价于重播当前文案。
+            root.state.echo_cave.begin_typing(Instant::now());
+            tracing::debug!(
+                "关于页回声洞（UI-006）：进入关于页，开始打字机播放（第 {} 条）",
+                root.state.echo_cave.index() + 1
+            );
+        }
+        crate::settings::Event::EchoCaveClicked => {
+            // 关于页回声洞彩蛋（UI-006）：单击切换——当前内容闪烁退出，下一条打字机进入。
+            // 闪烁期内的点击会被状态机忽略（返回 false），保证连点不会把闪烁无限推迟。
+            let now = Instant::now();
+            let consumed = root.state.echo_cave.on_click(now);
+            if consumed {
+                tracing::debug!(
+                    "关于页回声洞（UI-006）：点击切换，第 {} 条进入闪烁退出",
+                    root.state.echo_cave.index() + 1
+                );
+            }
+        }
+        _ => {} // 其他设置变更由 settings.update() 同步
     }
 }

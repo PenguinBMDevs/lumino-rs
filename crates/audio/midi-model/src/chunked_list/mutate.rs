@@ -190,41 +190,65 @@ impl<T: EventTick> ChunkedList<T> {
 
         // 追加：新事件全部在尾部之后 → 旧块浅拷 + 新块拼接，零扫描
         if min_tick > old_last {
-            let old = std::mem::take(self);
-            let old_len = old.total_len;
-            let new_list = Self::from_sorted(events);
-            let new_len = new_list.total_len;
-            let mut new_chunks = Vec::with_capacity(old.chunks.len() + new_list.chunks.len());
-            new_chunks.extend(old.chunks);
-            new_chunks.extend(new_list.chunks);
-            *self = Self {
-                chunks: new_chunks,
-                chunk_first_ticks: Vec::new(),
-                chunk_offsets: Vec::new(),
-                total_len: old_len + new_len,
-            };
-            self.rebuild_index();
+            self.extend_at_tail(events);
             return;
         }
         // 前插：新事件全部在首部之前 → 新块 + 旧块拼接，零扫描
         if max_tick < old_first {
-            let old = std::mem::take(self);
-            let old_len = old.total_len;
-            let new_list = Self::from_sorted(events);
-            let new_len = new_list.total_len;
-            let mut new_chunks = Vec::with_capacity(new_list.chunks.len() + old.chunks.len());
-            new_chunks.extend(new_list.chunks);
-            new_chunks.extend(old.chunks);
-            *self = Self {
-                chunks: new_chunks,
-                chunk_first_ticks: Vec::new(),
-                chunk_offsets: Vec::new(),
-                total_len: old_len + new_len,
-            };
-            self.rebuild_index();
+            self.extend_at_head(events);
             return;
         }
 
+        self.merge_sorted_middle(events, min_tick, max_tick);
+    }
+
+    /// 追加路径：旧块在前、新块在后直接拼接（块数变化 → 重建索引）
+    fn extend_at_tail(&mut self, events: Vec<T>)
+    where
+        T: Clone,
+    {
+        let old = std::mem::take(self);
+        let old_len = old.total_len;
+        let new_list = Self::from_sorted(events);
+        let new_len = new_list.total_len;
+        let mut new_chunks = Vec::with_capacity(old.chunks.len() + new_list.chunks.len());
+        new_chunks.extend(old.chunks);
+        new_chunks.extend(new_list.chunks);
+        *self = Self {
+            chunks: new_chunks,
+            chunk_first_ticks: Vec::new(),
+            chunk_offsets: Vec::new(),
+            total_len: old_len + new_len,
+        };
+        self.rebuild_index();
+    }
+
+    /// 前插路径：新块在前、旧块在后直接拼接（块数变化 → 重建索引）
+    fn extend_at_head(&mut self, events: Vec<T>)
+    where
+        T: Clone,
+    {
+        let old = std::mem::take(self);
+        let old_len = old.total_len;
+        let new_list = Self::from_sorted(events);
+        let new_len = new_list.total_len;
+        let mut new_chunks = Vec::with_capacity(new_list.chunks.len() + old.chunks.len());
+        new_chunks.extend(new_list.chunks);
+        new_chunks.extend(old.chunks);
+        *self = Self {
+            chunks: new_chunks,
+            chunk_first_ticks: Vec::new(),
+            chunk_offsets: Vec::new(),
+            total_len: old_len + new_len,
+        };
+        self.rebuild_index();
+    }
+
+    /// 把已排序事件归并进受影响块区间（前缀/后缀块零拷贝，单次索引重建）
+    fn merge_sorted_middle(&mut self, events: Vec<T>, min_tick: u32, max_tick: u32)
+    where
+        T: Clone,
+    {
         // 通用局部归并：仅扫描受影响块区间。
         //
         // 2026-09 内存修复：改为**流式归并**——不物化 `middle_old` 与 `merged`

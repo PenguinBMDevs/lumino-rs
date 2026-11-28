@@ -23,7 +23,6 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
     let language = settings.display.language;
     let t = settings_translations(language);
     let synth = &settings.synth;
-    let midi = &settings.midi;
     let mut rows: Vec<AudioRowModel> = Vec::new();
 
     let builtin = matches!(synth.backend, SynthBackend::XSynth | SynthBackend::Lgs);
@@ -61,63 +60,114 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
     ));
 
     if builtin {
-        let engine = usize::from(synth.backend == SynthBackend::Lgs);
+        builtin_rows(root, t, &mut rows);
+    }
+
+    midi_rows(root, t, &mut rows);
+
+    match synth.backend {
+        SynthBackend::XSynth => xsynth_rows(root, t, &mut rows),
+        SynthBackend::Lgs => pages::lgs_rows(root, t, &mut rows),
+        SynthBackend::Maestro => pages::maestro_rows(root, t, &mut rows),
+        SynthBackend::System => pages::system_rows(root, t, &mut rows),
+        _ => {}
+    }
+
+    AudioPageModel {
+        title: t.audio_title.to_owned(),
+        rows,
+    }
+}
+
+/// 内置后端（XSynth / LGS）的引擎选择与音频输出设备行。
+fn builtin_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let language = settings.display.language;
+    let synth = &settings.synth;
+
+    let engine = usize::from(synth.backend == SynthBackend::Lgs);
+    rows.push(row(
+        AudioField::Engine,
+        t.builtin_engine.to_owned(),
+        String::new(),
+        combo(
+            vec![
+                engine_name(SynthBackend::XSynth, language),
+                engine_name(SynthBackend::Lgs, language),
+            ],
+            engine,
+        ),
+        200.0,
+    ));
+
+    audio_output_rows(root, t, rows);
+
+    rows.push(row(
+        AudioField::ScanAudioOutputs,
+        t.refresh.to_owned(),
+        String::new(),
+        AudioControlModel::Button,
+        0.0,
+    ));
+}
+
+/// 音频播放输出设备行。
+fn audio_output_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
+
+    // 音频播放输出设备：默认项 + 扫描结果。
+    if synth.audio_output_devices.is_empty() {
         rows.push(row(
-            AudioField::Engine,
-            t.builtin_engine.to_owned(),
-            String::new(),
-            combo(
-                vec![
-                    engine_name(SynthBackend::XSynth, language),
-                    engine_name(SynthBackend::Lgs, language),
-                ],
-                engine,
-            ),
+            AudioField::AudioOutput,
+            t.audio_output_device.to_owned(),
+            t.audio_output_hint.to_owned(),
+            AudioControlModel::Static {
+                text: t.audio_output_no_device.to_owned(),
+                dim: true,
+            },
             200.0,
         ));
-
-        // 音频播放输出设备：默认项 + 扫描结果。
-        if synth.audio_output_devices.is_empty() {
-            rows.push(row(
-                AudioField::AudioOutput,
-                t.audio_output_device.to_owned(),
-                t.audio_output_hint.to_owned(),
-                AudioControlModel::Static {
-                    text: t.audio_output_no_device.to_owned(),
-                    dim: true,
-                },
-                200.0,
-            ));
-        } else {
-            let mut options = vec![t.audio_output_default.to_owned()];
-            options.extend(synth.audio_output_devices.iter().cloned());
-            let selected = synth
-                .selected_audio_output_device
-                .as_ref()
-                .and_then(|name| {
-                    synth
-                        .audio_output_devices
-                        .iter()
-                        .position(|device| device == name)
-                        .map(|index| index + 1)
-                })
-                .unwrap_or(0);
-            rows.push(row(
-                AudioField::AudioOutput,
-                t.audio_output_device.to_owned(),
-                t.audio_output_hint.to_owned(),
-                combo(options, selected),
-                200.0,
-            ));
-        }
+    } else {
+        let mut options = vec![t.audio_output_default.to_owned()];
+        options.extend(synth.audio_output_devices.iter().cloned());
+        let selected = synth
+            .selected_audio_output_device
+            .as_ref()
+            .and_then(|name| {
+                synth
+                    .audio_output_devices
+                    .iter()
+                    .position(|device| device == name)
+                    .map(|index| index + 1)
+            })
+            .unwrap_or(0);
         rows.push(row(
-            AudioField::ScanAudioOutputs,
-            t.refresh.to_owned(),
-            String::new(),
-            AudioControlModel::Button,
-            0.0,
+            AudioField::AudioOutput,
+            t.audio_output_device.to_owned(),
+            t.audio_output_hint.to_owned(),
+            combo(options, selected),
+            200.0,
         ));
     }
+}
+
+/// MIDI 输入设备行与扫描入口。
+fn midi_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let midi = &settings.midi;
 
     // MIDI 输入设备。
     if midi.devices.is_empty() {
@@ -155,19 +205,6 @@ pub(super) fn page(root: &Root) -> AudioPageModel {
         AudioControlModel::Button,
         0.0,
     ));
-
-    match synth.backend {
-        SynthBackend::XSynth => xsynth_rows(root, t, &mut rows),
-        SynthBackend::Lgs => pages::lgs_rows(root, t, &mut rows),
-        SynthBackend::Maestro => pages::maestro_rows(root, t, &mut rows),
-        SynthBackend::System => pages::system_rows(root, t, &mut rows),
-        _ => {}
-    }
-
-    AudioPageModel {
-        title: t.audio_title.to_owned(),
-        rows,
-    }
 }
 
 fn xsynth_rows(
@@ -195,6 +232,21 @@ fn xsynth_rows(
         AudioControlModel::Button,
         0.0,
     ));
+
+    xsynth_voice_rows(root, t, rows);
+
+    xsynth_limit_rows(root, t, rows);
+    xsynth_gate_rows(root, t, rows);
+}
+
+/// 缓冲延迟与每键复音上限行。
+fn xsynth_voice_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
 
     rows.push(row(
         AudioField::XSynthBuffer,
@@ -233,6 +285,16 @@ fn xsynth_rows(
         },
         80.0,
     ));
+}
+
+/// 全局复音上限与目标比例行。
+fn xsynth_limit_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
 
     let global = match synth.xsynth_global_voice_limit {
         None => format!("{} (10000)", t.global_voice_limit_auto),
@@ -266,6 +328,17 @@ fn xsynth_rows(
         ),
         200.0,
     ));
+}
+
+/// 软 NPS 门限与力度过滤行。
+fn xsynth_gate_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
+
     rows.push(row(
         AudioField::XSynthGate,
         t.soft_nps_gate.to_owned(),

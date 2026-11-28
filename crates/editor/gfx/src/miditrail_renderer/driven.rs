@@ -40,17 +40,83 @@ impl MiditrailRenderer {
         self.update_key_press_factors(&active_keys, uniform.fps);
         let scan_us = t_scan.elapsed().as_micros() as u64;
 
+        let key_instances = self.build_driven_keys(uniform, &active_keys);
+
+        let upload_us = self.upload_driven_inputs(device, queue, uniform, notes, &key_instances);
+
+        let mut aura_instances = std::mem::take(&mut self.scratch_auras);
+        aura_instances.clear();
+        let t_aura = std::time::Instant::now();
+        emit_aura_instances(
+            &active_keys,
+            &aura_sizes,
+            uniform.key_count as usize,
+            &self.key_positions,
+            &self.key_widths,
+            &mut aura_instances,
+        );
+        self.ensure_aura_instance_buffer(device, aura_instances.len());
+        if let Some(ref buf) = self.aura_instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
+        }
+        let aura_us = t_aura.elapsed().as_micros() as u64;
+
+        self.ensure_aura_resources(device, queue);
+
+        let t_submit = std::time::Instant::now();
+        self.write_driven_camera(device, queue, uniform, width, height);
+        // 不变式：`ensure_compact_buffer` 已在上方执行，句柄必然存在。
+        let compact_buf = match self.compact_buffer.as_ref() {
+            Some(buf) => buf.inner().clone(),
+            None => {
+                debug_assert!(false, "compact_buffer 应已初始化");
+                return;
+            }
+        };
+        self.execute_driven_pass(
+            encoder,
+            notes.len(),
+            &compact_buf,
+            &key_instances,
+            &aura_instances,
+        );
+        let submit_us = t_submit.elapsed().as_micros() as u64;
+        Self::diag_driven(scan_us, upload_us, aura_us, submit_us, notes.len());
+        self.scratch_keys = key_instances;
+        self.scratch_auras = aura_instances;
+    }
+
+    /// 构建 128 键实例：复用 `scratch_keys` 容量，避免每帧分配。
+    fn build_driven_keys(
+        &mut self,
+        uniform: &MiditrailUniformGpu,
+        active_keys: &ActiveKeys,
+    ) -> Vec<MiditrailInstanceGpu> {
         let mut key_instances = std::mem::take(&mut self.scratch_keys);
         key_instances.clear();
         build_key_instances(
             uniform,
-            &active_keys,
+            active_keys,
             &self.key_positions,
             &self.key_widths,
             &self.key_press_factors,
             &mut key_instances,
         );
+        key_instances
+    }
 
+    /// GPU-Driven 单帧输入上传：compact 音符原字节、驱动参数、128 键实例。
+    ///
+    /// 参数 bind group 惰性创建（与 legacy 一致：仅在本路径首次绘制时构建）；
+    /// 琴键实例复用 legacy 实例缓冲。返回上传阶段耗时（微秒）。
+    fn upload_driven_inputs(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniform: &MiditrailUniformGpu,
+        notes: &[NoteInstance],
+        key_instances: &[MiditrailInstanceGpu],
+    ) -> u64 {
         let t_upload = std::time::Instant::now();
         self.ensure_compact_buffer(device, notes.len());
         if let Some(ref buf) = self.compact_buffer {
@@ -75,30 +141,20 @@ impl MiditrailRenderer {
         // 琴键实例复用 legacy 实例缓冲（本路径只存键，offset 恒为 0）。
         self.ensure_instance_buffer(device, key_instances.len());
         if let Some(ref buf) = self.instance_buffer {
-            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&key_instances));
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(key_instances));
         }
-        let upload_us = t_upload.elapsed().as_micros() as u64;
+        t_upload.elapsed().as_micros() as u64
+    }
 
-        let mut aura_instances = std::mem::take(&mut self.scratch_auras);
-        aura_instances.clear();
-        let t_aura = std::time::Instant::now();
-        emit_aura_instances(
-            &active_keys,
-            &aura_sizes,
-            uniform.key_count as usize,
-            &self.key_positions,
-            &self.key_widths,
-            &mut aura_instances,
-        );
-        self.ensure_aura_instance_buffer(device, aura_instances.len());
-        if let Some(ref buf) = self.aura_instance_buffer {
-            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
-        }
-        let aura_us = t_aura.elapsed().as_micros() as u64;
-
-        self.ensure_aura_resources(device, queue);
-
-        let t_submit = std::time::Instant::now();
+    /// 写入相机 uniform，并在第 0 组 bind group 缺失时惰性重建。
+    fn write_driven_camera(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniform: &MiditrailUniformGpu,
+        width: u32,
+        height: u32,
+    ) {
         let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
         queue.write_buffer(
             self.uniform_buffer.inner(),
@@ -108,25 +164,6 @@ impl MiditrailRenderer {
         if self.bind_group.is_none() {
             self.rebuild_bind_group(device);
         }
-        // 不变式：`ensure_compact_buffer` 已在上方执行，句柄必然存在。
-        let compact_buf = match self.compact_buffer.as_ref() {
-            Some(buf) => buf.inner().clone(),
-            None => {
-                debug_assert!(false, "compact_buffer 应已初始化");
-                return;
-            }
-        };
-        self.execute_driven_pass(
-            encoder,
-            notes.len(),
-            &compact_buf,
-            &key_instances,
-            &aura_instances,
-        );
-        let submit_us = t_submit.elapsed().as_micros() as u64;
-        Self::diag_driven(scan_us, upload_us, aura_us, submit_us, notes.len());
-        self.scratch_keys = key_instances;
-        self.scratch_auras = aura_instances;
     }
 
     /// 紧凑音符上传缓冲（按字节扩容，`NoteInstance` 16B/音符）。
@@ -193,86 +230,21 @@ impl MiditrailRenderer {
 
         // ── 趟 1：音符（driven 管线，compact 实例直读，写深度）＋ Aura（加色，不写深度）──
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("miditrail_driven_notes_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut render_pass = Self::begin_notes_pass(encoder, color_view, depth_view);
 
             render_pass.set_pipeline(&self.driven_note_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_bind_group(1, driven_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
             render_pass.set_vertex_buffer(1, compact.slice(..));
-            // 平面模式（`3D音符` 开关关闭 = 默认）：只画顶面（X-Z），与 legacy 共用
-            // 同一索引语义与 QUAD_RANGE；实例/顺序/管线/shader 全不动。
-            if self.flat_notes {
-                render_pass.set_index_buffer(
-                    self.quad_index_buffer.inner().slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                render_pass.draw_indexed(Self::QUAD_RANGE, 0, 0..note_count as u32);
-            } else {
-                render_pass.set_index_buffer(
-                    self.index_buffer.inner().slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                render_pass.draw_indexed(
-                    0..Self::CUBE_INDICES.len() as u32,
-                    0,
-                    0..note_count as u32,
-                );
-            }
+            self.draw_driven_notes(&mut render_pass, note_count);
 
             self.draw_aura(&mut render_pass, aura_instances);
         }
 
         // ── 趟 2：琴键（深度清空后 LessEqual：自遮挡正确，且音符深度已丢弃）──
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("miditrail_driven_keys_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut render_pass = Self::begin_keys_pass(encoder, color_view, depth_view);
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
@@ -287,6 +259,90 @@ impl MiditrailRenderer {
                 0,
                 0..key_instances.len() as u32,
             );
+        }
+    }
+
+    /// 开始趟 1 的 render pass：清空颜色与深度（音符/光环一趟）。
+    fn begin_notes_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        color_view: &'a wgpu::TextureView,
+        depth_view: &'a wgpu::TextureView,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("miditrail_driven_notes_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        })
+    }
+
+    /// 开始趟 2 的 render pass：颜色 Load 续接趟 1，深度清空后按 LessEqual 画琴键。
+    fn begin_keys_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        color_view: &'a wgpu::TextureView,
+        depth_view: &'a wgpu::TextureView,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("miditrail_driven_keys_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        })
+    }
+
+    /// 音符几何：平面模式只画顶面，否则画整个立方体（实例数即 `note_count`）。
+    fn draw_driven_notes(&self, render_pass: &mut wgpu::RenderPass<'_>, note_count: usize) {
+        // 平面模式（`3D音符` 开关关闭 = 默认）：只画顶面（X-Z），与 legacy 共用
+        // 同一索引语义与 QUAD_RANGE；实例/顺序/管线/shader 全不动。
+        if self.flat_notes {
+            render_pass.set_index_buffer(
+                self.quad_index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(Self::QUAD_RANGE, 0, 0..note_count as u32);
+        } else {
+            render_pass.set_index_buffer(
+                self.index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count as u32);
         }
     }
 }

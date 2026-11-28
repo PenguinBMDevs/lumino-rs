@@ -197,6 +197,11 @@ pub(super) fn show(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarMode
     }
     ui.add_space(layout::PRECISION_LEADING_GAP);
 
+    draw_precision(ui, cache, model);
+}
+
+/// 画精度标签与下拉 underlay。
+fn draw_precision(ui: &mut egui::Ui, cache: &mut IconCache, model: &ToolbarModel) {
     // 精度标签在框外（与生产 上一代 一致：14px、`background.weak.text`），
     // 文案由生产侧按当前语言给出（中文「精度:」/ 英文「Precision:」）。
     // 绘制用真实度量；折叠预算用 `precision::label_width` 的上界（只会更宽，

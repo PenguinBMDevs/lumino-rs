@@ -9,7 +9,48 @@ impl WaterfallRenderer {
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = crate::shader::create_shader_module(device, "waterfall_shader", Self::SHADER);
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let bind_group_layout = Self::create_bind_group_layout(device);
+
+        let compute_pipeline = crate::pipeline::ComputePipelineBuilder::new(
+            device,
+            "waterfall_compute_pipeline",
+            &shader,
+        )
+        .bind_group(&bind_group_layout)
+        .build();
+
+        let uniform_buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("waterfall_uniform_buffer"),
+                size: std::mem::size_of::<WaterfallUniformGpu>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
+
+        Self {
+            compute_pipeline,
+            bind_group_layout,
+            bind_group: None,
+            uniform_buffer,
+            active_key_colors_buffer: None,
+            key_offsets_buffer: None,
+            output_texture: None,
+            output_texture_view: None,
+            key_offsets_capacity: 0,
+            current_width: 0,
+            current_height: 0,
+            resident_cull: crate::ResidentCull::new(),
+            active_pipeline: None,
+            active_layout: None,
+            active_params_buffer: None,
+        }
+    }
+
+    /// 创建瀑布流 compute 管线使用的绑定组布局。
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("waterfall_bind_group_layout"),
             entries: &[
                 // binding 0: uniform
@@ -70,43 +111,7 @@ impl WaterfallRenderer {
                     count: None,
                 },
             ],
-        });
-
-        let compute_pipeline = crate::pipeline::ComputePipelineBuilder::new(
-            device,
-            "waterfall_compute_pipeline",
-            &shader,
-        )
-        .bind_group(&bind_group_layout)
-        .build();
-
-        let uniform_buffer = TrackedBuffer::new(
-            device,
-            &wgpu::BufferDescriptor {
-                label: Some("waterfall_uniform_buffer"),
-                size: std::mem::size_of::<WaterfallUniformGpu>() as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            },
-        );
-
-        Self {
-            compute_pipeline,
-            bind_group_layout,
-            bind_group: None,
-            uniform_buffer,
-            active_key_colors_buffer: None,
-            key_offsets_buffer: None,
-            output_texture: None,
-            output_texture_view: None,
-            key_offsets_capacity: 0,
-            current_width: 0,
-            current_height: 0,
-            resident_cull: crate::ResidentCull::new(),
-            active_pipeline: None,
-            active_layout: None,
-            active_params_buffer: None,
-        }
+        })
     }
 
     /// 确保输出纹理已创建（尺寸变化时重建）。

@@ -26,12 +26,19 @@ use std::collections::{BTreeMap, HashSet};
 use crate::interaction::bake::BakePending;
 use lumino_core::shape::{ShapeModel, ShapeOp};
 use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
-use lumino_editor_state::{DrawnShapeSource, ShapeNote};
+use lumino_editor_state::{DrawnShapeSource, PendingComposed, ShapeNote};
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
 use crate::interaction::line_tool::{paths, stroke_band};
 use crate::{Editor, Note};
+
+/// `collect_shape_notes` 的返回：描边 / 定长填充 / 切分填充（均带来源图形索引）。
+type ShapeNoteBuckets = (
+    Vec<(f32, u16, f32, usize)>,
+    Vec<(f32, u16, usize)>,
+    Vec<(f32, u16, f32, usize)>,
+);
 
 /// 按音高行把格点合并成连续区间，再按 x 分音符的全局网格切分。
 ///
@@ -129,6 +136,35 @@ fn shape_poly(spec: ShapeSpec, px_per_tick: f32, px_per_key: f32) -> Vec<(f64, f
         .collect()
 }
 
+/// 三类音符整体去重：描边按精确整 tick，定长/切分按 `snap_key` 网格取整。
+fn dedup_shape_notes(
+    outline: &mut Vec<(f32, u16, f32, usize)>,
+    points: &mut Vec<(f32, u16, usize)>,
+    chopped: &mut Vec<(f32, u16, f32, usize)>,
+    snap_key: f32,
+) {
+    let mut seen_outline: HashSet<(i64, u16)> = HashSet::new();
+    outline.retain(|p| seen_outline.insert((p.0.round() as i64, p.1)));
+    let mut seen: HashSet<(i64, u16)> = HashSet::new();
+    points.retain(|p| seen.insert(((p.0 / snap_key).round() as i64, p.1)));
+    let mut seen_chopped: HashSet<(i64, u16)> = HashSet::new();
+    chopped.retain(|p| seen_chopped.insert(((p.0 / snap_key).round() as i64, p.1)));
+}
+
+/// 把组合结果展开成普通音符追加到 `payload`（velocity / channel 原样保留）。
+fn push_composed_notes(payload: &mut Vec<Note>, composed: &[PendingComposed]) {
+    payload.extend(composed.iter().flat_map(|group| {
+        group.results.iter().flat_map(|part| {
+            part.notes.iter().map(|shape_note| {
+                let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
+                note.velocity = shape_note.velocity;
+                note.channel = shape_note.channel;
+                note
+            })
+        })
+    }));
+}
+
 impl Editor {
     /// 一个**描边**图形的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
     ///
@@ -162,31 +198,10 @@ impl Editor {
         )
     }
 
-    /// 形状工具：确认（√）—— 把所有待确认图形转成音符
+    /// 收集待确认图形的三类音符（描边 / 填充定长 / 填充切分），**未去重**。
     ///
-    /// - **描边（`filled = false`）**：走几何解析 → 逐音高行无缝变长音符
-    ///   （与曲线工具轮廓同源的 [`paths::path_notes`]，不受切分档位影响），
-    ///   过短的竖直段音符按最小长度下限补齐（默认 128 分音符）；
-    /// - **填充（`filled = true`）**：每格一条 snap 长音符；开启切分档位时按行合并
-    ///   连续格点后用 x 分音符的全局网格切分（与曲线工具填充同源的 [`chop_span`]）。
-    ///   **填充腿不套用最小长度下限**：它的长度就是用户选的档位/格点覆盖，
-    ///   补齐会让音符覆盖大于图形覆盖，破坏「填充显示 == 生成音符」不变式。
-    ///
-    /// 流程与 `confirm_line_tool` 同构：先整体去重，再批量插入并写入历史。
-    pub(crate) fn confirm_shape_tool(&mut self) -> bool {
-        // Conductor 音轨：形状不可用
-        if self.editor_state.data.current_track == 0 {
-            return false;
-        }
-        let snap = self.editor_state.view.snap_precision;
-        let snap_key = snap.max(1.0);
-        // 填充桶切分档位（共享的模式设置，权威在 line_tool，与 fill_enabled 同构）
-        let step = self
-            .editor_state
-            .line_tool
-            .fill_division
-            .map(|x| division_step(x, self.editor_state.view.ppq));
-
+    /// 返回 `(描边, 定长, 切分)`，每项带来源图形索引 `idx`，供逐图形登记音符归属。
+    fn collect_shape_notes(&self, snap: f32, step: Option<f32>) -> ShapeNoteBuckets {
         // 屏幕空间约束所需的像素尺度（tick/key 每单位像素数）
         let px_per_tick = self.editor_state.view.zoom_x;
         let px_per_key = self.editor_state.view.zoom_y;
@@ -232,24 +247,19 @@ impl Editor {
                 None => points.extend(cells.into_iter().map(|(t, k)| (t, k, idx))),
             }
         }
-        // 整体去重（跨多个图形 + 图形内部/边界可能重合）——先到先得，保留下标最小的图形。
-        // 描边音符按**精确整 tick** 去重：起点是解析交点、落在吸附网格之外，
-        // 用「除以 snap 再取整」当键会把相邻两行/两段的音符误并成一条。
-        let mut seen_outline: HashSet<(i64, u16)> = HashSet::new();
-        outline.retain(|p| seen_outline.insert((p.0.round() as i64, p.1)));
-        let mut seen: HashSet<(i64, u16)> = HashSet::new();
-        points.retain(|p| seen.insert(((p.0 / snap_key).round() as i64, p.1)));
-        let mut seen_chopped: HashSet<(i64, u16)> = HashSet::new();
-        chopped.retain(|p| seen_chopped.insert(((p.0 / snap_key).round() as i64, p.1)));
+        (outline, points, chopped)
+    }
 
-        if outline.is_empty()
-            && points.is_empty()
-            && chopped.is_empty()
-            && self.editor_state.pending_composed.is_empty()
-        {
-            return false;
-        }
-
+    /// 去重后的三类音符 → 逐图形归属表 + 待插入音符列表。
+    ///
+    /// `payload` 按描边 → 定长 → 切分拼接，保持原有插入顺序。
+    fn shape_notes_payload(
+        &self,
+        snap: f32,
+        outline: &[(f32, u16, f32, usize)],
+        points: &[(f32, u16, usize)],
+        chopped: &[(f32, u16, f32, usize)],
+    ) -> (Vec<Vec<ShapeNote>>, Vec<Note>) {
         let track = self.editor_state.data.current_track;
         let mut per_shape_notes = vec![Vec::new(); self.editor_state.shape_tool.shapes.len()];
         let make_note = |tick: f32, key: u16, length: f32| ShapeNote {
@@ -260,22 +270,22 @@ impl Editor {
             velocity: DEFAULT_NOTE_VELOCITY,
             channel: 0,
         };
-        for &(tick, key, length, idx) in &outline {
+        for &(tick, key, length, idx) in outline {
             if let Some(bucket) = per_shape_notes.get_mut(idx) {
                 bucket.push(make_note(tick, key, length));
             }
         }
-        for &(tick, key, idx) in &points {
+        for &(tick, key, idx) in points {
             if let Some(bucket) = per_shape_notes.get_mut(idx) {
                 bucket.push(make_note(tick, key, snap));
             }
         }
-        for &(tick, key, length, idx) in &chopped {
+        for &(tick, key, length, idx) in chopped {
             if let Some(bucket) = per_shape_notes.get_mut(idx) {
                 bucket.push(make_note(tick, key, length));
             }
         }
-        let mut payload: Vec<Note> = outline
+        let payload: Vec<Note> = outline
             .iter()
             .map(|&(tick, key, length, _)| Note::new(tick, key, length))
             .chain(
@@ -289,19 +299,85 @@ impl Editor {
                     .map(|&(tick, key, length, _)| Note::new(tick, key, length)),
             )
             .collect();
+        (per_shape_notes, payload)
+    }
+
+    /// 逐图形生成只读模型（DRAW-041B）：第 `i` 份音符归属第 `i` 个形状。
+    fn shape_models_at_view(
+        &self,
+        track: usize,
+        per_shape_notes: Vec<Vec<ShapeNote>>,
+    ) -> Vec<(ShapeModel, Vec<ShapeNote>)> {
+        self.editor_state
+            .shape_tool
+            .shapes
+            .iter()
+            .zip(per_shape_notes)
+            .map(|(shape, notes)| {
+                let source = DrawnShapeSource::Shape {
+                    kind: shape.kind,
+                    rect: shape.rect,
+                    shift_constrained: shape.shift_constrained,
+                    filled: shape.filled,
+                    apex_high: shape.apex_high,
+                };
+                let mut model = self.model_from_source_at_view(&source, track, 1.0);
+                if let Some(mask) = &shape.mask {
+                    model.ops.push(ShapeOp::Mask(mask.clone()));
+                }
+                (model, notes)
+            })
+            .collect()
+    }
+
+    /// 形状工具：确认（√）—— 把所有待确认图形转成音符
+    ///
+    /// - **描边（`filled = false`）**：走几何解析 → 逐音高行无缝变长音符
+    ///   （与曲线工具轮廓同源的 [`paths::path_notes`]，不受切分档位影响），
+    ///   过短的竖直段音符按最小长度下限补齐（默认 128 分音符）；
+    /// - **填充（`filled = true`）**：每格一条 snap 长音符；开启切分档位时按行合并
+    ///   连续格点后用 x 分音符的全局网格切分（与曲线工具填充同源的 [`chop_span`]）。
+    ///   **填充腿不套用最小长度下限**：它的长度就是用户选的档位/格点覆盖，
+    ///   补齐会让音符覆盖大于图形覆盖，破坏「填充显示 == 生成音符」不变式。
+    ///
+    /// 流程与 `confirm_line_tool` 同构：先整体去重，再批量插入并写入历史。
+    pub(crate) fn confirm_shape_tool(&mut self) -> bool {
+        // Conductor 音轨：形状不可用
+        if self.editor_state.data.current_track == 0 {
+            return false;
+        }
+        let snap = self.editor_state.view.snap_precision;
+        let snap_key = snap.max(1.0);
+        // 填充桶切分档位（共享的模式设置，权威在 line_tool，与 fill_enabled 同构）
+        let step = self
+            .editor_state
+            .line_tool
+            .fill_division
+            .map(|x| division_step(x, self.editor_state.view.ppq));
+
+        // 描边 / 定长 / 切分三类音符 + 来源图形索引（未去重）
+        let (mut outline, mut points, mut chopped) = self.collect_shape_notes(snap, step);
+
+        // 整体去重（跨多个图形 + 图形内部/边界可能重合）——先到先得，保留下标最小的图形。
+        // 描边音符按**精确整 tick** 去重：起点是解析交点、落在吸附网格之外，
+        // 用「除以 snap 再取整」当键会把相邻两行/两段的音符误并成一条。
+        dedup_shape_notes(&mut outline, &mut points, &mut chopped, snap_key);
+
+        if outline.is_empty()
+            && points.is_empty()
+            && chopped.is_empty()
+            && self.editor_state.pending_composed.is_empty()
+        {
+            return false;
+        }
+
+        let track = self.editor_state.data.current_track;
+        let (per_shape_notes, mut payload) =
+            self.shape_notes_payload(snap, &outline, &points, &chopped);
         // DRAW-041C：组合结果仍是 pending，✓ 时与普通 pending 一起提交。
         let composed_snapshot = self.editor_state.pending_composed.clone();
         let composed = std::mem::take(&mut self.editor_state.pending_composed);
-        payload.extend(composed.iter().flat_map(|group| {
-            group.results.iter().flat_map(|part| {
-                part.notes.iter().map(|shape_note| {
-                    let mut note = Note::new(shape_note.tick, shape_note.key, shape_note.length);
-                    note.velocity = shape_note.velocity;
-                    note.channel = shape_note.channel;
-                    note
-                })
-            })
-        }));
+        push_composed_notes(&mut payload, &composed);
         if payload.is_empty() {
             self.editor_state.pending_composed = composed;
             return false;
@@ -323,27 +399,7 @@ impl Editor {
         };
         self.remember_bake(group, pending);
         // DRAW-041B：保留只读模型（不登记 DrawnShape），供 032B/033 列表入口。
-        let mut models: Vec<(ShapeModel, Vec<ShapeNote>)> = self
-            .editor_state
-            .shape_tool
-            .shapes
-            .iter()
-            .zip(per_shape_notes)
-            .map(|(shape, notes)| {
-                let source = DrawnShapeSource::Shape {
-                    kind: shape.kind,
-                    rect: shape.rect,
-                    shift_constrained: shape.shift_constrained,
-                    filled: shape.filled,
-                    apex_high: shape.apex_high,
-                };
-                let mut model = self.model_from_source_at_view(&source, track, 1.0);
-                if let Some(mask) = &shape.mask {
-                    model.ops.push(ShapeOp::Mask(mask.clone()));
-                }
-                (model, notes)
-            })
-            .collect();
+        let mut models = self.shape_models_at_view(track, per_shape_notes);
         models.extend(composed.into_iter().flat_map(|group| {
             group
                 .results

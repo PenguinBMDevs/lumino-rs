@@ -156,51 +156,18 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
 
     // 小节标题：占满整行，不画右侧控件。
     if let I2mControlModel::Section { title } = &row.control {
-        ui.painter().text(
-            Pos2::new(left, center),
-            Align2::LEFT_CENTER,
-            crate::text::truncate_to_width(ui, title, 12.0, right - left),
-            FontId::proportional(12.0),
-            theme::text_on_weak(),
-        );
+        draw_row_section(ui, left, right, center, title);
         return;
     }
 
     // 行标签与右侧控件共享一行：按控件占位截断，避免压到输入框 / 下拉框。
-    let reserve = match &row.control {
-        I2mControlModel::Input { .. } => INPUT_W,
-        I2mControlModel::KeyRange { .. } => {
-            INPUT_W * 2.0 + widgets::text_width(ui, "~", 12.0) + 8.0
-        }
-        I2mControlModel::Palette { .. } | I2mControlModel::Select { .. } => COMBO_W,
-        I2mControlModel::Section { .. } => 0.0,
-    };
-    ui.painter().text(
-        Pos2::new(left, center),
-        Align2::LEFT_CENTER,
-        crate::text::truncate_to_width(
-            ui,
-            &row.label,
-            12.0,
-            (right - left - reserve - 8.0).max(1.0),
-        ),
-        FontId::proportional(12.0),
-        theme::text_muted(),
-    );
+    draw_row_label(ui, left, right, center, &row.control, &row.label);
 
     match &row.control {
         I2mControlModel::Input { field, text } => {
             let rect =
                 Rect::from_min_size(Pos2::new(right - INPUT_W, y), Vec2::new(INPUT_W, ROW_H));
-            if let Some(next) = input(ui, rect, *field, text) {
-                push_action(
-                    ui.ctx(),
-                    RightSidebarAction::I2mConfigTextChanged {
-                        field: *field,
-                        text: next,
-                    },
-                );
-            }
+            draw_row_input(ui, rect, *field, text);
         }
         I2mControlModel::KeyRange {
             start_field,
@@ -212,15 +179,7 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
             let total = INPUT_W * 2.0 + tilde_w + 8.0;
             let mut x = right - total;
             let start = Rect::from_min_size(Pos2::new(x, y), Vec2::new(INPUT_W, ROW_H));
-            if let Some(next) = input(ui, start, *start_field, start_text) {
-                push_action(
-                    ui.ctx(),
-                    RightSidebarAction::I2mConfigTextChanged {
-                        field: *start_field,
-                        text: next,
-                    },
-                );
-            }
+            draw_row_input(ui, start, *start_field, start_text);
             x += INPUT_W + 4.0;
             ui.painter().text(
                 Pos2::new(x, center),
@@ -231,26 +190,10 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
             );
             x += tilde_w + 4.0;
             let end = Rect::from_min_size(Pos2::new(x, y), Vec2::new(INPUT_W, ROW_H));
-            if let Some(next) = input(ui, end, *end_field, end_text) {
-                push_action(
-                    ui.ctx(),
-                    RightSidebarAction::I2mConfigTextChanged {
-                        field: *end_field,
-                        text: next,
-                    },
-                );
-            }
+            draw_row_input(ui, end, *end_field, end_text);
         }
         I2mControlModel::Palette { options, selected } => {
-            let rect =
-                Rect::from_min_size(Pos2::new(right - COMBO_W, y), Vec2::new(COMBO_W, ROW_H));
-            let current = options.get(*selected).cloned().unwrap_or_default();
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::top_down(Align::Min)),
-            );
-            if let Some(index) = combo(&mut child, options, &current, "palette") {
+            if let Some(index) = draw_row_combo(ui, right, y, options, *selected, "palette") {
                 push_action(
                     ui.ctx(),
                     RightSidebarAction::I2mSelectionChanged {
@@ -265,16 +208,8 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
             options,
             selected,
         } => {
-            let rect =
-                Rect::from_min_size(Pos2::new(right - COMBO_W, y), Vec2::new(COMBO_W, ROW_H));
-            let current = options.get(*selected).cloned().unwrap_or_default();
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::top_down(Align::Min)),
-            );
             let salt = format!("select-{}", *field as u8);
-            if let Some(index) = combo(&mut child, options, &current, &salt) {
+            if let Some(index) = draw_row_combo(ui, right, y, options, *selected, &salt) {
                 push_action(
                     ui.ctx(),
                     RightSidebarAction::I2mSelectionChanged {
@@ -286,6 +221,72 @@ fn draw_row(ui: &mut egui::Ui, left: f32, right: f32, y: f32, row: &I2mRowModel)
         }
         I2mControlModel::Section { .. } => {}
     }
+}
+
+/// 小节标题行：占满整行，不画右侧控件。
+fn draw_row_section(ui: &mut egui::Ui, left: f32, right: f32, center: f32, title: &str) {
+    ui.painter().text(
+        Pos2::new(left, center),
+        Align2::LEFT_CENTER,
+        crate::text::truncate_to_width(ui, title, 12.0, right - left),
+        FontId::proportional(12.0),
+        theme::text_on_weak(),
+    );
+}
+
+/// 行标签：按右侧控件占位截断。
+fn draw_row_label(
+    ui: &mut egui::Ui,
+    left: f32,
+    right: f32,
+    center: f32,
+    control: &I2mControlModel,
+    label: &str,
+) {
+    let reserve = match control {
+        I2mControlModel::Input { .. } => INPUT_W,
+        I2mControlModel::KeyRange { .. } => {
+            INPUT_W * 2.0 + widgets::text_width(ui, "~", 12.0) + 8.0
+        }
+        I2mControlModel::Palette { .. } | I2mControlModel::Select { .. } => COMBO_W,
+        I2mControlModel::Section { .. } => 0.0,
+    };
+    ui.painter().text(
+        Pos2::new(left, center),
+        Align2::LEFT_CENTER,
+        crate::text::truncate_to_width(ui, label, 12.0, (right - left - reserve - 8.0).max(1.0)),
+        FontId::proportional(12.0),
+        theme::text_muted(),
+    );
+}
+
+/// 数字输入框；内容变更时回传动作。
+fn draw_row_input(ui: &mut egui::Ui, rect: Rect, field: I2mField, text: &str) {
+    if let Some(next) = input(ui, rect, field, text) {
+        push_action(
+            ui.ctx(),
+            RightSidebarAction::I2mConfigTextChanged { field, text: next },
+        );
+    }
+}
+
+/// 行尾下拉控件；返回新选中的下标。
+fn draw_row_combo(
+    ui: &mut egui::Ui,
+    right: f32,
+    y: f32,
+    options: &[String],
+    selected: usize,
+    salt: &str,
+) -> Option<usize> {
+    let rect = Rect::from_min_size(Pos2::new(right - COMBO_W, y), Vec2::new(COMBO_W, ROW_H));
+    let current = options.get(selected).cloned().unwrap_or_default();
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    combo(&mut child, options, &current, salt)
 }
 
 /// 数字输入框；返回变更后的文本。

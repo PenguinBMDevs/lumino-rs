@@ -63,58 +63,8 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel, icons: &mut crate::icons::I
         return;
     }
 
-    // 标题 + 提示（标题行高 22；间距 6 + `space(4)`；提示行高 15）。
-    put_label(
-        ui,
-        Rect::from_min_size(
-            egui::pos2(inner.left(), inner.top()),
-            Vec2::new(inner.width(), 22.0),
-        ),
-        &model.title,
-        TITLE_SIZE,
-        theme::text(),
-        egui::Align::TOP,
-    );
-    let hint_y = inner.top() + 22.0 + 10.0;
-    put_label(
-        ui,
-        Rect::from_min_size(
-            egui::pos2(inner.left(), hint_y),
-            Vec2::new(inner.width(), 15.0),
-        ),
-        &model.hint,
-        HINT_SIZE,
-        theme::text_muted(),
-        egui::Align::TOP,
-    );
-
-    // 底部：计数（左）+ 关闭按钮（右）。
-    let footer_y = inner.bottom() - CLOSE_H;
-    put_label(
-        ui,
-        Rect::from_min_size(
-            egui::pos2(inner.left(), footer_y),
-            Vec2::new((inner.width() - CLOSE_W - 8.0).max(1.0), CLOSE_H),
-        ),
-        &model.counter,
-        HINT_SIZE,
-        theme::text_muted(),
-        egui::Align::Center,
-    );
-    let close_rect = Rect::from_min_size(
-        egui::pos2(inner.right() - CLOSE_W, footer_y),
-        Vec2::new(CLOSE_W, CLOSE_H),
-    );
-    let close = crate::widgets::text_button(
-        RichText::new(&model.close)
-            .size(13.0)
-            .color(theme::on_accent()),
-    )
-    .fill(theme::accent())
-    .corner_radius(CornerRadius::same(4));
-    if ui.put(close_rect, close).clicked() {
-        push_action(ui.ctx(), HistoryAction::Close);
-    }
+    let hint_y = header(ui, model, inner);
+    let footer_y = footer(ui, model, inner);
 
     // 列表：提示下方 8 + 6，底部到关闭按钮上方 6。
     let list_rect = Rect::from_min_max(
@@ -153,6 +103,67 @@ pub fn show(ui: &mut egui::Ui, model: &HistoryModel, icons: &mut crate::icons::I
                 }
             }
         });
+}
+
+/// 标题与提示行；返回提示行顶部 y（列表起点据此计算）。
+fn header(ui: &mut egui::Ui, model: &HistoryModel, inner: Rect) -> f32 {
+    // 标题 + 提示（标题行高 22；间距 6 + `space(4)`；提示行高 15）。
+    put_label(
+        ui,
+        Rect::from_min_size(
+            egui::pos2(inner.left(), inner.top()),
+            Vec2::new(inner.width(), 22.0),
+        ),
+        &model.title,
+        TITLE_SIZE,
+        theme::text(),
+        egui::Align::TOP,
+    );
+    let hint_y = inner.top() + 22.0 + 10.0;
+    put_label(
+        ui,
+        Rect::from_min_size(
+            egui::pos2(inner.left(), hint_y),
+            Vec2::new(inner.width(), 15.0),
+        ),
+        &model.hint,
+        HINT_SIZE,
+        theme::text_muted(),
+        egui::Align::TOP,
+    );
+    hint_y
+}
+
+/// 底部计数（左）与关闭按钮（右）；返回页脚行顶部 y（列表下界据此计算）。
+fn footer(ui: &mut egui::Ui, model: &HistoryModel, inner: Rect) -> f32 {
+    // 底部：计数（左）+ 关闭按钮（右）。
+    let footer_y = inner.bottom() - CLOSE_H;
+    put_label(
+        ui,
+        Rect::from_min_size(
+            egui::pos2(inner.left(), footer_y),
+            Vec2::new((inner.width() - CLOSE_W - 8.0).max(1.0), CLOSE_H),
+        ),
+        &model.counter,
+        HINT_SIZE,
+        theme::text_muted(),
+        egui::Align::Center,
+    );
+    let close_rect = Rect::from_min_size(
+        egui::pos2(inner.right() - CLOSE_W, footer_y),
+        Vec2::new(CLOSE_W, CLOSE_H),
+    );
+    let close = crate::widgets::text_button(
+        RichText::new(&model.close)
+            .size(13.0)
+            .color(theme::on_accent()),
+    )
+    .fill(theme::accent())
+    .corner_radius(CornerRadius::same(4));
+    if ui.put(close_rect, close).clicked() {
+        push_action(ui.ctx(), HistoryAction::Close);
+    }
+    footer_y
 }
 
 /// 单行：当前行主色弱底，未来步骤浅色文本；当前步骤用 `Undo` 图标标记。

@@ -6,6 +6,7 @@
 //! Top 视图复用同一顺序，仅切换 flat 管线并跳过 Aura（俯视下零面积不可见）。
 
 use super::{MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailRenderer};
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 impl MiditrailRenderer {
     /// 执行完整的 Miditrail 渲染通道。
@@ -49,61 +50,15 @@ impl MiditrailRenderer {
         let key_offset = note_count;
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("miditrail_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut render_pass = Self::begin_miditrail_pass(encoder, color_view, depth_view);
 
-            // 1. 绘制音符（不写深度缓冲，参考 Comet MIDITrail 的 Painter's algorithm，
-            //    琴键后绘制并覆盖音符）。Top 用 flat 管线（省逐片元光照）。
-            //    平面模式（`3D音符` 开关关闭 = 默认）：音符只画顶面（y=1 的 X-Z 面），
-            //    即只压 Y 高度、X 宽/Z 长保留；Normal/Top 双视图共用同一面
-            //    （Normal 下盒子可见像素本就几乎全来自顶面）；
-            //    实例/顺序/管线/shader 全不动，琴键与 Aura 仍走立方体缓冲。
-            if is_top {
-                render_pass.set_pipeline(&self.top_note_pipeline);
-            } else {
-                render_pass.set_pipeline(&self.note_pipeline);
-            }
-            render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
-            render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
-            if self.flat_notes {
-                render_pass.set_index_buffer(
-                    self.quad_index_buffer.inner().slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                render_pass.draw_indexed(Self::QUAD_RANGE, 0, 0..note_count);
-            } else {
-                render_pass.set_index_buffer(
-                    self.index_buffer.inner().slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
-            }
+            self.draw_note_instances(
+                &mut render_pass,
+                bind_group,
+                instance_buf,
+                note_count,
+                is_top,
+            );
 
             // 2. 绘制 Aura（附加混合，不写入深度）。Top 在俯视下零面积不可见，跳过。
             if !is_top {
@@ -128,6 +83,79 @@ impl MiditrailRenderer {
                 0,
                 key_offset..key_offset + key_count,
             );
+        }
+    }
+
+    /// 开始 Miditrail 离屏渲染通道（黑底 + 深度 1.0 清除）。
+    fn begin_miditrail_pass<'a>(
+        encoder: &'a mut wgpu::CommandEncoder,
+        color_view: &'a wgpu::TextureView,
+        depth_view: &'a wgpu::TextureView,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("miditrail_render_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        })
+    }
+
+    /// 绘制音符实例（不写深度，Top 用 flat 管线）。
+    fn draw_note_instances(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        bind_group: &wgpu::BindGroup,
+        instance_buf: &TrackedBuffer,
+        note_count: u32,
+        is_top: bool,
+    ) {
+        // 1. 绘制音符（不写深度缓冲，参考 Comet MIDITrail 的 Painter's algorithm，
+        //    琴键后绘制并覆盖音符）。Top 用 flat 管线（省逐片元光照）。
+        //    平面模式（`3D音符` 开关关闭 = 默认）：音符只画顶面（y=1 的 X-Z 面），
+        //    即只压 Y 高度、X 宽/Z 长保留；Normal/Top 双视图共用同一面
+        //    （Normal 下盒子可见像素本就几乎全来自顶面）；
+        //    实例/顺序/管线/shader 全不动，琴键与 Aura 仍走立方体缓冲。
+        if is_top {
+            render_pass.set_pipeline(&self.top_note_pipeline);
+        } else {
+            render_pass.set_pipeline(&self.note_pipeline);
+        }
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+        render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
+        if self.flat_notes {
+            render_pass.set_index_buffer(
+                self.quad_index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(Self::QUAD_RANGE, 0, 0..note_count);
+        } else {
+            render_pass.set_index_buffer(
+                self.index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
         }
     }
 }

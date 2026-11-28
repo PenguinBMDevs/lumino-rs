@@ -28,6 +28,9 @@ use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
 use lumino_editor_state::{BezierAnchor, ShapeNote};
 use lumino_ui_core::constants::editor::DEFAULT_NOTE_VELOCITY;
 
+/// `line_tool_raw_notes` 的返回：最终音符、逐路径原始轮廓、最小长度 tick。
+type RawLineNotes = (Vec<(f32, u16, f32)>, Vec<Vec<paths::RawNote>>, f32);
+
 impl Editor {
     /// 一条路径的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
     ///
@@ -105,6 +108,56 @@ impl Editor {
             original_paths.clone()
         };
         let fill_marks = self.editor_state.line_tool.fill.clone();
+
+        let (notes, path_raw, min_ticks) = self.line_tool_raw_notes(&line_paths, &fill_marks);
+        if notes.is_empty() {
+            return false;
+        }
+
+        let track = self.editor_state.data.current_track;
+        // 把最终音符按“路径候选”精确归属；每条最终音符最多进一个模型，
+        // 避免区域编辑时两个模型都去删同一条音符。
+        let per_path_notes =
+            self.line_tool_per_path_notes(&line_paths, &path_raw, &notes, min_ticks, &fill_marks);
+        let payload: Vec<Note> = notes
+            .into_iter()
+            .map(|(start, key, length)| Note::new(start, key, length))
+            .collect();
+        let Some(create_ops) = self.write_new_notes(track, payload) else {
+            return false;
+        };
+
+        // 一次 ✓ = 一个独立历史分组（不能被 NoteCreate 合并窗口并到上一次 Bake）
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
+        self.editor_state.data.mark_current_track_changed();
+        // Bake：保存 ✓ 前的矢量状态，供 undo 恢复；✓ 后不登记任何 DrawnShape。
+        let pending = BakePending::Line(self.editor_state.line_tool.clone());
+        self.remember_bake(group, pending);
+        // DRAW-041B / 242C：每条路径保留只读模型；有 Fill 标记时暂不保留，
+        // 因为填充音符没有可靠的 per-path 归属，避免区域编辑误删。
+        if fill_marks.is_empty() && per_path_notes.len() == line_paths.len() {
+            let models = self.line_tool_shape_models(&line_paths, per_path_notes);
+            self.record_baked_shape_models(models);
+        }
+        // 清空全部路径与历史并驱动渲染刷新
+        self.editor_state.line_tool.reset();
+        self.rebuild_pending_mirrors();
+        self.mark_notes_changed();
+        true
+    }
+
+    /// ① 轮廓 + ② 填充 → ③ 去重 / 钳位 / 补长后的最终音符
+    ///
+    /// 返回 `(最终音符, 逐路径原始轮廓, 最小长度 tick)`；结果为空由调用方判定。
+    fn line_tool_raw_notes(
+        &self,
+        line_paths: &[Vec<BezierAnchor>],
+        fill_marks: &[(f32, u16)],
+    ) -> RawLineNotes {
         // 全局绘制粗细（纵向 key 层数）+ 视图像素尺度：加粗沿线段法线做，需要 zoom
         let thickness = self.draw_thickness();
         let zoom_x = self.editor_state.view.zoom_x;
@@ -116,7 +169,7 @@ impl Editor {
         let mut raw: Vec<paths::RawNote> = Vec::new();
         // DRAW-041B / 242C：保留每条路径的原始轮廓音符，后面按最终去重结果做归属。
         let mut path_raw: Vec<Vec<paths::RawNote>> = Vec::with_capacity(line_paths.len());
-        for path in &line_paths {
+        for path in line_paths {
             if path.len() < 2 {
                 path_raw.push(Vec::new());
                 continue;
@@ -154,13 +207,20 @@ impl Editor {
             .filter(|n| n.key >= 0 && n.key < key_count)
             .map(|n| paths::to_note_triple(&n, min_ticks))
             .collect();
-        if notes.is_empty() {
-            return false;
-        }
+        (notes, path_raw, min_ticks)
+    }
 
+    /// 最终音符按“路径候选”精确归属：每条最终音符最多进一个模型
+    fn line_tool_per_path_notes(
+        &self,
+        line_paths: &[Vec<BezierAnchor>],
+        path_raw: &[Vec<paths::RawNote>],
+        notes: &[(f32, u16, f32)],
+        min_ticks: f32,
+        fill_marks: &[(f32, u16)],
+    ) -> Vec<Vec<ShapeNote>> {
         let track = self.editor_state.data.current_track;
-        // 把最终音符按“路径候选”精确归属；每条最终音符最多进一个模型，
-        // 避免区域编辑时两个模型都去删同一条音符。
+        let key_count = self.editor_state.view.key_count as i32;
         let mut path_candidates: Vec<Vec<(f32, u16, f32)>> = if fill_marks.is_empty() {
             path_raw
                 .iter()
@@ -177,7 +237,7 @@ impl Editor {
         };
         let mut per_path_notes = vec![Vec::new(); line_paths.len()];
         if path_candidates.len() == line_paths.len() {
-            for &(tick, key, length) in &notes {
+            for &(tick, key, length) in notes {
                 let mut found = None;
                 'paths: for (index, candidates) in path_candidates.iter().enumerate() {
                     for (pos, candidate) in candidates.iter().enumerate() {
@@ -203,67 +263,51 @@ impl Editor {
                 }
             }
         }
-        let payload: Vec<Note> = notes
-            .into_iter()
-            .map(|(start, key, length)| Note::new(start, key, length))
-            .collect();
-        let Some(create_ops) = self.write_new_notes(track, payload) else {
-            return false;
-        };
+        per_path_notes
+    }
 
-        // 一次 ✓ = 一个独立历史分组（不能被 NoteCreate 合并窗口并到上一次 Bake）
-        let group = self
-            .editor_state
-            .data
-            .history
-            .push_note_create_new_group(create_ops);
-        self.editor_state.data.mark_current_track_changed();
-        // Bake：保存 ✓ 前的矢量状态，供 undo 恢复；✓ 后不登记任何 DrawnShape。
-        let pending = BakePending::Line(self.editor_state.line_tool.clone());
-        self.remember_bake(group, pending);
-        // DRAW-041B / 242C：每条路径保留只读模型；有 Fill 标记时暂不保留，
-        // 因为填充音符没有可靠的 per-path 归属，避免区域编辑误删。
-        if fill_marks.is_empty() && per_path_notes.len() == line_paths.len() {
-            let arc_k = self.line_arc_k() as f32;
-            let models = line_paths
-                .iter()
-                .enumerate()
-                .zip(per_path_notes)
-                .filter(|((_, path), _)| path.len() >= 2)
-                .map(|((index, path), notes)| {
-                    // 圆弧：落盘保留原始 3 个锚点 + 绘制时 k（跨 zoom 不重算）；
-                    // 普通曲线：沿用采样折线锚点（原行为）。
-                    let (kind, anchors, k) = match (arc_mode, original_paths.get(index)) {
-                        (true, Some(source)) if source.len() >= 3 => {
-                            (ShapeKind::Arc, source[..3].to_vec(), arc_k)
-                        }
-                        _ => (ShapeKind::Curve, path.clone(), 1.0),
-                    };
-                    let mut model = ShapeModel::new(0, track as u16, kind, k);
-                    model.geometry = ShapeGeometry {
-                        anchors,
-                        rect: None,
-                        closed: false,
-                    };
-                    // 曲线闭合判定沿用原逻辑；弧是开放路径，不做闭合。
-                    if kind != ShapeKind::Arc {
-                        model.geometry.closed = path.first().is_some_and(|first| {
-                            path.last().is_some_and(|last| {
-                                (first.pos.0 - last.pos.0).abs() < 1e-3
-                                    && (first.pos.1 - last.pos.1).abs() < 1e-3
-                            })
-                        });
+    /// 逐路径构建只读图形模型（圆弧保留原始锚点与绘制 k，普通曲线沿用采样折线）
+    fn line_tool_shape_models(
+        &self,
+        line_paths: &[Vec<BezierAnchor>],
+        per_path_notes: Vec<Vec<ShapeNote>>,
+    ) -> Vec<(ShapeModel, Vec<ShapeNote>)> {
+        let arc_k = self.line_arc_k() as f32;
+        let arc_mode = self.editor_state.line_tool.arc_mode;
+        let track = self.editor_state.data.current_track;
+        let original_paths = &self.editor_state.line_tool.paths;
+        line_paths
+            .iter()
+            .enumerate()
+            .zip(per_path_notes)
+            .filter(|((_, path), _)| path.len() >= 2)
+            .map(|((index, path), notes)| {
+                // 圆弧：落盘保留原始 3 个锚点 + 绘制时 k（跨 zoom 不重算）；
+                // 普通曲线：沿用采样折线锚点（原行为）。
+                let (kind, anchors, k) = match (arc_mode, original_paths.get(index)) {
+                    (true, Some(source)) if source.len() >= 3 => {
+                        (ShapeKind::Arc, source[..3].to_vec(), arc_k)
                     }
-                    (model, notes)
-                })
-                .collect();
-            self.record_baked_shape_models(models);
-        }
-        // 清空全部路径与历史并驱动渲染刷新
-        self.editor_state.line_tool.reset();
-        self.rebuild_pending_mirrors();
-        self.mark_notes_changed();
-        true
+                    _ => (ShapeKind::Curve, path.clone(), 1.0),
+                };
+                let mut model = ShapeModel::new(0, track as u16, kind, k);
+                model.geometry = ShapeGeometry {
+                    anchors,
+                    rect: None,
+                    closed: false,
+                };
+                // 曲线闭合判定沿用原逻辑；弧是开放路径，不做闭合。
+                if kind != ShapeKind::Arc {
+                    model.geometry.closed = path.first().is_some_and(|first| {
+                        path.last().is_some_and(|last| {
+                            (first.pos.0 - last.pos.0).abs() < 1e-3
+                                && (first.pos.1 - last.pos.1).abs() < 1e-3
+                        })
+                    });
+                }
+                (model, notes)
+            })
+            .collect()
     }
 
     /// 取消全部路径（× 按钮）

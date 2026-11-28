@@ -76,76 +76,8 @@ impl DialogWindow {
         ui_config: &UiConfig,
     ) -> Result<Self, String> {
         puffin::profile_scope!("dialog_init_phase_window");
-        let (title, resizable) = match dialog_type {
-            DialogType::None => unreachable!("不会创建 None 类型的对话框"),
-            DialogType::CustomPrecision => (tr!("自定义贴合"), false),
-            DialogType::Collaboration => (tr!("多人协作"), false),
-            DialogType::LoadConfirm => (tr!("加载大文件"), false),
-            DialogType::ProjectSettings => (tr!("工程设置"), true),
-            DialogType::Settings => (tr!("设置"), true),
-            DialogType::SpeedChange => (tr!("变速"), false),
-            DialogType::MaterialDelete => (tr!("删除素材"), false),
-            DialogType::TempoMaxBpm => (tr!("自定义 BPM 上限"), false),
-            DialogType::BatchEdit => (tr!("批量编辑"), true),
-            DialogType::ExportProgress => (tr!("音频导出"), false),
-            DialogType::VideoExport => (tr!("视频导出"), false),
-            DialogType::MemoryMonitor => (tr!("内存占用详情"), false),
-            DialogType::RecoverTrack => (tr!("找回删除音轨"), true),
-            DialogType::SaveConfirm => ("Lumino", false),
-            DialogType::AutosaveRecover => (tr!("恢复自动保存"), false),
-            DialogType::CloudConnect => (tr!("连接云存储"), false),
-            DialogType::CloudBrowser => (tr!("云存储文件"), true),
-            DialogType::CloudNotice => (tr!("云存储提醒"), false),
-            DialogType::BrushSettings => (tr!("画刷绘制行为"), false),
-            DialogType::DrawSettings => (tr!("音符画设置"), false),
-            DialogType::Help => (tr!("帮助"), true),
-            DialogType::About => (tr!("关于"), false),
-            DialogType::ShapeDrawer => (tr!("形状抽屉"), true),
-            DialogType::History => (tr!("撤销历史"), true),
-            DialogType::PortSoundfonts => (tr!("端口音色库"), false),
-            DialogType::PortSoundfontsUnsupported => (tr!("端口音色库未生效"), false),
-            DialogType::Mixer => (tr!("混音台"), true),
-        };
-
-        let mut attributes = WindowAttributes::default()
-            .with_inner_size(SEED_DIALOG_SIZE)
-            .with_title(title)
-            .with_visible(false)
-            .with_resizable(resizable)
-            // UI-004：视频导出对话框内容为固定布局，去掉最大化能力（保留关闭/最小化）；
-            // 其他对话框保持现状（默认全按钮）。Linux（X11/Wayland）不实现按钮掩码，
-            // 但 `with_resizable(false)` 的尺寸约束在那边仍然生效。
-            .with_enabled_buttons(if matches!(dialog_type, DialogType::VideoExport) {
-                WindowButtons::CLOSE | WindowButtons::MINIMIZE
-            } else {
-                WindowButtons::all()
-            });
-
-        // 弹窗跟随主窗口的标题栏配置；系统模式下不绘制自制标题栏。
-        #[cfg(target_os = "windows")]
-        {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            attributes = if ui_config.use_native_titlebar {
-                attributes.with_decorations(true)
-            } else {
-                attributes
-                    .with_decorations(false)
-                    .with_undecorated_shadow(true)
-            };
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            if !ui_config.use_native_titlebar {
-                attributes = attributes
-                    .with_titlebar_transparent(true)
-                    .with_fullsize_content_view(true);
-            }
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            attributes = attributes.with_decorations(ui_config.use_native_titlebar);
-        }
+        let (title, resizable) = dialog_chrome_metadata(dialog_type);
+        let attributes = build_dialog_attributes(title, resizable, dialog_type, ui_config);
 
         let window = Arc::new(
             event_loop
@@ -170,4 +102,91 @@ impl DialogWindow {
             sized: false,
         })
     }
+}
+
+/// 窗口创建期的 per-type 元数据：标题与可缩放性
+///
+/// REF-001 之后只保留这两项（尺寸改为统一的 [`SEED_DIALOG_SIZE`] 种子 + 内容测量）。
+fn dialog_chrome_metadata(dialog_type: DialogType) -> (&'static str, bool) {
+    match dialog_type {
+        DialogType::None => unreachable!("不会创建 None 类型的对话框"),
+        DialogType::CustomPrecision => (tr!("自定义贴合"), false),
+        DialogType::Collaboration => (tr!("多人协作"), false),
+        DialogType::LoadConfirm => (tr!("加载大文件"), false),
+        DialogType::ProjectSettings => (tr!("工程设置"), true),
+        DialogType::Settings => (tr!("设置"), true),
+        DialogType::SpeedChange => (tr!("变速"), false),
+        DialogType::MaterialDelete => (tr!("删除素材"), false),
+        DialogType::TempoMaxBpm => (tr!("自定义 BPM 上限"), false),
+        DialogType::BatchEdit => (tr!("批量编辑"), true),
+        DialogType::ExportProgress => (tr!("音频导出"), false),
+        DialogType::VideoExport => (tr!("视频导出"), false),
+        DialogType::MemoryMonitor => (tr!("内存占用详情"), false),
+        DialogType::RecoverTrack => (tr!("找回删除音轨"), true),
+        DialogType::SaveConfirm => ("Lumino", false),
+        DialogType::AutosaveRecover => (tr!("恢复自动保存"), false),
+        DialogType::CloudConnect => (tr!("连接云存储"), false),
+        DialogType::CloudBrowser => (tr!("云存储文件"), true),
+        DialogType::CloudNotice => (tr!("云存储提醒"), false),
+        DialogType::BrushSettings => (tr!("画刷绘制行为"), false),
+        DialogType::DrawSettings => (tr!("音符画设置"), false),
+        DialogType::Help => (tr!("帮助"), true),
+        DialogType::About => (tr!("关于"), false),
+        DialogType::ShapeDrawer => (tr!("形状抽屉"), true),
+        DialogType::History => (tr!("撤销历史"), true),
+        DialogType::PortSoundfonts => (tr!("端口音色库"), false),
+        DialogType::PortSoundfontsUnsupported => (tr!("端口音色库未生效"), false),
+        DialogType::Mixer => (tr!("混音台"), true),
+    }
+}
+
+/// 组装 winit 窗口属性：种子尺寸、标题、隐藏启动、可缩放性与按钮掩码，
+/// 以及跟随主窗口标题栏配置的平台差异
+fn build_dialog_attributes(
+    title: &'static str,
+    resizable: bool,
+    dialog_type: DialogType,
+    ui_config: &UiConfig,
+) -> WindowAttributes {
+    let mut attributes = WindowAttributes::default()
+        .with_inner_size(SEED_DIALOG_SIZE)
+        .with_title(title)
+        .with_visible(false)
+        .with_resizable(resizable)
+        // UI-004：视频导出对话框内容为固定布局，去掉最大化能力（保留关闭/最小化）；
+        // 其他对话框保持现状（默认全按钮）。Linux（X11/Wayland）不实现按钮掩码，
+        // 但 `with_resizable(false)` 的尺寸约束在那边仍然生效。
+        .with_enabled_buttons(if matches!(dialog_type, DialogType::VideoExport) {
+            WindowButtons::CLOSE | WindowButtons::MINIMIZE
+        } else {
+            WindowButtons::all()
+        });
+
+    // 弹窗跟随主窗口的标题栏配置；系统模式下不绘制自制标题栏。
+    #[cfg(target_os = "windows")]
+    {
+        use winit::platform::windows::WindowAttributesExtWindows;
+        attributes = if ui_config.use_native_titlebar {
+            attributes.with_decorations(true)
+        } else {
+            attributes
+                .with_decorations(false)
+                .with_undecorated_shadow(true)
+        };
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use winit::platform::macos::WindowAttributesExtMacOS;
+        if !ui_config.use_native_titlebar {
+            attributes = attributes
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true);
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        attributes = attributes.with_decorations(ui_config.use_native_titlebar);
+    }
+
+    attributes
 }

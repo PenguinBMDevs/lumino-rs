@@ -13,6 +13,19 @@ pub(super) fn lgs_rows(
     t: &lumino_core::i18n::SettingsTranslations,
     rows: &mut Vec<AudioRowModel>,
 ) {
+    lgs_source_rows(root, t, rows);
+    lgs_buffer_rows(root, t, rows);
+    lgs_voice_rows(root, t, rows);
+    lgs_gate_rows(root, t, rows);
+    lgs_gpu_rows(root, t, rows);
+}
+
+/// 音色库路径与浏览入口。
+fn lgs_source_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
     let settings = &root.settings;
     let synth = &settings.synth;
 
@@ -33,6 +46,16 @@ pub(super) fn lgs_rows(
         AudioControlModel::Button,
         0.0,
     ));
+}
+
+/// 实时块大小与离线导出块大小。
+fn lgs_buffer_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
 
     let block_index = ((synth.lgs_block_size as f64).log2().round() as f32).clamp(6.0, 13.0);
     rows.push(row(
@@ -61,6 +84,16 @@ pub(super) fn lgs_rows(
         ),
         160.0,
     ));
+}
+
+/// 每键复音与全局复音上限。
+fn lgs_voice_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
 
     let voices = if synth.lgs_max_voices_per_key == 0 {
         tr!("不限制").to_string()
@@ -95,6 +128,16 @@ pub(super) fn lgs_rows(
         ),
         200.0,
     ));
+}
+
+/// 软 NPS 门限与力度过滤。
+fn lgs_gate_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
 
     rows.push(row(
         AudioField::LgsGate,
@@ -120,6 +163,17 @@ pub(super) fn lgs_rows(
         ),
         200.0,
     ));
+}
+
+/// GPU 诊断开关与负载显示方式。
+fn lgs_gpu_rows(
+    root: &Root,
+    t: &lumino_core::i18n::SettingsTranslations,
+    rows: &mut Vec<AudioRowModel>,
+) {
+    let settings = &root.settings;
+    let synth = &settings.synth;
+
     rows.push(row(
         AudioField::LgsGpuBufferStatus,
         t.gpu_buffer_status.to_owned(),

@@ -19,7 +19,10 @@ use crate::Result;
 use crate::types::RoomInfo;
 
 use super::handlers::handle_server_message;
-use super::{ClientMessage, ClientState, CollaborationClient, CollaborationEvent, ServerMessage};
+use super::{
+    ClientMessage, ClientState, ClientStateCell, CollaborationClient, CollaborationEvent,
+    EventCallback, ServerMessage,
+};
 
 /// WebSocket 流类型
 pub(super) type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -145,84 +148,23 @@ impl CollaborationClient {
         tokio::spawn(async move {
             let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
 
-            // DEBT-06 #123：网络断开/心跳失败/流结束都必须发出可见的 `Disconnected`
-            // 事件（旧实现只 `state.set`，UI 永远停在"已连接"）。
-            // 用户主动断开（shutdown 分支）不发事件——UI 自己知道。
-            let notify_disconnected = || {
-                if let Some(cb) = &event_callback {
-                    cb(CollaborationEvent::Disconnected);
-                }
-            };
-
             loop {
                 tokio::select! {
                     msg = read.next() => {
-                        match msg {
-                            Some(Ok(Message::Text(text))) => {
-                                if let Err(e) = handle_server_message(
-                                    &text,
-                                    &state,
-                                    event_callback.clone()
-                                ).await {
-                                    error!("处理消息失败: {} - {}", e, text);
-                                }
-                            }
-                            Some(Ok(Message::Close(_))) => {
-                                state.set(ClientState::Disconnected);
-                                notify_disconnected();
-                                break;
-                            }
-                            Some(Err(e)) => {
-                                let err_str = e.to_string();
-                                if err_str.contains("Tokio") && err_str.contains("shutdown") {
-                                    debug!("WebSocket 连接关闭: {}", e);
-                                } else {
-                                    error!("WebSocket 错误: {}", e);
-                                }
-                                state.set(ClientState::Error);
-                                // 传输错误是终态：发事件并退出（旧实现不退出，空转）。
-                                notify_disconnected();
-                                break;
-                            }
-                            None => {
-                                state.set(ClientState::Disconnected);
-                                notify_disconnected();
-                                break;
-                            }
-                            _ => {}
+                        if handle_incoming_frame(msg, &state, &event_callback).await {
+                            break;
                         }
                     }
 
                     _ = heartbeat.tick() => {
-                        let timestamp = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_millis() as u64)
-                            .unwrap_or(0);
-                        let ping = ClientMessage::Ping { timestamp };
-                        if let Ok(text) = serde_json::to_string(&ping) {
-                            let mut writer = write.lock().await;
-                            if let Err(e) = writer.send(Message::Text(text.into())).await {
-                                tracing::warn!("心跳发送失败: {}", e);
-                                state.set(ClientState::Disconnected);
-                                notify_disconnected();
-                                break;
-                            }
+                        if send_heartbeat(&write, &state, &event_callback).await {
+                            break;
                         }
                     }
 
                     Some(client_msg) = message_rx.recv() => {
-                        if let Ok(text) = serde_json::to_string(&client_msg) {
-                            debug!("WS 发送: {}", &text[..text.len().min(100)]);
-                            let mut writer = write.lock().await;
-                            if let Err(e) = writer.send(Message::Text(text.into())).await {
-                                error!("发送消息失败: {}", e);
-                                state.set(ClientState::Error);
-                                notify_disconnected();
-                                break;
-                            }
-                            trace!("WS 消息发送完成");
-                        } else {
-                            error!("消息序列化失败");
+                        if send_client_message(client_msg, &write, &state, &event_callback).await {
+                            break;
                         }
                     }
 
@@ -332,4 +274,98 @@ impl CollaborationClient {
             )),
         }
     }
+}
+
+// DEBT-06 #123：网络断开/心跳失败/流结束都必须发出可见的 `Disconnected`
+// 事件（旧实现只 `state.set`，UI 永远停在"已连接"）。
+// 用户主动断开（shutdown 分支）不发事件——UI 自己知道。
+fn notify_disconnected(event_callback: &Option<EventCallback>) {
+    if let Some(cb) = event_callback {
+        cb(CollaborationEvent::Disconnected);
+    }
+}
+
+/// 处理一次接收事件；返回 `true` 表示后台循环应退出。
+async fn handle_incoming_frame(
+    msg: Option<std::result::Result<Message, tokio_tungstenite::tungstenite::Error>>,
+    state: &Arc<ClientStateCell>,
+    event_callback: &Option<EventCallback>,
+) -> bool {
+    match msg {
+        Some(Ok(Message::Text(text))) => {
+            if let Err(e) = handle_server_message(&text, state, event_callback.clone()).await {
+                error!("处理消息失败: {} - {}", e, text);
+            }
+            false
+        }
+        Some(Ok(Message::Close(_))) => {
+            state.set(ClientState::Disconnected);
+            notify_disconnected(event_callback);
+            true
+        }
+        Some(Err(e)) => {
+            let err_str = e.to_string();
+            if err_str.contains("Tokio") && err_str.contains("shutdown") {
+                debug!("WebSocket 连接关闭: {}", e);
+            } else {
+                error!("WebSocket 错误: {}", e);
+            }
+            state.set(ClientState::Error);
+            // 传输错误是终态：发事件并退出（旧实现不退出，空转）。
+            notify_disconnected(event_callback);
+            true
+        }
+        None => {
+            state.set(ClientState::Disconnected);
+            notify_disconnected(event_callback);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// 发送一次心跳；返回 `true` 表示后台循环应退出。
+async fn send_heartbeat(
+    write: &Arc<Mutex<WsSink>>,
+    state: &Arc<ClientStateCell>,
+    event_callback: &Option<EventCallback>,
+) -> bool {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let ping = ClientMessage::Ping { timestamp };
+    if let Ok(text) = serde_json::to_string(&ping) {
+        let mut writer = write.lock().await;
+        if let Err(e) = writer.send(Message::Text(text.into())).await {
+            tracing::warn!("心跳发送失败: {}", e);
+            state.set(ClientState::Disconnected);
+            notify_disconnected(event_callback);
+            return true;
+        }
+    }
+    false
+}
+
+/// 发送一条客户端消息；返回 `true` 表示后台循环应退出。
+async fn send_client_message(
+    client_msg: ClientMessage,
+    write: &Arc<Mutex<WsSink>>,
+    state: &Arc<ClientStateCell>,
+    event_callback: &Option<EventCallback>,
+) -> bool {
+    if let Ok(text) = serde_json::to_string(&client_msg) {
+        debug!("WS 发送: {}", &text[..text.len().min(100)]);
+        let mut writer = write.lock().await;
+        if let Err(e) = writer.send(Message::Text(text.into())).await {
+            error!("发送消息失败: {}", e);
+            state.set(ClientState::Error);
+            notify_disconnected(event_callback);
+            return true;
+        }
+        trace!("WS 消息发送完成");
+    } else {
+        error!("消息序列化失败");
+    }
+    false
 }

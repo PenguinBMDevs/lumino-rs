@@ -105,6 +105,19 @@ impl RunnerInner {
 
     /// 处理 MIDI 重新初始化和异步初始化检查
     pub(crate) fn handle_midi_reinit(&mut self) {
+        self.poll_midi_background_tasks();
+        self.reinit_backend_if_needed();
+        self.apply_async_init_outcome();
+        self.sync_port_soundfonts_notices();
+        // #127：播放输出创建失败的自愈重试（换设备窗口期端口可能瞬时不可用）。
+        self.tick_midi_output_retry();
+        self.flush_midi_notices();
+        // 低频推送 GPU (LGS) 缓冲状态到状态栏（非 LGS 推 None 隐藏）。
+        self.tick_gpu_buffer_status();
+    }
+
+    /// 推进在途的后台任务：端口布局重建、LGS device 重建与端口音色库应用。
+    fn poll_midi_background_tasks(&mut self) {
         // DEBT-05 #122：先收尾后台端口布局重建（归还 API、必要追赶），
         // 再做流恢复/重初始化等需要 API 的动作。
         self.midi_state.midi.poll_layout_apply();
@@ -117,7 +130,10 @@ impl RunnerInner {
         // 停播后由同一后台 worker 应用（不重建管线、不杀音）。
         let playback_active = self.window_state.window.ui().playback_is_active();
         self.midi_state.midi.tick_port_soundfonts(playback_active);
+    }
 
+    /// 检查音频流恢复，并按需重建 MIDI 输出与播放连接。
+    fn reinit_backend_if_needed(&mut self) {
         // 检查音频流恢复（音频设备被拔出/更换后自动重定向/重建）
         self.midi_state.midi.handle_stream_recovery();
 
@@ -150,7 +166,10 @@ impl RunnerInner {
                 Self::reconnect_playback_output(self);
             }
         }
+    }
 
+    /// 应用异步后端初始化的落定结果（成功 / 失败 / 在途）。
+    fn apply_async_init_outcome(&mut self) {
         // 检查异步后端初始化是否落定（#127：成功与失败都必须重连——失败时
         // System 回退已在 finish_*_init 中初始化（返工 #149：不再有启动占位），
         // 若不重连，播放引擎停留在已被释放的旧连接上 → 无声）。
@@ -177,7 +196,10 @@ impl RunnerInner {
             }
             AsyncInitOutcome::Pending => {}
         }
+    }
 
+    /// 同步“不支持按端口音色库”提示：按需打开，映射清空后自动关闭。
+    fn sync_port_soundfonts_notices(&mut self) {
         // REND-005：当前后端不支持按端口音色库 → 独立提示窗。
         // 软件后端初始化在途时先不弹：等落定后再判断，避免“即将切到 XSynth”时闪一下。
         if !self.midi_state.midi.software_backend_pending()
@@ -200,10 +222,10 @@ impl RunnerInner {
                 .dialog_manager
                 .cancel_dialog(lumino_ui::state::root_state::DialogType::PortSoundfontsUnsupported);
         }
+    }
 
-        // #127：播放输出创建失败的自愈重试（换设备窗口期端口可能瞬时不可用）。
-        self.tick_midi_output_retry();
-
+    /// 把后端降级 / 失败与 Maestro 提示推送到状态栏（取走即清，避免重复提示）。
+    fn flush_midi_notices(&mut self) {
         // #127 问题1：把后端降级/失败提示推送到状态栏（取走即清，避免重复提示）。
         if let Some(notice) = self.midi_state.midi.take_pending_backend_notice() {
             tracing::warn!("MIDI 后端提示: {notice}");
@@ -219,9 +241,6 @@ impl RunnerInner {
                 .ui_mut()
                 .set_status_message(Some(notice));
         }
-
-        // 低频推送 GPU (LGS) 缓冲状态到状态栏（非 LGS 推 None 隐藏）。
-        self.tick_gpu_buffer_status();
     }
 
     /// 按 250ms 节流把 GPU (LGS) 缓冲状态推送到状态栏。

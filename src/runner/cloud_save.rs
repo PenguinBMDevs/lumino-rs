@@ -84,53 +84,11 @@ impl RunnerInner {
                     }));
                     return;
                 }
-                // 上传到云目标目录
-                let remote = if dir_path.is_empty() {
-                    format!("{file_stem}.lmpj")
-                } else {
-                    format!(
-                        "{}/{}",
-                        dir_path.trim_end_matches('/'),
-                        local_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| format!("{file_stem}.lmpj"))
-                    )
-                };
-                let _ = progress_tx.send((
-                    trf!("正在上传 {file_stem}.lmpj 到云存储", file_stem = file_stem),
-                    0.5,
-                ));
-                let mut mgr = lock_cloud(&mgr);
-                let result = mgr.upload(&id, &local_path, &remote);
-                let _ = std::fs::remove_file(&local_path);
-                let done_msg = if result.is_ok() {
-                    tr!("已保存到云存储").to_string()
-                } else {
-                    trf!(
-                        "保存到云失败：{err}",
-                        err = result
-                            .as_ref()
-                            .err()
-                            .map(|e| e.to_string())
-                            .unwrap_or_else(|| tr!("未知错误").to_string())
-                    )
-                };
-                let _ = progress_tx.send((done_msg, 1.0));
-                event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
-                    ok: result.is_ok(),
-                    error: result.err().map(|e| e.to_string()),
-                }));
+                // 上传到云目标目录（组包结果已在后台线程，上传与结果回传下沉到助手）
+                upload_saved_archive(mgr, id, dir_path, file_stem, local_path, progress_tx);
             }));
             if outcome.is_err() {
-                // 组包/写盘/上传任一环节 panic：补发失败事件让主线程清标志。
-                // 日志用字面量，避免 panic 上下文里 i18n 宏二次 panic。
-                tracing::error!("保存到云后台任务 panic（已补发失败事件以清除保存标志）");
-                let _ = progress_tx_panic.send(("保存到云失败：内部错误".to_string(), 1.0));
-                event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
-                    ok: false,
-                    error: Some("保存到云失败：内部错误".to_string()),
-                }));
+                report_cloud_save_panic(progress_tx_panic);
             }
         });
     }
@@ -356,6 +314,66 @@ impl RunnerInner {
             self.sync_cloud_to_dialogs();
         }
     }
+}
+
+/// 上传刚导出的工程归档到云目标目录，并回传保存结果（在后台线程的 panic 护栏内执行）
+fn upload_saved_archive(
+    mgr: Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
+    id: String,
+    dir_path: String,
+    file_stem: String,
+    local_path: std::path::PathBuf,
+    progress_tx: tokio::sync::mpsc::UnboundedSender<(String, f64)>,
+) {
+    // 上传到云目标目录
+    let remote = if dir_path.is_empty() {
+        format!("{file_stem}.lmpj")
+    } else {
+        format!(
+            "{}/{}",
+            dir_path.trim_end_matches('/'),
+            local_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| format!("{file_stem}.lmpj"))
+        )
+    };
+    let _ = progress_tx.send((
+        trf!("正在上传 {file_stem}.lmpj 到云存储", file_stem = file_stem),
+        0.5,
+    ));
+    let mut mgr = lock_cloud(&mgr);
+    let result = mgr.upload(&id, &local_path, &remote);
+    let _ = std::fs::remove_file(&local_path);
+    let done_msg = if result.is_ok() {
+        tr!("已保存到云存储").to_string()
+    } else {
+        trf!(
+            "保存到云失败：{err}",
+            err = result
+                .as_ref()
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| tr!("未知错误").to_string())
+        )
+    };
+    let _ = progress_tx.send((done_msg, 1.0));
+    event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
+        ok: result.is_ok(),
+        error: result.err().map(|e| e.to_string()),
+    }));
+}
+
+/// 保存到云后台任务 panic 后的兜底回传：补发失败事件让主线程清标志
+fn report_cloud_save_panic(progress_tx_panic: tokio::sync::mpsc::UnboundedSender<(String, f64)>) {
+    // 组包/写盘/上传任一环节 panic：补发失败事件让主线程清标志。
+    // 日志用字面量，避免 panic 上下文里 i18n 宏二次 panic。
+    tracing::error!("保存到云后台任务 panic（已补发失败事件以清除保存标志）");
+    let _ = progress_tx_panic.send(("保存到云失败：内部错误".to_string(), 1.0));
+    event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
+        ok: false,
+        error: Some("保存到云失败：内部错误".to_string()),
+    }));
 }
 
 /// 覆盖上传的临时远程路径：原路径追加 `.saving` 后缀（同目录，重命名不跨目录）

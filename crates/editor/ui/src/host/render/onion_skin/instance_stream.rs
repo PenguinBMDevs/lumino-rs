@@ -4,7 +4,7 @@ use crate::host::Host;
 use lumino_core::storage::config::OnionSkinBackend;
 use lumino_gfx::OnionSkinStreamMsg;
 
-use super::{OnionSkinAction, OnionSkinState};
+use super::{OnionSkinAction, OnionSkinFingerprint, OnionSkinState};
 
 impl Host {
     /// REND-019 PR-C：重连重放标记——强制下一次洋葱皮决策走全量重建
@@ -41,33 +41,8 @@ impl Host {
     /// Q3 B（CPU 后端）：GPU 洋葱皮 buffer 只驻留当前轨——全量会话只发当前轨段，
     /// 不发送 `TrackLayout`，非当前轨的区间删除增量直接丢弃（GPU 无该轨数据）。
     pub(crate) fn stream_onion_skin_instances(&mut self) {
-        // 每帧同步 CPU 单轨开关：后端或渲染布局变化会强制下一次全量重建
-        //（取值未变时不触发，避免每帧 Full）。
-        let cpu_current_only = self.cpu_current_only_active();
-        self.render_ctx
-            .onion_skin_state
-            .set_cpu_current_only(cpu_current_only);
-
-        // REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 → 强制
-        // 全量重建补发（防增量命中残缺段表）。
-        // 节流：重试 ≥500ms、告警 ≥1s——渲染线程被 GPU 拖住（TDR 前窗口）
-        // 时通道会持续满，避免每帧重建风暴与日志刷屏
-        //（2026-10-16 冒烟实测：空工程 ~百条 warn/秒；大工程为重建风暴）。
-        if self.render_ctx.onion_skin_state.degrade_retry_ready()
-            && self
-                .render_ctx
-                .wgpu_render_thread
-                .as_ref()
-                .is_some_and(|t| t.take_onion_skin_degraded())
-        {
-            self.render_ctx.onion_skin_state.note_degrade_retry();
-            if self.render_ctx.onion_skin_state.degrade_warn_due() {
-                tracing::warn!("[onion-skin] 通道满降级：强制全量重建补发（节流重试中）");
-            } else {
-                tracing::debug!("[onion-skin] 通道满降级重试（日志节流）");
-            }
-            self.render_ctx.onion_skin_state.force_full_next();
-        }
+        let cpu_current_only = self.sync_cpu_current_only_mode();
+        self.retry_degraded_onion_skin_stream();
 
         // 注：走带模式不再跳过流式上传。
         // 走带音符层直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），
@@ -75,20 +50,7 @@ impl Host {
         // 由渲染线程依据段表 + 侧栏音轨顺序分音轨绘制。
         // 钢琴卷帘的洋葱皮可视化绘制仍由 prepare_renderers 在走带模式提前返回而跳过。
 
-        // CPU 单轨模式：非当前轨数据不驻留 GPU → 区间删除增量无段可作用，
-        // 提前取走并丢弃（数据以 document 为准，切回 GPU 后端时全量会话重建）。
-        if cpu_current_only {
-            let dropped = self
-                .root
-                .editor
-                .editor_state
-                .data
-                .take_pending_track_remove_ranges()
-                .len();
-            if dropped > 0 {
-                tracing::debug!("[onion-skin] CPU 单轨模式丢弃 {dropped} 条非当前轨区间删除增量");
-            }
-        }
+        self.discard_pending_ranges_in_cpu_mode(cpu_current_only);
 
         let fp = OnionSkinState::collect_fingerprint(self);
         let action = self.render_ctx.onion_skin_state.decide_action(&fp);
@@ -120,14 +82,109 @@ impl Host {
         };
 
         let is_full = matches!(action, OnionSkinAction::Full);
-        // 非当前轨批量删除的区间增量（`TrackRemoveRanges`）：替代整轨重建。
-        // Full 会话以文档为准（已含删除结果）→ 丢弃待发区间，防二次删除。
-        let pending = self
-            .root
-            .editor
-            .editor_state
-            .data
-            .take_pending_track_remove_ranges();
+        let mut synced_tracks = Self::send_pending_track_remove_ranges(
+            &mut self.root.editor.editor_state.data,
+            wgpu_thread,
+            is_full,
+        );
+        // 当前轨段是否已重建（决定 `main_track_struct_dirty` 是否可清）：
+        // 区间删除只作用于非当前轨，不参与该判定。
+        let mut main_track_rebuilt = is_full || fp.current_track >= fp.track_count;
+        match action {
+            OnionSkinAction::Full => {
+                self.apply_onion_skin_full_action(&fp, wgpu_thread, cpu_current_only);
+            }
+            other => {
+                // 轨布局同步：轨数变化 → 增量增删段表 + 新增轨内容（不重建既有轨）。
+                // CPU 单轨模式段表只有 1 段、且轨数变化已在决策层走 Full，此处不适用。
+                if layout_changed && !cpu_current_only {
+                    let sent =
+                        self.stream_track_layout(wgpu_thread, fp.track_count, last_track_count);
+                    main_track_rebuilt |= sent.contains(&fp.current_track);
+                    synced_tracks.extend(sent);
+                }
+                main_track_rebuilt |= self.apply_onion_skin_delta_or_view_state(
+                    other,
+                    &fp,
+                    wgpu_thread,
+                    &synced_tracks,
+                );
+            }
+        }
+
+        // 标记已构建（None / Full / Delta / ViewState 四路都更新指纹，防止重复构建）
+        self.render_ctx.onion_skin_state.mark_built(&fp);
+
+        // 消费主轨结构性标记：仅当当前轨段确实已重建（或当前轨越界无段可重建）时清零
+        if main_track_rebuilt {
+            self.root.editor.editor_state.data.main_track_struct_dirty = false;
+        }
+    }
+
+    /// 每帧同步 CPU 单轨开关，返回本帧取值。
+    ///
+    /// 后端或渲染布局变化会强制下一次全量重建（取值未变时不触发，避免每帧 Full）。
+    fn sync_cpu_current_only_mode(&mut self) -> bool {
+        let cpu_current_only = self.cpu_current_only_active();
+        self.render_ctx
+            .onion_skin_state
+            .set_cpu_current_only(cpu_current_only);
+        cpu_current_only
+    }
+
+    /// REND-019（PR-A §1.6）：上一帧有洋葱皮消息因通道满被丢弃 → 强制
+    /// 全量重建补发（防增量命中残缺段表）。
+    ///
+    /// 节流：重试 ≥500ms、告警 ≥1s——渲染线程被 GPU 拖住（TDR 前窗口）
+    /// 时通道会持续满，避免每帧重建风暴与日志刷屏
+    ///（2026-10-16 冒烟实测：空工程 ~百条 warn/秒；大工程为重建风暴）。
+    fn retry_degraded_onion_skin_stream(&mut self) {
+        if self.render_ctx.onion_skin_state.degrade_retry_ready()
+            && self
+                .render_ctx
+                .wgpu_render_thread
+                .as_ref()
+                .is_some_and(|t| t.take_onion_skin_degraded())
+        {
+            self.render_ctx.onion_skin_state.note_degrade_retry();
+            if self.render_ctx.onion_skin_state.degrade_warn_due() {
+                tracing::warn!("[onion-skin] 通道满降级：强制全量重建补发（节流重试中）");
+            } else {
+                tracing::debug!("[onion-skin] 通道满降级重试（日志节流）");
+            }
+            self.render_ctx.onion_skin_state.force_full_next();
+        }
+    }
+
+    /// CPU 单轨模式：非当前轨数据不驻留 GPU → 区间删除增量无段可作用，提前丢弃。
+    ///
+    /// 数据以 document 为准，切回 GPU 后端时全量会话重建。
+    fn discard_pending_ranges_in_cpu_mode(&mut self, cpu_current_only: bool) {
+        if cpu_current_only {
+            let dropped = self
+                .root
+                .editor
+                .editor_state
+                .data
+                .take_pending_track_remove_ranges()
+                .len();
+            if dropped > 0 {
+                tracing::debug!("[onion-skin] CPU 单轨模式丢弃 {dropped} 条非当前轨区间删除增量");
+            }
+        }
+    }
+
+    /// 取走待发区间删除增量并下发 `TrackRemoveRanges`，返回已送达的音轨 id。
+    ///
+    /// 非当前轨批量删除的区间增量（`TrackRemoveRanges`）：替代整轨重建。
+    /// Full 会话以文档为准（已含删除结果）→ 丢弃待发区间，防二次删除
+    ///（仍先取走，避免残留到下一帧重复下发）。
+    fn send_pending_track_remove_ranges(
+        data: &mut lumino_editor_state::EditorData,
+        wgpu_thread: &crate::WgpuRenderThread,
+        is_full: bool,
+    ) -> Vec<usize> {
+        let pending = data.take_pending_track_remove_ranges();
         let pending = if is_full { Vec::new() } else { pending };
         let mut synced_tracks: Vec<usize> = Vec::with_capacity(pending.len());
         for (track_id, ranges) in pending {
@@ -139,96 +196,90 @@ impl Host {
             }
             synced_tracks.push(track_id);
         }
-        // 当前轨段是否已重建（决定 `main_track_struct_dirty` 是否可清）：
-        // 区间删除只作用于非当前轨，不参与该判定。
-        let mut main_track_rebuilt = is_full || fp.current_track >= fp.track_count;
-        match action {
-            OnionSkinAction::Full => {
-                if cpu_current_only {
-                    // CPU 单轨会话：只发当前轨段（`SetViewState` 由会话内部发出，
-                    // 含当前轨越界时的安全清空）
-                    self.stream_onion_skin_full(&fp, wgpu_thread, Some(fp.current_track));
-                } else {
-                    // ViewState **先发**（会话之前）：渲染线程的 drain 在 `Done` 处
-                    // `break`，排在 `Done` 之后的 uniform 消息要等下一轮才生效——
-                    // 那一帧会出现「段表已有数据、current_track/洋葱皮开关仍是旧值」
-                    // （主音轨找不到段 → 空白帧；cull 闸门也失效一帧）。放在会话前
-                    // 则同一轮 drain 内生效，首帧即正确。
-                    if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
-                        current_track: fp.current_track as u32 + 1,
-                        muted_tracks: fp.muted_tracks.clone(),
-                        onion_visible: fp.onion_visible,
-                        onion_range: fp.onion_range(),
-                    }) {
-                        tracing::warn!(
-                            "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
-                        );
-                    }
-                    tracing::debug!(
-                        "[onion-skin] Full 会话前同步 ViewState: current_track={}，静音 {:?}，洋葱皮={}，范围={:?}",
-                        fp.current_track,
-                        fp.muted_tracks,
-                        fp.onion_visible,
-                        fp.onion_range()
-                    );
-                    self.stream_onion_skin_full(&fp, wgpu_thread, None);
-                }
+        synced_tracks
+    }
+
+    /// `Full` 决策的上传路径：CPU 单轨只发当前轨；GPU 后端先同步 ViewState 再开全量会话。
+    fn apply_onion_skin_full_action(
+        &self,
+        fp: &OnionSkinFingerprint,
+        wgpu_thread: &crate::WgpuRenderThread,
+        cpu_current_only: bool,
+    ) {
+        if cpu_current_only {
+            // CPU 单轨会话：只发当前轨段（`SetViewState` 由会话内部发出，
+            // 含当前轨越界时的安全清空）
+            self.stream_onion_skin_full(fp, wgpu_thread, Some(fp.current_track));
+        } else {
+            // ViewState **先发**（会话之前）：渲染线程的 drain 在 `Done` 处
+            // `break`，排在 `Done` 之后的 uniform 消息要等下一轮才生效——
+            // 那一帧会出现「段表已有数据、current_track/洋葱皮开关仍是旧值」
+            // （主音轨找不到段 → 空白帧；cull 闸门也失效一帧）。放在会话前
+            // 则同一轮 drain 内生效，首帧即正确。
+            if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                current_track: fp.current_track as u32 + 1,
+                muted_tracks: fp.muted_tracks.clone(),
+                onion_visible: fp.onion_visible,
+                onion_range: fp.onion_range(),
+            }) {
+                tracing::warn!("[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）");
             }
-            other => {
-                // 轨布局同步：轨数变化 → 增量增删段表 + 新增轨内容（不重建既有轨）。
-                // CPU 单轨模式段表只有 1 段、且轨数变化已在决策层走 Full，此处不适用。
-                if layout_changed && !cpu_current_only {
-                    let sent =
-                        self.stream_track_layout(wgpu_thread, fp.track_count, last_track_count);
-                    main_track_rebuilt |= sent.contains(&fp.current_track);
-                    synced_tracks.extend(sent);
-                }
-                match other {
-                    OnionSkinAction::None => {}
-                    OnionSkinAction::Delta(tracks) => {
-                        // 去重：已由区间删除 / 新增轨布局同步的音轨不重复整轨重建
-                        let filtered: Vec<usize> = tracks
-                            .into_iter()
-                            .filter(|t| !synced_tracks.contains(t))
-                            .collect();
-                        if !filtered.is_empty() {
-                            main_track_rebuilt |= filtered.contains(&fp.current_track);
-                            self.stream_onion_skin_delta(&fp, wgpu_thread, &filtered);
-                        }
-                    }
-                    OnionSkinAction::ViewState => {
-                        // 切轨/静音/洋葱皮开关/显示范围零重传：只发 ViewState uniform
-                        //（当前音轨 + 静音集合 + 开关位 + 范围区间）
-                        if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
-                            current_track: fp.current_track as u32 + 1,
-                            muted_tracks: fp.muted_tracks.clone(),
-                            onion_visible: fp.onion_visible,
-                            onion_range: fp.onion_range(),
-                        }) {
-                            tracing::warn!(
-                                "[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）"
-                            );
-                        }
-                        tracing::debug!(
-                            "[onion-skin] 视图状态更新：current_track={}，静音 {:?}，洋葱皮={}（零数据重传）",
-                            fp.current_track,
-                            fp.muted_tracks,
-                            fp.onion_visible
-                        );
-                    }
-                    OnionSkinAction::Full => {
-                        // Full 已在上方分支处理；保留空分支（防御性，避免 unreachable 崩溃）
-                    }
-                }
-            }
+            tracing::debug!(
+                "[onion-skin] Full 会话前同步 ViewState: current_track={}，静音 {:?}，洋葱皮={}，范围={:?}",
+                fp.current_track,
+                fp.muted_tracks,
+                fp.onion_visible,
+                fp.onion_range()
+            );
+            self.stream_onion_skin_full(fp, wgpu_thread, None);
         }
+    }
 
-        // 标记已构建（None / Full / Delta / ViewState 四路都更新指纹，防止重复构建）
-        self.render_ctx.onion_skin_state.mark_built(&fp);
-
-        // 消费主轨结构性标记：仅当当前轨段确实已重建（或当前轨越界无段可重建）时清零
-        if main_track_rebuilt {
-            self.root.editor.editor_state.data.main_track_struct_dirty = false;
+    /// `Full` 之外的三路动作：轨布局已同步后的 `None` / `Delta` / `ViewState`。
+    ///
+    /// 返回当前轨段是否已重建，供调用方合并 `main_track_struct_dirty` 的清零判定。
+    fn apply_onion_skin_delta_or_view_state(
+        &self,
+        action: OnionSkinAction,
+        fp: &OnionSkinFingerprint,
+        wgpu_thread: &crate::WgpuRenderThread,
+        synced_tracks: &[usize],
+    ) -> bool {
+        match action {
+            // `None` 无操作；`Full` 已在调用方分支处理（防御性保留，避免 unreachable 崩溃）
+            OnionSkinAction::None | OnionSkinAction::Full => false,
+            OnionSkinAction::Delta(tracks) => {
+                // 去重：已由区间删除 / 新增轨布局同步的音轨不重复整轨重建
+                let filtered: Vec<usize> = tracks
+                    .into_iter()
+                    .filter(|t| !synced_tracks.contains(t))
+                    .collect();
+                let mut rebuilt = false;
+                if !filtered.is_empty() {
+                    rebuilt = filtered.contains(&fp.current_track);
+                    self.stream_onion_skin_delta(fp, wgpu_thread, &filtered);
+                }
+                rebuilt
+            }
+            OnionSkinAction::ViewState => {
+                // 切轨/静音/洋葱皮开关/显示范围零重传：只发 ViewState uniform
+                //（当前音轨 + 静音集合 + 开关位 + 范围区间）
+                if !wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                    current_track: fp.current_track as u32 + 1,
+                    muted_tracks: fp.muted_tracks.clone(),
+                    onion_visible: fp.onion_visible,
+                    onion_range: fp.onion_range(),
+                }) {
+                    tracing::warn!("[onion-skin] ViewState 未送达（切轨状态可能滞后至下次同步）");
+                }
+                tracing::debug!(
+                    "[onion-skin] 视图状态更新：current_track={}，静音 {:?}，洋葱皮={}（零数据重传）",
+                    fp.current_track,
+                    fp.muted_tracks,
+                    fp.onion_visible
+                );
+                false
+            }
         }
     }
 }

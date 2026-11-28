@@ -223,6 +223,120 @@ fn panel_height(entries: &[MenuEntry]) -> f32 {
     rows + PANEL_PAD_Y * 2.0
 }
 
+/// 单行菜单项的悬停命中：动作项与子菜单项各自独立。
+#[derive(Debug, Default, Clone, Copy)]
+struct RowHover {
+    /// 动作项被悬停（且可用）。
+    action: bool,
+    /// 子菜单项被悬停。
+    submenu: bool,
+}
+
+/// 面板行扫描：子菜单行矩形、悬停的子菜单项、动作项悬停标记。
+#[derive(Debug, Default)]
+struct SubmenuScan {
+    /// 子菜单项的行矩形（带条目序号）。
+    rows: Vec<(usize, Rect)>,
+    /// 悬停的子菜单项序号。
+    hovered: Option<usize>,
+    /// 有动作项被悬停（此时应保持子菜单收起）。
+    action_hovered: bool,
+}
+
+/// 画一行菜单项（分隔线 / 动作项 / 子菜单项），返回本行的悬停命中。
+fn draw_entry_row(
+    ui: &mut egui::Ui,
+    panel: Rect,
+    index: usize,
+    entry: &MenuEntry,
+    row: Rect,
+    state: &mut MenuState,
+) -> RowHover {
+    let mut hover = RowHover::default();
+    match entry {
+        MenuEntry::Separator => {
+            let line_y = row.center().y;
+            ui.painter().line_segment(
+                [
+                    Pos2::new(row.left() + 4.0, line_y),
+                    Pos2::new(row.right() - 4.0, line_y),
+                ],
+                Stroke::new(1.0, theme::border()),
+            );
+        }
+        MenuEntry::Action {
+            label,
+            enabled,
+            action,
+        } => {
+            let response = ui.interact(
+                row,
+                Id::unique(("lumino-menu-item", panel.left() as i32, index)),
+                Sense::click(),
+            );
+            if response.hovered() && *enabled {
+                hover.action = true;
+                ui.painter().rect_filled(row, 4, theme::panel_bg());
+            }
+            let color = if *enabled {
+                theme::text()
+            } else {
+                theme::text_dim()
+            };
+            // 单行菜单项：超宽用省略号收敛（最近文件名可能远超面板宽度）。
+            let text_max = (row.width() - TEXT_PAD_X * 2.0).max(1.0);
+            ui.painter().with_clip_rect(row).text(
+                Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
+                Align2::LEFT_CENTER,
+                crate::text::truncate_to_width(ui, label, FONT, text_max),
+                FontId::proportional(FONT),
+                color,
+            );
+            if response.clicked() && *enabled {
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), *action));
+                state.open = None;
+                state.hover_opened = false;
+                state.submenu = None;
+                state.submenu_rect = None;
+            }
+        }
+        MenuEntry::Submenu { label, .. } => {
+            let response = ui.interact(
+                row,
+                Id::unique(("lumino-menu-submenu", panel.left() as i32, index)),
+                Sense::click(),
+            );
+            let hovered = response.hovered();
+            if hovered {
+                ui.painter().rect_filled(row, 4, theme::panel_bg());
+            }
+            // 标签裁到箭头左侧：长文本不压住「›」。
+            let label_clip =
+                Rect::from_min_max(row.min, Pos2::new(row.right() - 16.0, row.bottom()));
+            let text_max = (label_clip.width() - TEXT_PAD_X).max(1.0);
+            ui.painter().with_clip_rect(label_clip).text(
+                Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
+                Align2::LEFT_CENTER,
+                crate::text::truncate_to_width(ui, label, FONT, text_max),
+                FontId::proportional(FONT),
+                theme::text(),
+            );
+            ui.painter().text(
+                Pos2::new(row.right() - TEXT_PAD_X, row.center().y),
+                Align2::RIGHT_CENTER,
+                "›",
+                FontId::proportional(FONT + 2.0),
+                theme::text_dim(),
+            );
+            if hovered {
+                hover.submenu = true;
+            }
+        }
+    }
+    hover
+}
+
 /// 画一块面板；`top_level` 为 `true` 时允许展开一级子菜单。
 fn draw_panel(
     ui: &mut egui::Ui,
@@ -242,9 +356,7 @@ fn draw_panel(
     );
 
     let mut y = panel.top() + PANEL_PAD_Y;
-    let mut submenu_rows: Vec<(usize, Rect)> = Vec::new();
-    let mut hovered_sub: Option<usize> = None;
-    let mut hovered_action = false;
+    let mut scan = SubmenuScan::default();
     for (index, entry) in entries.iter().enumerate() {
         let height = match entry {
             MenuEntry::Separator => SEP_H,
@@ -256,93 +368,33 @@ fn draw_panel(
         );
         y += height;
 
-        match entry {
-            MenuEntry::Separator => {
-                let line_y = row.center().y;
-                ui.painter().line_segment(
-                    [
-                        Pos2::new(row.left() + 4.0, line_y),
-                        Pos2::new(row.right() - 4.0, line_y),
-                    ],
-                    Stroke::new(1.0, theme::border()),
-                );
+        let hover = draw_entry_row(ui, panel, index, entry, row, state);
+        if matches!(entry, MenuEntry::Submenu { .. }) {
+            scan.rows.push((index, row));
+            if hover.submenu {
+                scan.hovered = Some(index);
             }
-            MenuEntry::Action {
-                label,
-                enabled,
-                action,
-            } => {
-                let response = ui.interact(
-                    row,
-                    Id::unique(("lumino-menu-item", panel.left() as i32, index)),
-                    Sense::click(),
-                );
-                if response.hovered() && *enabled {
-                    hovered_action = true;
-                    ui.painter().rect_filled(row, 4, theme::panel_bg());
-                }
-                let color = if *enabled {
-                    theme::text()
-                } else {
-                    theme::text_dim()
-                };
-                // 单行菜单项：超宽用省略号收敛（最近文件名可能远超面板宽度）。
-                let text_max = (row.width() - TEXT_PAD_X * 2.0).max(1.0);
-                ui.painter().with_clip_rect(row).text(
-                    Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
-                    Align2::LEFT_CENTER,
-                    crate::text::truncate_to_width(ui, label, FONT, text_max),
-                    FontId::proportional(FONT),
-                    color,
-                );
-                if response.clicked() && *enabled {
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(Id::unique(ACTION_ID), *action));
-                    state.open = None;
-                    state.hover_opened = false;
-                    state.submenu = None;
-                    state.submenu_rect = None;
-                }
-            }
-            MenuEntry::Submenu { label, .. } => {
-                let response = ui.interact(
-                    row,
-                    Id::unique(("lumino-menu-submenu", panel.left() as i32, index)),
-                    Sense::click(),
-                );
-                let hovered = response.hovered();
-                if hovered {
-                    ui.painter().rect_filled(row, 4, theme::panel_bg());
-                }
-                // 标签裁到箭头左侧：长文本不压住「›」。
-                let label_clip =
-                    Rect::from_min_max(row.min, Pos2::new(row.right() - 16.0, row.bottom()));
-                let text_max = (label_clip.width() - TEXT_PAD_X).max(1.0);
-                ui.painter().with_clip_rect(label_clip).text(
-                    Pos2::new(row.left() + TEXT_PAD_X, row.center().y),
-                    Align2::LEFT_CENTER,
-                    crate::text::truncate_to_width(ui, label, FONT, text_max),
-                    FontId::proportional(FONT),
-                    theme::text(),
-                );
-                ui.painter().text(
-                    Pos2::new(row.right() - TEXT_PAD_X, row.center().y),
-                    Align2::RIGHT_CENTER,
-                    "›",
-                    FontId::proportional(FONT + 2.0),
-                    theme::text_dim(),
-                );
-                submenu_rows.push((index, row));
-                if hovered {
-                    hovered_sub = Some(index);
-                }
-            }
+        }
+        if hover.action {
+            scan.action_hovered = true;
         }
     }
 
     if !top_level {
         return None;
     }
+    draw_submenu(ui, panel, entries, state, blocked, &scan)
+}
+
+/// 解析并画出当前应展开的子菜单，返回子面板矩形。
+fn draw_submenu(
+    ui: &mut egui::Ui,
+    panel: Rect,
+    entries: &[MenuEntry],
+    state: &mut MenuState,
+    blocked: &mut Vec<Rect>,
+    scan: &SubmenuScan,
+) -> Option<Rect> {
     // 点击动作项后菜单已关闭：不要再把子菜单写回状态。
     if state.open.is_none() {
         state.submenu = None;
@@ -355,13 +407,14 @@ fn draw_panel(
     let keep = state.submenu.filter(|index| {
         pointer.is_some_and(|pos| {
             state.submenu_rect.is_some_and(|rect| rect.contains(pos))
-                || submenu_rows
+                || scan
+                    .rows
                     .iter()
                     .any(|(row_index, row)| row_index == index && row.contains(pos))
         })
     });
-    let mut target = hovered_sub.or(keep);
-    if hovered_action {
+    let mut target = scan.hovered.or(keep);
+    if scan.action_hovered {
         // 指针落在别的菜单项上：收起子菜单（与 上一代 行为一致）。
         target = None;
     }
@@ -371,7 +424,8 @@ fn draw_panel(
         let Some(MenuEntry::Submenu { entries, .. }) = entries.get(index) else {
             return None;
         };
-        let (_, row) = submenu_rows
+        let (_, row) = scan
+            .rows
             .iter()
             .find(|(row_index, _)| *row_index == index)?;
         let origin = Pos2::new(panel.right() - 2.0, row.top());

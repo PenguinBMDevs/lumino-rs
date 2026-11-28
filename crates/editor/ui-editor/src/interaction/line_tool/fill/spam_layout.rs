@@ -43,6 +43,7 @@ pub(crate) fn place_gates(
             .unwrap_or(0)
     };
     let mut out = Vec::new();
+    let grid = GateGrid { g, align, origin };
     for span in spans {
         let start = span.start.round() as i64 - origin;
         let end = span.end.round() as i64 - origin;
@@ -51,98 +52,132 @@ pub(crate) fn place_gates(
         }
         let size = end - start;
         match ends {
-            SpamEnds::Stretch => {
-                let n = ((2 * size + g) / (2 * g)).max(1);
-                for k in 0..n {
-                    let a = start + size * k / n;
-                    let b = start + size * (k + 1) / n;
-                    push(&mut out, a + origin, b + origin);
-                }
-            }
-            SpamEnds::Round => {
-                let n = ((2 * size + g) / (2 * g)).max(1);
-                let (first, count) = match align {
-                    SpamAlign::Aligned => {
-                        let lo = -((g - 2 * start).div_euclid(2 * g));
-                        let count = (2 * end + g).div_euclid(2 * g) - lo;
-                        if count <= 0 {
-                            // 整段不足半个门：取中点所在门，保证至少一条
-                            ((start + end).div_euclid(2).div_euclid(g) * g, 1)
-                        } else {
-                            (lo * g, count)
-                        }
-                    }
-                    SpamAlign::Centred => (start + (size - n * g).div_euclid(2), n),
-                    SpamAlign::Auto => (start, n),
-                };
-                for k in 0..count {
-                    let a = first + k * g;
-                    push(&mut out, a + origin, a + g + origin);
-                }
-            }
-            SpamEnds::Keep => {
-                let s = match align {
-                    SpamAlign::Aligned => ceil_to(start, g),
-                    SpamAlign::Centred => {
-                        if size < g {
-                            start
-                        } else {
-                            start + size.rem_euclid(g) / 2
-                        }
-                    }
-                    SpamAlign::Auto => start,
-                };
-                let n = if end > s { (end - s) / g } else { 0 };
-                let head_end = s.min(end);
-                let head = head_end > start;
-                let tail = if s < end { s + n * g } else { end } < end;
-                let count = n + head as i64 + tail as i64;
-                for k in 0..count {
-                    let mut a = s + (k - head as i64) * g;
-                    let mut b = a + g;
-                    if head && k == 0 {
-                        a = start;
-                        b = head_end;
-                    }
-                    if tail && k == count - 1 {
-                        b = end;
-                    }
-                    push(&mut out, a + origin, b + origin);
-                }
-            }
-            SpamEnds::Drop | SpamEnds::Min => {
-                let s = match align {
-                    SpamAlign::Aligned => ceil_to(start, g),
-                    SpamAlign::Centred => {
-                        if size < g {
-                            start
-                        } else {
-                            start + size.rem_euclid(g) / 2
-                        }
-                    }
-                    SpamAlign::Auto => start,
-                };
-                let n = if end > s { (end - s) / g } else { 0 };
-                if n == 0 {
-                    let (mut a, mut b) = (start, end);
-                    if ends == SpamEnds::Min {
-                        let least = ((g + 3) / 4).max(1);
-                        if b - a < least {
-                            a += (b - a - least).div_euclid(2);
-                            b = a + least;
-                        }
-                    }
-                    push(&mut out, a + origin, b + origin);
-                } else {
-                    for k in 0..n {
-                        let a = s + k * g;
-                        push(&mut out, a + origin, a + g + origin);
-                    }
-                }
-            }
+            SpamEnds::Stretch => stretch_gates(&mut out, start, size, &grid),
+            SpamEnds::Round => round_gates(&mut out, start, end, size, &grid),
+            SpamEnds::Keep => keep_gates(&mut out, start, end, size, &grid),
+            SpamEnds::Drop | SpamEnds::Min => drop_gates(&mut out, start, end, size, &grid, ends),
         }
     }
     out
+}
+
+/// 落位常量：门长、起点对齐与相对块原点（`place_gates` 的 span 内部坐标）
+#[derive(Debug, Clone, Copy)]
+struct GateGrid {
+    /// 门长（tick，≥1）
+    g: i64,
+    /// 起点对齐方式
+    align: SpamAlign,
+    /// 相对块的原点（还原绝对 tick 时加回）
+    origin: i64,
+}
+
+/// `SpamEnds::Stretch`：整段按门数均分，门与门首尾相接
+fn stretch_gates(out: &mut Vec<Span>, start: i64, size: i64, grid: &GateGrid) {
+    let GateGrid { g, origin, .. } = *grid;
+    let n = ((2 * size + g) / (2 * g)).max(1);
+    for k in 0..n {
+        let a = start + size * k / n;
+        let b = start + size * (k + 1) / n;
+        push(out, a + origin, b + origin);
+    }
+}
+
+/// `SpamEnds::Round`：门网格的起点与门数
+fn round_gates(out: &mut Vec<Span>, start: i64, end: i64, size: i64, grid: &GateGrid) {
+    let GateGrid { g, align, origin } = *grid;
+    let n = ((2 * size + g) / (2 * g)).max(1);
+    let (first, count) = match align {
+        SpamAlign::Aligned => {
+            let lo = -((g - 2 * start).div_euclid(2 * g));
+            let count = (2 * end + g).div_euclid(2 * g) - lo;
+            if count <= 0 {
+                // 整段不足半个门：取中点所在门，保证至少一条
+                ((start + end).div_euclid(2).div_euclid(g) * g, 1)
+            } else {
+                (lo * g, count)
+            }
+        }
+        SpamAlign::Centred => (start + (size - n * g).div_euclid(2), n),
+        SpamAlign::Auto => (start, n),
+    };
+    for k in 0..count {
+        let a = first + k * g;
+        push(out, a + origin, a + g + origin);
+    }
+}
+
+/// `SpamEnds::Keep`：整门网格 + 首尾余数
+fn keep_gates(out: &mut Vec<Span>, start: i64, end: i64, size: i64, grid: &GateGrid) {
+    let GateGrid { g, align, origin } = *grid;
+    let s = match align {
+        SpamAlign::Aligned => ceil_to(start, g),
+        SpamAlign::Centred => {
+            if size < g {
+                start
+            } else {
+                start + size.rem_euclid(g) / 2
+            }
+        }
+        SpamAlign::Auto => start,
+    };
+    let n = if end > s { (end - s) / g } else { 0 };
+    let head_end = s.min(end);
+    let head = head_end > start;
+    let tail = if s < end { s + n * g } else { end } < end;
+    let count = n + head as i64 + tail as i64;
+    for k in 0..count {
+        let mut a = s + (k - head as i64) * g;
+        let mut b = a + g;
+        if head && k == 0 {
+            a = start;
+            b = head_end;
+        }
+        if tail && k == count - 1 {
+            b = end;
+        }
+        push(out, a + origin, b + origin);
+    }
+}
+
+/// `SpamEnds::Drop` / `Min`：丢弃末端余数；`Min` 时短段仍保底 1/4 门
+fn drop_gates(
+    out: &mut Vec<Span>,
+    start: i64,
+    end: i64,
+    size: i64,
+    grid: &GateGrid,
+    ends: SpamEnds,
+) {
+    let GateGrid { g, align, origin } = *grid;
+    let s = match align {
+        SpamAlign::Aligned => ceil_to(start, g),
+        SpamAlign::Centred => {
+            if size < g {
+                start
+            } else {
+                start + size.rem_euclid(g) / 2
+            }
+        }
+        SpamAlign::Auto => start,
+    };
+    let n = if end > s { (end - s) / g } else { 0 };
+    if n == 0 {
+        let (mut a, mut b) = (start, end);
+        if ends == SpamEnds::Min {
+            let least = ((g + 3) / 4).max(1);
+            if b - a < least {
+                a += (b - a - least).div_euclid(2);
+                b = a + least;
+            }
+        }
+        push(out, a + origin, b + origin);
+    } else {
+        for k in 0..n {
+            let a = s + k * g;
+            push(out, a + origin, a + g + origin);
+        }
+    }
 }
 
 fn ceil_to(value: i64, step: i64) -> i64 {

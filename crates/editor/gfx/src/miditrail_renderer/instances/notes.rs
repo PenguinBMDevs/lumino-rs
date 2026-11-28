@@ -70,23 +70,7 @@ pub fn build_note_instances(
             note.color_packed
         };
 
-        // f32 位重排为可排序 u32（与 f32::total_cmp 全序严格等价）：
-        // - 正数（含正 NaN）：翻转符号位 → 映射到 [0x8000_0000, 0xFFFF_FFFF]
-        // - 负数（含负 NaN）：按位取反 → 映射到 [0x0000_0000, 0x7FFF_FFFF]
-        // 这样排序结果与旧实现 `z_start.total_cmp` 完全一致（含 NaN 顺序）。
-        let z_bits = z_start.to_bits();
-        let z_sortable = if z_bits & 0x8000_0000 != 0 {
-            !z_bits
-        } else {
-            z_bits ^ 0x8000_0000
-        };
-        // 位布局：is_black(bit 63) | z_sortable(bit 39..=7，32 位) | key(bit 6..=0，7 位)。
-        // key 范围 0-127 只需 7 位；z 左移 7 位后最高到 bit 38，不与 bit 63 冲突。
-        // 注意：z 不能左移 32 位——z_sortable ≥ 0x8000_0000（正数 z）时其 bit 31
-        // 会落到 bit 63，与 is_black 位互相污染导致排序错乱（曾实测 85 处不一致）。
-        let sort_key = ((is_black_key(note.key as isize) as u64) << 63)
-            | ((z_sortable as u64) << 7)
-            | (note.key as u64);
+        let sort_key = pack_note_sort_key(z_start, note.key);
 
         out.push(MiditrailInstanceGpu::new(
             translation,
@@ -99,6 +83,36 @@ pub fn build_note_instances(
         order.push((sort_key, out.len() as u32 - 1));
     }
 
+    let loop_us = t_loop.elapsed().as_micros() as u64;
+    sort_and_gather(scratch, out, loop_us);
+}
+
+/// 打包音符排序键：`is_black`(bit 63) | z 可排序位(bit 39..=7) | key(bit 6..=0)。
+fn pack_note_sort_key(z_start: f32, key: u32) -> u64 {
+    // f32 位重排为可排序 u32（与 f32::total_cmp 全序严格等价）：
+    // - 正数（含正 NaN）：翻转符号位 → 映射到 [0x8000_0000, 0xFFFF_FFFF]
+    // - 负数（含负 NaN）：按位取反 → 映射到 [0x0000_0000, 0x7FFF_FFFF]
+    // 这样排序结果与旧实现 `z_start.total_cmp` 完全一致（含 NaN 顺序）。
+    let z_bits = z_start.to_bits();
+    let z_sortable = if z_bits & 0x8000_0000 != 0 {
+        !z_bits
+    } else {
+        z_bits ^ 0x8000_0000
+    };
+    // 位布局：is_black(bit 63) | z_sortable(bit 39..=7，32 位) | key(bit 6..=0，7 位)。
+    // key 范围 0-127 只需 7 位；z 左移 7 位后最高到 bit 38，不与 bit 63 冲突。
+    // 注意：z 不能左移 32 位——z_sortable ≥ 0x8000_0000（正数 z）时其 bit 31
+    // 会落到 bit 63，与 is_black 位互相污染导致排序错乱（曾实测 85 处不一致）。
+    ((is_black_key(key as isize) as u64) << 63) | ((z_sortable as u64) << 7) | (key as u64)
+}
+
+/// 基数排序 + 按序 gather，并按 `loop/sort/gather` 三段打点（微秒）。
+fn sort_and_gather(
+    scratch: &mut NoteBuildScratch,
+    out: &mut Vec<MiditrailInstanceGpu>,
+    loop_us: u64,
+) {
+    let order = &mut scratch.order;
     // 按 Comet MIDITrail 的音符绘制顺序排序：
     // 1. 白键音符先绘制，黑键音符后绘制（确保黑键音符覆盖白键音符）；
     // 2. 同颜色组内按前缘深度 far-to-near 排序，使靠近键盘的音符最后绘制。
@@ -107,7 +121,6 @@ pub fn build_note_instances(
     // (is_black, z, key) 全序，单键比较比闭包快（基准：10 万音符 6.37ms → 2.5ms，
     // 省约 60%）；稳定性保留旧语义——完全同键（同 key 同 start 的和弦叠音）
     // 按输入顺序绘制，与旧实现一致，避免同位置音符覆盖顺序不确定导致闪烁。
-    let loop_us = t_loop.elapsed().as_micros() as u64;
     let t_sort = std::time::Instant::now();
     radix_sort_order(order, &mut scratch.radix, &mut scratch.hist);
     let sort_us = t_sort.elapsed().as_micros() as u64;
