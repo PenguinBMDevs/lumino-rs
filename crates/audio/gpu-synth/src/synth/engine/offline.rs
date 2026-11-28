@@ -1,5 +1,18 @@
 use super::*;
 
+/// 离线块循环共享的可变状态，按事件阶段、尾音阶段依次传递。
+struct RenderLoopState<'a> {
+    samples: &'a mut Vec<f32>,
+    block_buf: &'a mut Vec<f32>,
+    progress: &'a mut ProgressBar,
+    max_frames: u64,
+    limited: bool,
+    block: usize,
+    threshold: f32,
+    prof: bool,
+    first_block: bool,
+}
+
 impl GpuSynth {
     /// 离线渲染前的完整状态复位（DEBT-04 #121）。
     ///
@@ -70,6 +83,72 @@ impl GpuSynth {
         let t1 = std::time::Instant::now();
         self.offline_events = midi.sequence.events;
 
+        self.prewarm_samples()?;
+
+        let (max_frames, limited) = self.render_horizon(limit_frames);
+
+        let block = self.config.block_size;
+        let chs = self.output_channels();
+        let threshold = self.config.render_silence_threshold;
+        let mut samples: Vec<f32> = Vec::new();
+        let mut block_buf = vec![0.0f32; block * chs];
+
+        // Progress reporting: the total is the render horizon (`max_frames`).
+        // Phase 1 walks the event stream; the tail phase renders past the
+        // last event, so the bar is allowed to exceed 100% there.
+        let mut progress = ProgressBar::new(max_frames, self.config.show_progress);
+
+        // The one-block pipeline makes every `render_block` output the audio
+        // of the PREVIOUS dispatched block. The very first block therefore
+        // emits the fake "-1" audio (silence, nothing was dispatched before
+        // it) which must not enter the sample stream; block 0's real audio
+        // arrives with block 1.
+        {
+            let mut state = RenderLoopState {
+                samples: &mut samples,
+                block_buf: &mut block_buf,
+                progress: &mut progress,
+                max_frames,
+                limited,
+                block,
+                threshold,
+                prof,
+                first_block: true,
+            };
+            self.render_events_phase(&mut state)?;
+            self.render_tail_phase(&mut state)?;
+        }
+
+        // Drain the pipeline: the data of the last submitted block is only
+        // read back by one more render. Append it if it is not silence
+        // (the loops above already consumed every non-silent block).
+        self.render_block(&mut block_buf)?;
+        if block_buf.iter().any(|s| s.abs() > threshold) {
+            samples.extend_from_slice(&block_buf);
+        }
+        progress.finish();
+
+        if prof {
+            let t2 = std::time::Instant::now();
+            eprintln!(
+                "[profile] midi load: {:?}, render loops: {:?}, flush: {:?}",
+                parse_time,
+                t2 - t1,
+                t2.elapsed()
+            );
+        }
+
+        let frames = (samples.len() / chs) as u64;
+        Ok(RenderResult {
+            samples,
+            sample_rate: self.config.sample_rate,
+            channels: chs as u32,
+            frames,
+        })
+    }
+
+    /// 预载并上传 MIDI 用到的全部采样，保持原有分块与进度上报顺序。
+    fn prewarm_samples(&mut self) -> Result<(), SynthError> {
         // Pre-warm resampling AND upload: resolve every sample the MIDI will
         // use, resample it in parallel and upload it to the GPU up front, so
         // the render loop never stalls on a lazily-resampled sample or pays
@@ -132,7 +211,11 @@ impl GpuSynth {
                 total: prewarm_total,
             });
         }
+        Ok(())
+    }
 
+    /// 计算渲染上限与限帧标志，保持原有钳制与回退规则。
+    fn render_horizon(&self, limit_frames: Option<u64>) -> (u64, bool) {
         // Render timeout guard: the offline loops must terminate on their own
         // (events consumed + silence / no voices). A voice that can never
         // finish - held damper, missing note-off, pathological envelope -
@@ -149,25 +232,11 @@ impl GpuSynth {
                 .min(MAX_RENDER_FRAMES),
         };
         let limited = limit_frames.is_some();
+        (max_frames, limited)
+    }
 
-        let block = self.config.block_size;
-        let chs = self.output_channels();
-        let threshold = self.config.render_silence_threshold;
-        let mut samples: Vec<f32> = Vec::new();
-        let mut block_buf = vec![0.0f32; block * chs];
-
-        // Progress reporting: the total is the render horizon (`max_frames`).
-        // Phase 1 walks the event stream; the tail phase renders past the
-        // last event, so the bar is allowed to exceed 100% there.
-        let mut progress = ProgressBar::new(max_frames, self.config.show_progress);
-
-        // The one-block pipeline makes every `render_block` output the audio
-        // of the PREVIOUS dispatched block. The very first block therefore
-        // emits the fake "-1" audio (silence, nothing was dispatched before
-        // it) which must not enter the sample stream; block 0's real audio
-        // arrives with block 1.
-        let mut first_block = true;
-
+    /// 事件阶段：消化事件流并渲染，直到无活动声部或块静音。
+    fn render_events_phase(&mut self, st: &mut RenderLoopState<'_>) -> Result<(), SynthError> {
         // Phase 1: process all events and render until no voices remain. If
         // the events are exhausted and the block went silent, we stop even
         // when voices linger (they are stuck in sustain and contribute
@@ -184,7 +253,7 @@ impl GpuSynth {
         loop {
             let events_done = self.offline_cursor >= self.offline_events.len();
             if events_done && self.voices.is_empty() {
-                if prof {
+                if st.prof {
                     eprintln!(
                         "[render] break: events_done+empty at frame {}",
                         self.global_frame
@@ -194,14 +263,14 @@ impl GpuSynth {
             }
             self.check_render_checkpoint()?;
             let rb_t0 = std::time::Instant::now();
-            self.render_block(&mut block_buf)?;
+            self.render_block(&mut st.block_buf[..])?;
             let rb_dt = rb_t0.elapsed();
-            progress.tick(self.global_frame);
+            st.progress.tick(self.global_frame);
             self.report_render_progress(RenderProgress::Render {
-                done: self.global_frame.min(max_frames),
-                total: max_frames,
+                done: self.global_frame.min(st.max_frames),
+                total: st.max_frames,
             });
-            let silent = block_buf.iter().all(|s| s.abs() <= threshold);
+            let silent = st.block_buf.iter().all(|s| s.abs() <= st.threshold);
             if rb_dt.as_millis() > 30 {
                 eprintln!(
                     "[slow-block] frame={} render={:?} silent={} cursor={} voices={}",
@@ -213,7 +282,7 @@ impl GpuSynth {
                 );
             }
             if events_done && silent {
-                if prof {
+                if st.prof {
                     eprintln!(
                         "[render] break: events_done+silent at frame {} cursor={}/{}",
                         self.global_frame,
@@ -223,73 +292,51 @@ impl GpuSynth {
                 }
                 break;
             }
-            if !first_block {
-                samples.extend_from_slice(&block_buf);
+            if !st.first_block {
+                st.samples.extend_from_slice(st.block_buf);
             }
-            first_block = false;
-            if self.global_frame >= max_frames {
-                if limited {
+            st.first_block = false;
+            if self.global_frame >= st.max_frames {
+                if st.limited {
                     break;
                 }
-                return Err(self.render_timeout(&block_buf));
+                return Err(self.render_timeout(&st.block_buf[..]));
             }
         }
+        Ok(())
+    }
 
+    /// 尾音阶段：继续渲染直到整块静音，保持限帧时的追加顺序。
+    fn render_tail_phase(&mut self, st: &mut RenderLoopState<'_>) -> Result<(), SynthError> {
         // Phase 2: decay tail - render blocks until one is entirely silent.
         loop {
             self.check_render_checkpoint()?;
-            self.render_block(&mut block_buf)?;
-            progress.tick(self.global_frame);
+            self.render_block(&mut st.block_buf[..])?;
+            st.progress.tick(self.global_frame);
             self.report_render_progress(RenderProgress::Render {
-                done: self.global_frame.min(max_frames),
-                total: max_frames,
+                done: self.global_frame.min(st.max_frames),
+                total: st.max_frames,
             });
-            let silent = block_buf.iter().all(|s| s.abs() <= threshold);
+            let silent = st.block_buf.iter().all(|s| s.abs() <= st.threshold);
             if silent {
                 break;
             }
-            if self.global_frame >= max_frames {
-                if !limited {
-                    return Err(self.render_timeout(&block_buf));
+            if self.global_frame >= st.max_frames {
+                if !st.limited {
+                    return Err(self.render_timeout(&st.block_buf[..]));
                 }
                 // Frame-limited: this output is the audio of the block that
                 // crossed the limit (one block behind `global_frame`);
                 // append it only if it still starts inside the limit, then
                 // stop - rendering any further would only produce
                 // out-of-limit audio.
-                if (self.global_frame - block as u64) < max_frames {
-                    samples.extend_from_slice(&block_buf);
+                if (self.global_frame - st.block as u64) < st.max_frames {
+                    st.samples.extend_from_slice(st.block_buf);
                 }
                 break;
             }
-            samples.extend_from_slice(&block_buf);
+            st.samples.extend_from_slice(st.block_buf);
         }
-
-        // Drain the pipeline: the data of the last submitted block is only
-        // read back by one more render. Append it if it is not silence
-        // (the loops above already consumed every non-silent block).
-        self.render_block(&mut block_buf)?;
-        if block_buf.iter().any(|s| s.abs() > threshold) {
-            samples.extend_from_slice(&block_buf);
-        }
-        progress.finish();
-
-        if prof {
-            let t2 = std::time::Instant::now();
-            eprintln!(
-                "[profile] midi load: {:?}, render loops: {:?}, flush: {:?}",
-                parse_time,
-                t2 - t1,
-                t2.elapsed()
-            );
-        }
-
-        let frames = (samples.len() / chs) as u64;
-        Ok(RenderResult {
-            samples,
-            sample_rate: self.config.sample_rate,
-            channels: chs as u32,
-            frames,
-        })
+        Ok(())
     }
 }
