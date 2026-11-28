@@ -14,40 +14,30 @@ use crate::{
     render::{RenderStats, band::LodMode, density},
 };
 
+/// 帧内共享的几何与计时输入，按值传给两个分支，避免超长参数表。
+struct FrameContext {
+    camera: Camera,
+    width: u32,
+    height: u32,
+    width_usize: usize,
+    height_usize: usize,
+    keyboard: usize,
+    dx_int: i32,
+    estimate: u64,
+    moving: bool,
+    bench_finished: bool,
+    do_scroll: bool,
+    dt: f32,
+    gap_ms: f32,
+}
+
 impl App {
     pub(super) fn redraw(&mut self, event_loop: &ActiveEventLoop) {
-        let frame_start = Instant::now();
-        let gap_ms = frame_start
-            .duration_since(self.last_frame_start)
-            .as_secs_f32()
-            * 1000.0;
-        self.last_frame_start = frame_start;
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_frame).as_secs_f32();
-        self.last_frame = now;
-
-        let (camera, bench_active, bench_finished) = {
-            let Some(camera) = self.camera.as_mut() else {
-                return;
-            };
-            let bench_active = if self.bench_ready {
-                self.bench.as_mut().is_some_and(|bench| bench.apply(camera))
-            } else {
-                self.bench.is_some()
-            };
-            let bench_finished = self.bench.as_ref().is_some_and(|bench| bench.finished);
-            if !bench_active && !bench_finished {
-                camera.animate(dt);
-            }
-            (camera.clone(), bench_active, bench_finished)
-        };
-
-        if bench_finished && self.bench_ready {
-            // 最后一帧不再做全量收尾（那会把 30ms 级收尾算进基准），
-            // 直接按已记录的滚动条带帧出报告。
-            self.finish_bench(event_loop);
+        let Some((camera, bench_active, bench_finished, dt, gap_ms)) =
+            self.begin_frame(event_loop)
+        else {
             return;
-        }
+        };
 
         let width = self.renderer.width();
         let height = self.renderer.height();
@@ -99,84 +89,221 @@ impl App {
         // 滚动增量帧：平移已有帧，只重新光栅化露出的窄条；音符仍是完整矩形。
         let do_scroll =
             can_scroll && moving && dx.abs() >= 0.5 && dx.abs() <= canvas_width as f32 * 0.6;
-        if do_scroll {
-            let dx_int = dx.round() as i32;
-            if dx_int == 0 {
+        let ctx = FrameContext {
+            camera,
+            width,
+            height,
+            width_usize,
+            height_usize,
+            keyboard,
+            dx_int: dx.round() as i32,
+            estimate,
+            moving,
+            bench_finished,
+            do_scroll,
+            dt,
+            gap_ms,
+        };
+        if ctx.do_scroll {
+            if ctx.dx_int == 0 {
                 self.next_frame = Instant::now() + self.frame_interval;
                 return;
             }
-            self.shift_canvas(dx_int);
-            // 帧的实际滚动 = 原帧滚动 + 整数平移。窄条必须用这个滚动渲染，
-            // 不能用 camera.scroll_x：后者带亚像素残差，会让复用区和新条带
-            // 逐渐错位（新进入视口的音符看起来"坏掉"）。
-            self.last_scroll_x += dx_int as f32;
-            let mut frame_camera = camera.clone();
-            frame_camera.scroll_x = self.last_scroll_x;
-            frame_camera.target_scroll_x = self.last_scroll_x;
-            let (strip_x0, strip_x1) = if dx_int > 0 {
-                let start = width_usize.saturating_sub(dx_int as usize);
-                (start as u32, width)
+            self.redraw_scroll_frame(event_loop, ctx);
+            return;
+        }
+        self.redraw_full_frame(event_loop, ctx);
+    }
+
+    /// 帧计时、相机推进与基准收尾判定；返回 `None` 表示该帧提前结束。
+    fn begin_frame(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+    ) -> Option<(Camera, bool, bool, f32, f32)> {
+        let frame_start = Instant::now();
+        let gap_ms = frame_start
+            .duration_since(self.last_frame_start)
+            .as_secs_f32()
+            * 1000.0;
+        self.last_frame_start = frame_start;
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame).as_secs_f32();
+        self.last_frame = now;
+
+        let (camera, bench_active, bench_finished) = {
+            let camera = self.camera.as_mut()?;
+            let bench_active = if self.bench_ready {
+                self.bench.as_mut().is_some_and(|bench| bench.apply(camera))
             } else {
-                let end = (keyboard + (-dx_int) as usize).min(width_usize);
-                (keyboard as u32, end as u32)
+                self.bench.is_some()
             };
-            // 滚动条带与铺底帧使用同一 Exact 光栅化；不省填充/描边/音轨。
-            let strip_mode = self.baseline_mode;
-            let frame_estimate = self.estimated_visible(&frame_camera);
-            let render_start = Instant::now();
-            let band_stats = self.renderer.render_strip_into_frame(
-                Arc::clone(&self.document),
-                Arc::clone(&self.index),
-                &frame_camera,
-                self.current_track,
-                strip_mode,
-                strip_x0,
-                strip_x1,
-            );
-            let render_done = Instant::now();
-            let render_stats = RenderStats {
-                visible_notes: frame_estimate,
-                candidates: band_stats.candidates,
-                long_candidates: band_stats.long_candidates,
-                bands: 1,
-                per_band: vec![band_stats],
-            };
-            let hud = self.hud_text(strip_mode.name(), frame_estimate);
-            self.draw_overlays(&frame_camera, width_usize, height_usize, &hud);
-            let overlay_done = Instant::now();
-            self.present_canvas(&frame_camera);
-            let present_done = Instant::now();
-            self.last_scroll_y = camera.scroll_y;
-            self.last_zoom_x = camera.zoom_x;
-            self.last_zoom_y = camera.zoom_y;
-            self.last_width = width;
-            self.last_height = height;
-            self.last_path = "scroll-exact";
-            self.record_frame(
-                render_start,
-                render_done,
-                overlay_done,
-                present_done,
-                &render_stats,
-                self.last_path,
-                dt,
-                gap_ms,
-            );
-            if bench_finished {
-                self.finish_bench(event_loop);
-                return;
+            let bench_finished = self.bench.as_ref().is_some_and(|bench| bench.finished);
+            if !bench_active && !bench_finished {
+                camera.animate(dt);
             }
+            (camera.clone(), bench_active, bench_finished)
+        };
+
+        if bench_finished && self.bench_ready {
+            // 最后一帧不再做全量收尾（那会把 30ms 级收尾算进基准），
+            // 直接按已记录的滚动条带帧出报告。
+            self.finish_bench(event_loop);
+            return None;
+        }
+        Some((camera, bench_active, bench_finished, dt, gap_ms))
+    }
+
+    /// 滚动增量帧：平移已有帧，只渲染新露出的窄条。
+    fn redraw_scroll_frame(&mut self, event_loop: &ActiveEventLoop, ctx: FrameContext) {
+        self.shift_canvas(ctx.dx_int);
+        // 帧的实际滚动 = 原帧滚动 + 整数平移。窄条必须用这个滚动渲染，
+        // 不能用 camera.scroll_x：后者带亚像素残差，会让复用区和新条带
+        // 逐渐错位（新进入视口的音符看起来"坏掉"）。
+        self.last_scroll_x += ctx.dx_int as f32;
+        let mut frame_camera = ctx.camera.clone();
+        frame_camera.scroll_x = self.last_scroll_x;
+        frame_camera.target_scroll_x = self.last_scroll_x;
+        let (strip_x0, strip_x1) = if ctx.dx_int > 0 {
+            let start = ctx.width_usize.saturating_sub(ctx.dx_int as usize);
+            (start as u32, ctx.width)
+        } else {
+            let end = (ctx.keyboard + (-ctx.dx_int) as usize).min(ctx.width_usize);
+            (ctx.keyboard as u32, end as u32)
+        };
+        // 滚动条带与铺底帧使用同一 Exact 光栅化；不省填充/描边/音轨。
+        let strip_mode = self.baseline_mode;
+        let frame_estimate = self.estimated_visible(&frame_camera);
+        let render_start = Instant::now();
+        let band_stats = self.renderer.render_strip_into_frame(
+            Arc::clone(&self.document),
+            Arc::clone(&self.index),
+            &frame_camera,
+            self.current_track,
+            strip_mode,
+            strip_x0,
+            strip_x1,
+        );
+        let render_done = Instant::now();
+        let render_stats = RenderStats {
+            visible_notes: frame_estimate,
+            candidates: band_stats.candidates,
+            long_candidates: band_stats.long_candidates,
+            bands: 1,
+            per_band: vec![band_stats],
+        };
+        let hud = self.hud_text(strip_mode.name(), frame_estimate);
+        self.draw_overlays(&frame_camera, ctx.width_usize, ctx.height_usize, &hud);
+        let overlay_done = Instant::now();
+        self.present_canvas(&frame_camera);
+        let present_done = Instant::now();
+        self.last_scroll_y = ctx.camera.scroll_y;
+        self.last_zoom_x = ctx.camera.zoom_x;
+        self.last_zoom_y = ctx.camera.zoom_y;
+        self.last_width = ctx.width;
+        self.last_height = ctx.height;
+        self.last_path = "scroll-exact";
+        self.record_frame(
+            render_start,
+            render_done,
+            overlay_done,
+            present_done,
+            &render_stats,
+            self.last_path,
+            ctx.dt,
+            ctx.gap_ms,
+        );
+        if ctx.bench_finished {
+            self.finish_bench(event_loop);
+            return;
+        }
+        self.next_frame = Instant::now() + self.frame_interval;
+    }
+
+    /// 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
+    fn redraw_full_frame(&mut self, event_loop: &ActiveEventLoop, ctx: FrameContext) {
+        // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
+        // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
+        self.ensure_density_ready();
+        let mode = self.choose_mode(&ctx.camera);
+        let render_start = Instant::now();
+        let render_stats = self.render_full_frame(
+            &ctx.camera,
+            ctx.width_usize,
+            ctx.height_usize,
+            ctx.estimate,
+            mode,
+        );
+        let render_done = Instant::now();
+
+        let hud = self.hud_text(mode.name(), ctx.estimate);
+        // 键盘只随纵向相机变化，标尺只随横向相机变化：全量帧也按脏标记
+        // 重画，避免每帧重复画左侧 1080×120 的键盘。
+        self.draw_cached_overlays(&ctx.camera, ctx.width_usize, ctx.height_usize, &hud);
+        self.draw_edit_selection(&ctx.camera, ctx.width_usize);
+        let overlay_done = Instant::now();
+        if mode == LodMode::Overview && self.frame_valid && !self.frame_index.is_multiple_of(30) {
+            self.present_canvas(&ctx.camera);
+        } else {
+            self.present();
+        }
+        let present_done = Instant::now();
+
+        self.last_scroll_x = ctx.camera.scroll_x;
+        self.last_scroll_y = ctx.camera.scroll_y;
+        self.last_zoom_x = ctx.camera.zoom_x;
+        self.last_zoom_y = ctx.camera.zoom_y;
+        self.last_width = ctx.width;
+        self.last_height = ctx.height;
+        self.last_path = mode.name();
+        self.frame_valid = true;
+        self.content_dirty = false;
+        if mode != LodMode::Overview {
+            self.baseline_mode = mode;
+        } else {
+            self.baseline_mode = LodMode::Overview;
+        }
+
+        if !self.bench_ready && self.bench.is_some() {
+            // 基准首帧：完成一次全量 Exact 铺底，不计入统计。
+            self.bench_ready = true;
+            self.bench_warmup_until = Some(Instant::now() + Duration::from_secs(1));
+            self.stats.reset();
             self.next_frame = Instant::now() + self.frame_interval;
             return;
         }
 
-        // 全量帧：首帧 / 缩放 / 纵向滚动 / 编辑脏 / 大跨度跳跃。
-        // 编辑后只重建受影响 tick 区间；没有脏区信息才退回整建。
-        self.ensure_density_ready();
-        let mode = self.choose_mode(&camera);
-        let render_start = Instant::now();
-        let render_stats = if mode == LodMode::Coverage {
-            self.render_coverage_frame(&camera, width_usize, height_usize, estimate)
+        self.record_frame(
+            render_start,
+            render_done,
+            overlay_done,
+            present_done,
+            &render_stats,
+            mode.name(),
+            ctx.dt,
+            ctx.gap_ms,
+        );
+        if ctx.bench_finished {
+            self.finish_bench(event_loop);
+            return;
+        }
+        if !ctx.moving && !self.idle_reported {
+            self.stats.print_idle(self.index.total_notes);
+            self.idle_reported = true;
+        }
+        self.next_frame = Instant::now() + self.frame_interval;
+    }
+
+    /// 按档位产出全量帧的 `RenderStats`（不含呈现与状态提交）。
+    fn render_full_frame(
+        &mut self,
+        camera: &Camera,
+        width_usize: usize,
+        height_usize: usize,
+        estimate: u64,
+        mode: LodMode,
+    ) -> RenderStats {
+        if mode == LodMode::Coverage {
+            self.render_coverage_frame(camera, width_usize, height_usize, estimate)
         } else if mode == LodMode::Overview {
             // 总览是密度热力图，半分辨率渲染后再最近邻放大：1.4M 像素/帧
             // 降到 0.35M，纯绘制可稳定低于 12.5ms；热力图本身是块状色块，
@@ -235,69 +362,11 @@ impl App {
             self.renderer.render(
                 Arc::clone(&self.document),
                 Arc::clone(&self.index),
-                &camera,
+                camera,
                 self.current_track,
                 mode,
             )
-        };
-        let render_done = Instant::now();
-
-        let hud = self.hud_text(mode.name(), estimate);
-        // 键盘只随纵向相机变化，标尺只随横向相机变化：全量帧也按脏标记
-        // 重画，避免每帧重复画左侧 1080×120 的键盘。
-        self.draw_cached_overlays(&camera, width_usize, height_usize, &hud);
-        self.draw_edit_selection(&camera, width_usize);
-        let overlay_done = Instant::now();
-        if mode == LodMode::Overview && self.frame_valid && !self.frame_index.is_multiple_of(30) {
-            self.present_canvas(&camera);
-        } else {
-            self.present();
         }
-        let present_done = Instant::now();
-
-        self.last_scroll_x = camera.scroll_x;
-        self.last_scroll_y = camera.scroll_y;
-        self.last_zoom_x = camera.zoom_x;
-        self.last_zoom_y = camera.zoom_y;
-        self.last_width = width;
-        self.last_height = height;
-        self.last_path = mode.name();
-        self.frame_valid = true;
-        self.content_dirty = false;
-        if mode != LodMode::Overview {
-            self.baseline_mode = mode;
-        } else {
-            self.baseline_mode = LodMode::Overview;
-        }
-
-        if !self.bench_ready && self.bench.is_some() {
-            // 基准首帧：完成一次全量 Exact 铺底，不计入统计。
-            self.bench_ready = true;
-            self.bench_warmup_until = Some(Instant::now() + Duration::from_secs(1));
-            self.stats.reset();
-            self.next_frame = Instant::now() + self.frame_interval;
-            return;
-        }
-
-        self.record_frame(
-            render_start,
-            render_done,
-            overlay_done,
-            present_done,
-            &render_stats,
-            mode.name(),
-            dt,
-            gap_ms,
-        );
-        if bench_finished {
-            self.finish_bench(event_loop);
-            return;
-        }
-        if !moving && !self.idle_reported {
-            self.stats.print_idle(self.index.total_notes);
-            self.idle_reported = true;
-        }
-        self.next_frame = Instant::now() + self.frame_interval;
     }
 
     #[allow(clippy::too_many_arguments)]
