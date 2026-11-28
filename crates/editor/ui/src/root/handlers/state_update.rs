@@ -2,45 +2,27 @@
 //!
 //! 处理 `try_handle_simple_state` 中的剩余直接消息，
 //! 包括滚动条、缩放、画布边界、动画帧、性能数据、MIDI 输入等。
+//!
+//! 分派表按业务对象拆到 `state_update/` 子模块；本文件只保留穷尽式分派表与
+//! 动画帧处理。分派表不写 `_` 兜底：原兜底臂覆盖的变体显式列全并返回 false，
+//! 新增 `Message` 变体必须在此归类，编译期即报错，避免被静默吞掉。
 
 use crate::message::Message;
 use crate::root::Root;
 use std::time::Instant;
 
+mod arrangement_state;
+mod canvas_bounds;
+mod ui_state;
+mod view_state;
+
 impl Root {
     /// 处理简单的状态更新消息
     pub(crate) fn try_handle_simple_state(&mut self, msg: &Message) -> bool {
         match msg {
-            Message::Progress(progress) => {
-                if let Some((ref msg, p)) = *progress {
-                    self.progress = Some((msg.clone(), p));
-                } else {
-                    self.progress = None;
-                }
-                true
-            }
-            Message::ScrollbarScrolled(x) => {
-                if self.editor.editor_state.is_vertical_roll {
-                    self.editor.set_vertical_time_scroll(*x);
-                } else {
-                    let v = &self.editor.editor_state.view;
-                    self.editor.set_scroll_x(
-                        *x,
-                        v.keyboard_width,
-                        self.editor.editor_state.canvas.size_x,
-                        v.zoom_x,
-                    );
-                }
-                true
-            }
-            Message::ScrollbarScrolledY(y) => {
-                if self.editor.editor_state.is_vertical_roll {
-                    self.editor.set_vertical_keyboard_scroll(*y);
-                } else {
-                    self.editor.set_scroll_y(*y);
-                }
-                true
-            }
+            Message::Progress(progress) => self.handle_progress(progress),
+            Message::ScrollbarScrolled(x) => self.scrollbar_x(*x),
+            Message::ScrollbarScrolledY(y) => self.scrollbar_y(*y),
             Message::ArrangementScrollX(x) => self.handle_arrangement_scroll_x(*x),
             Message::ArrangementScrollY(y) => self.handle_arrangement_scroll_y(*y),
             Message::ArrangementZoomX { zoom, fixed_ratio } => {
@@ -49,274 +31,85 @@ impl Root {
             Message::ArrangementZoomY { zoom, fixed_ratio } => {
                 self.handle_arrangement_zoom_y(*zoom, *fixed_ratio)
             }
-            Message::ZoomXChanged { zoom, fixed_ratio } => {
-                if self.editor.editor_state.is_vertical_roll {
-                    self.editor.set_vertical_time_zoom(*zoom, *fixed_ratio);
-                } else {
-                    self.editor.set_zoom_x(*zoom, *fixed_ratio);
-                }
-                true
-            }
-            Message::ZoomYChanged { zoom, fixed_ratio } => {
-                if self.editor.editor_state.is_vertical_roll {
-                    self.editor.set_vertical_keyboard_zoom(*zoom, *fixed_ratio);
-                } else {
-                    self.editor.set_zoom_y(*zoom, *fixed_ratio);
-                }
-                true
-            }
-            Message::CanvasBoundsChanged { offset, size } => {
-                self.editor
-                    .editor_state
-                    .canvas
-                    .set_offset(offset.x, offset.y);
-                self.editor
-                    .editor_state
-                    .canvas
-                    .set_size(size.width, size.height);
-
-                // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
-                // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
-                // 确保面板开关或 window resize 后不留空区。
-                let state = &mut self.editor.editor_state;
-                let is_vertical = state.is_vertical_roll;
-                if is_vertical {
-                    // 纵向卷帘：键盘横向铺满宽度，时间轴垂直
-                    let keyboard_h = state.view.keyboard_width;
-                    let vh_grid =
-                        (state.canvas.size_y - state.view.ruler_height - keyboard_h).max(0.0);
-                    let vw_keyboard = state.canvas.size_x.max(0.0);
-                    // 视口扩大后若内容未填满则放大铺满（保持 128/256 完整显示且无空白）
-                    {
-                        let total_w = state.view.visible_key_count as f32 * state.view.zoom_y;
-                        if total_w < vw_keyboard {
-                            let fill_zoom = (vw_keyboard / state.view.visible_key_count as f32)
-                                .clamp(
-                                    crate::constants::editor::zoom::MIN_ZOOM_Y,
-                                    crate::constants::editor::zoom::MAX_ZOOM_Y,
-                                );
-                            if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
-                                state.view.zoom_y = fill_zoom;
-                                let total_ticks = state.view.total_ticks;
-                                lumino_editor_state::editor_state::viewport::Viewport::new(
-                                    &mut state.view,
-                                    &mut state.max_scroll,
-                                )
-                                .update_max_scroll(total_ticks);
-                            }
-                        }
-                    }
-                    // 钳制滚动：scroll_y 按宽度（键盘水平），scroll_x 按网格高度（时间垂直）
-                    let ms_y = (state.max_scroll.1 - vw_keyboard).max(0.0);
-                    state.view.scroll_y = state.view.scroll_y.min(ms_y).max(0.0);
-                    let ms_x = (state.max_scroll.0 - vh_grid).max(0.0);
-                    state.view.scroll_x = state.view.scroll_x.min(ms_x).max(0.0);
-                } else {
-                    let vh = (state.canvas.size_y - state.view.ruler_height).max(0.0);
-                    let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
-                    {
-                        let th = state.view.visible_key_count as f32 * state.view.zoom_y;
-
-                        if th < vh {
-                            // content 没填满 viewport → 调高 zoom
-                            let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
-                                crate::constants::editor::zoom::MIN_ZOOM_Y,
-                                crate::constants::editor::zoom::MAX_ZOOM_Y,
-                            );
-                            if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
-                                state.view.zoom_y = fill_zoom;
-                                let total_ticks = state.view.total_ticks;
-                                lumino_editor_state::editor_state::viewport::Viewport::new(
-                                    &mut state.view,
-                                    &mut state.max_scroll,
-                                )
-                                .update_max_scroll(total_ticks);
-                            }
-                        }
-                    }
-
-                    // 重新钳制滚动位置
-                    let ms_y = (state.max_scroll.1 - vh).max(0.0);
-                    state.view.scroll_y = state.view.scroll_y.min(ms_y);
-                    let ms_x = (state.max_scroll.0 - vw).max(0.0);
-                    state.view.scroll_x = state.view.scroll_x.min(ms_x);
-                }
-
-                true
-            }
-            Message::MenuStateChanged(is_open) => {
-                self.state.is_menu_open = *is_open;
-                true
-            }
-            Message::CtrlKeyChanged(pressed) => {
-                self.toolbar.ctrl_pressed = *pressed;
-                // 同步到 Editor：ruler/键盘区 Ctrl+滚轮缩放依赖此可靠通道
-                // （上一代 canvas 内 ModifiersChanged 事件可能因焦点问题不送达）
-                self.editor.set_ctrl_pressed(*pressed);
-                true
-            }
-            Message::ShiftKeyChanged(pressed) => {
-                self.toolbar.shift_pressed = *pressed;
-                // 同步到 Editor：形状工具拖拽绘制时实时约束正图形依赖此可靠通道
-                self.editor.set_shift_pressed(*pressed);
-                true
-            }
+            Message::ZoomXChanged { zoom, fixed_ratio } => self.zoom_x(*zoom, *fixed_ratio),
+            Message::ZoomYChanged { zoom, fixed_ratio } => self.zoom_y(*zoom, *fixed_ratio),
+            Message::CanvasBoundsChanged { offset, size } => self.canvas_bounds(*offset, *size),
+            Message::MenuStateChanged(is_open) => self.menu_state(*is_open),
+            Message::CtrlKeyChanged(pressed) => self.ctrl_key(*pressed),
+            Message::ShiftKeyChanged(pressed) => self.shift_key(*pressed),
             Message::ToggleSettings | Message::Null => true,
             Message::ModeToggled => self.handle_mode_toggle(),
             Message::AnimationTick => self.handle_animation_tick(),
-            Message::VelocityPanelResize(height) => {
-                self.visual.velocity_panel_height = *height;
-                true
-            }
-            Message::PerfUpdate(data) => {
-                self.statusbar.set_perf_data(*data);
-                true
-            }
-            Message::MidiInputEvent { data } => {
-                let data = data.clone();
-                if let Ok(mut buf) = self.midi.input_buffer.lock() {
-                    buf.push_back(data);
-                }
-                true
-            }
-            Message::ArrangementCursorSet(tick) => {
-                let tick_f = *tick as f32;
-                self.editor.playback_position = tick_f;
-                if let Some(manager) = &mut self.playback.manager {
-                    manager.seek(tick_f);
-                }
-                true
-            }
-            Message::ArrangementSelectionChanged(rect) => {
-                let data = &mut self.editor.editor_state.data;
-                data.arrange_selection.clear();
-                if let Some((tick_start, tick_end, track_lo, track_hi)) = rect {
-                    let ts = tick_start.max(0.0) as u32;
-                    let te = tick_end.max(0.0) as u32;
-                    if te > ts {
-                        let track_lo_u16 = (*track_lo).min(u16::MAX as usize) as u16;
-                        let track_hi_u16 = (*track_hi).min(u16::MAX as usize) as u16;
-                        data.arrange_selection.add_rect_track(
-                            ts,
-                            te,
-                            0,
-                            127,
-                            track_lo_u16,
-                            track_hi_u16,
-                        );
-                    }
-                }
-                true
-            }
-            Message::ArrangementSelectionCleared => {
-                self.editor.editor_state.data.arrange_selection.clear();
-                true
-            }
+            Message::VelocityPanelResize(height) => self.velocity_height(*height),
+            Message::PerfUpdate(data) => self.perf_update(*data),
+            Message::MidiInputEvent { data } => self.midi_input(data),
+            Message::ArrangementCursorSet(tick) => self.arrange_cursor(*tick),
+            Message::ArrangementSelectionChanged(rect) => self.arrange_selection(rect),
+            Message::ArrangementSelectionCleared => self.arrange_selection_clear(),
             Message::ArrangementMoveNotes {
                 delta_ticks,
                 delta_tracks,
-            } => {
-                // 框选误伤修复：arrange_move_notes 内部把选择集冻结为本次实际
-                // 移动的音符（精确集合）；此处不得再平移选择矩形——矩形平移到
-                // 落点会覆盖落点区域内既有的其他音符，导致后续操作误伤它们。
-                let moved = self.editor.arrange_move_notes(*delta_ticks, *delta_tracks);
-                if moved > 0 {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
+            } => self.arrange_move(*delta_ticks, *delta_tracks),
             Message::ArrangementErase {
                 tick_start,
                 tick_end,
                 track_lo,
                 track_hi,
-            } => {
-                let deleted =
-                    self.editor
-                        .arrange_erase(*tick_start, *tick_end, *track_lo, *track_hi);
-                if deleted > 0 {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
-            Message::ArrangementRazor { tick, track } => {
-                let split = self.editor.arrange_razor(*tick, *track);
-                if split > 0 {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
+            } => self.arrange_erase(*tick_start, *tick_end, *track_lo, *track_hi),
+            Message::ArrangementRazor { tick, track } => self.arrange_razor(*tick, *track),
             Message::ArrangementAddNote {
                 track,
                 tick,
                 duration,
                 key,
                 velocity,
-            } => {
-                let track_count = self.sidebar.tracks.len();
-                let added = self.editor.arrange_add_note(
-                    track_count,
-                    *track,
-                    *tick,
-                    *duration,
-                    *key,
-                    *velocity,
-                );
-                if added {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
-            Message::ArrangementGhostNotesUpdated(notes) => {
-                self.arrangement_view.ghost_notes = notes.clone();
-                true
-            }
-            Message::ArrangementDragSelectionRect(rect) => {
-                self.arrangement_view.drag_sel_rect = *rect;
-                true
-            }
-            Message::ArrangementCopy => {
-                self.editor.arrange_copy_selected_notes();
-                true
-            }
-            Message::ArrangementPaste => {
-                let pasted = self.editor.arrange_paste_notes_from_clipboard();
-                if pasted {
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
-            Message::ArrangementCut => {
-                let cut = self.editor.arrange_cut_selected_notes();
-                if cut > 0 {
-                    self.editor.editor_state.data.arrange_selection.clear();
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
-            Message::ArrangementDeleteSelection => {
-                let deleted = self.editor.arrange_delete_selected_notes();
-                if deleted > 0 {
-                    self.editor.editor_state.data.arrange_selection.clear();
-                    self.update_playback_notes();
-                    self.editor.clear_notes_changed();
-                }
-                true
-            }
-            Message::ArrangementSelectAll => {
-                // 全选只改选区、不改音符：无需 update_playback_notes，
-                // 返回 true 触发 UI 重建（选框由 GPU 每帧按 arrange_selection 绘制）
-                self.editor.arrange_select_all_notes();
-                true
-            }
+            } => self.arrange_add_note(*track, *tick, *duration, *key, *velocity),
+            Message::ArrangementGhostNotesUpdated(notes) => self.arrange_ghost_notes(notes),
+            Message::ArrangementDragSelectionRect(rect) => self.arrange_drag_rect(rect),
+            Message::ArrangementCopy => self.arrange_copy(),
+            Message::ArrangementPaste => self.arrange_paste(),
+            Message::ArrangementCut => self.arrange_cut(),
+            Message::ArrangementDeleteSelection => self.arrange_delete(),
+            Message::ArrangementSelectAll => self.arrange_select_all(),
             Message::VideoClip(action) => self.handle_video_clip_action(action.clone()),
-            _ => false,
+            // 原 `_ => false` 的等价展开：下列变体在此处理器中不被消费，
+            // 交由 MessageRouter / 其它处理器处理，返回值保持 false。
+            Message::Core(_)
+            | Message::Window(_)
+            | Message::Sidebar(_)
+            | Message::EditorAction(_)
+            | Message::AudioAction(_)
+            | Message::Settings(_)
+            | Message::Toolbar(_)
+            | Message::CustomPrecision(_)
+            | Message::BrushSettings(_)
+            | Message::DrawSettings(_)
+            | Message::FillDivision(_)
+            | Message::Help(_)
+            | Message::ShapeDrawer(_)
+            | Message::History(_)
+            | Message::Collaboration(_)
+            | Message::LoadConfirm(_)
+            | Message::SaveConfirm(_)
+            | Message::AutosaveRecover(_)
+            | Message::ProjectSettings(_)
+            | Message::PortSoundfonts(_)
+            | Message::PortSoundfontsUnsupported(_)
+            | Message::SettingsDialog(_)
+            | Message::Velocity(_)
+            | Message::LoopRange(_)
+            | Message::AudioExport(_)
+            | Message::SpeedChange(_)
+            | Message::MaterialDelete(_)
+            | Message::TempoMaxBpm(_)
+            | Message::BatchEdit(_)
+            | Message::RecoverTrack(_)
+            | Message::VideoExport(_)
+            | Message::Batch(_)
+            | Message::PianoRollContextMenu(_)
+            | Message::MaskPanel(_)
+            | Message::RightSidebar(_)
+            | Message::Cloud(_) => false,
         }
     }
 
