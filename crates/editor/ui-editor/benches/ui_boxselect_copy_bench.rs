@@ -74,21 +74,77 @@ const PASTE_TARGET_MS: f64 = 250.0;
 /// 该构建是主轨段重建的主要 CPU 成本；全量会话重建会构建**所有**轨实例。
 const REBUILD_TARGET_MS: f64 = 200.0;
 
+/// 环境变量解析结果；字段顺序即读取顺序。
+struct BenchConfig {
+    path: String,
+    fraction: f64,
+    moves: usize,
+    cycles: usize,
+    do_clipboard: bool,
+}
+
+/// 粘贴与重建三项测量。
+struct PasteStats {
+    paste: Stat,
+    merge: Stat,
+    rebuild: Stat,
+}
+
 fn main() {
     println!("=== Lumino UI 交互路径基准：框选 + 复制 + 粘贴（超大轨道部分选中）===");
-    let path = env::var("LUMINO_UI_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
-    let fraction = env_f64("LUMINO_UI_BENCH_FRACTION", DEFAULT_FRACTION).clamp(0.001, 1.0);
-    let moves = env_usize("LUMINO_UI_BENCH_MOVES", DEFAULT_MOVES).max(1);
-    let cycles = env_usize("LUMINO_UI_BENCH_CYCLES", DEFAULT_CYCLES);
-    let do_clipboard = env_bool("LUMINO_UI_BENCH_CLIPBOARD", true);
+    let config = parse_config();
 
     let t_load = Instant::now();
-    let (doc, src) = support::load_doc(&path);
+    let (doc, src) = support::load_doc(&config.path);
     let division = doc.division();
     let track = (0..doc.track_count())
         .max_by_key(|&t| doc.track_notes(t).len())
         .expect("无音轨");
     let track_len = doc.track_notes(track).len();
+    print_setup(&src, track, track_len, division, t_load, &config);
+
+    // ── Editor 装配：真实坐标映射（zoom=1/scroll=0 → x=tick、y=127-key）──
+    let mut editor = Editor::new();
+    editor.editor_state.data.document = Some(doc);
+    editor.editor_state.data.current_track = track;
+    // 与生产「未连接协作」路径一致：不构建选择指纹广播载荷
+    editor.editor_state.data.set_collab_sync_enabled(false);
+    helpers::configure_editor(&mut editor);
+
+    let (workload, baseline) = prepare_workload(&editor, &config, track, division);
+    let warmup_ok = run_warmup(&mut editor, &workload);
+    let (stats, mut all_ok) = run_hot_cycles(&mut editor, &workload, config.cycles, warmup_ok);
+    let (paste, paste_ok) = run_paste(&mut editor, track, config.do_clipboard);
+    all_ok &= paste_ok;
+
+    let (time_pass, mem_pass) = report_ops(&stats, &paste, config.do_clipboard, config.cycles);
+    report_conclusion(all_ok, time_pass, mem_pass, baseline);
+}
+
+/// 参数解析：按原顺序逐项读取环境变量。
+fn parse_config() -> BenchConfig {
+    BenchConfig {
+        path: env::var("LUMINO_UI_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string()),
+        fraction: env_f64("LUMINO_UI_BENCH_FRACTION", DEFAULT_FRACTION).clamp(0.001, 1.0),
+        moves: env_usize("LUMINO_UI_BENCH_MOVES", DEFAULT_MOVES).max(1),
+        cycles: env_usize("LUMINO_UI_BENCH_CYCLES", DEFAULT_CYCLES),
+        do_clipboard: env_bool("LUMINO_UI_BENCH_CLIPBOARD", true),
+    }
+}
+
+/// 数据准备与配置输出；加载计时在打印时才读取，保持计时区间不变。
+fn print_setup(
+    src: &str,
+    track: usize,
+    track_len: usize,
+    division: u16,
+    t_load: Instant,
+    config: &BenchConfig,
+) {
+    let fraction = config.fraction;
+    let moves = config.moves;
+    let cycles = config.cycles;
+    let do_clipboard = config.do_clipboard;
     println!(
         "数据源: {src} | 最大轨 {track} / {track_len} 音符 | division {division} | 加载 {:.1}s",
         t_load.elapsed().as_secs_f64()
@@ -108,15 +164,18 @@ fn main() {
 粘贴 ≤ {PASTE_TARGET_MS:.0} ms | 主轨段重建 ≤ {REBUILD_TARGET_MS:.0} ms | 单次内存 ≤ {MEM_TARGET_MB:.0} MB"
     );
     println!();
+}
 
-    // ── Editor 装配：真实坐标映射（zoom=1/scroll=0 → x=tick、y=127-key）──
-    let mut editor = Editor::new();
-    editor.editor_state.data.document = Some(doc);
-    editor.editor_state.data.current_track = track;
-    // 与生产「未连接协作」路径一致：不构建选择指纹广播载荷
-    editor.editor_state.data.set_collab_sync_enabled(false);
-    helpers::configure_editor(&mut editor);
-
+/// 工作负载构造；全程峰值在计时循环开始前重置。
+fn prepare_workload(
+    editor: &Editor,
+    config: &BenchConfig,
+    track: usize,
+    division: u16,
+) -> (Workload, usize) {
+    let fraction = config.fraction;
+    let moves = config.moves;
+    let do_clipboard = config.do_clipboard;
     let first_tick = editor
         .editor_state
         .data
@@ -146,10 +205,13 @@ fn main() {
         division,
         do_clipboard,
     };
+    (workload, baseline)
+}
 
-    // ── 冷启动暖机一轮（仅参考，不计入判定）──
+/// 冷启动暖机一轮（仅参考，不计入判定）
+fn run_warmup(editor: &mut Editor, workload: &Workload) -> bool {
     let mut warmup = CycleStats::new();
-    let warmup_ok = run_cycle(&mut editor, &mut warmup, &workload);
+    let warmup_ok = run_cycle(editor, &mut warmup, workload);
     println!(
         "冷启动首轮（仅参考）: 移动中位 {:.1} ms | 释放 {:.1} ms | 二进制 {:.1} ms | 全路径 {} | 选中 {} | 校验 {}",
         median(warmup.moves.times()),
@@ -165,13 +227,21 @@ fn main() {
         if warmup_ok { "✓" } else { "✗" }
     );
     println!();
+    warmup_ok
+}
 
-    // ── 热态连续 N 轮（判定依据）──
+/// 热态连续 N 轮（判定依据）
+fn run_hot_cycles(
+    editor: &mut Editor,
+    workload: &Workload,
+    cycles: usize,
+    warmup_ok: bool,
+) -> (CycleStats, bool) {
     let mut stats = CycleStats::new();
     let mut all_ok = warmup_ok;
     for c in 0..cycles {
         let moves_before = stats.moves.times().len();
-        let ok = run_cycle(&mut editor, &mut stats, &workload);
+        let ok = run_cycle(editor, &mut stats, workload);
         all_ok &= ok;
         let cycle_moves = &stats.moves.times()[moves_before..];
         println!(
@@ -193,13 +263,17 @@ fn main() {
             if ok { "✓" } else { "✗" }
         );
     }
+    (stats, all_ok)
+}
 
-    // ── 粘贴（数据层）+ 主轨段重建（渲染侧实例构建代理）──
+/// 粘贴（数据层）+ 主轨段重建（渲染侧实例构建代理）
+fn run_paste(editor: &mut Editor, track: usize, do_clipboard: bool) -> (PasteStats, bool) {
     // 剪贴板内容来自最后一轮 Copy；渲染侧现在以单轨 TrackDelta 重建当前轨段
     // （不再全量会话重建所有轨），实例构建是其主要 CPU 成本 → 作为代理测量。
     let mut paste_stat = Stat::new("粘贴（追加锚点·快路径）");
     let mut paste_merge_stat = Stat::new("粘贴（重叠锚点·归并路径）");
     let mut rebuild_stat = Stat::new("主轨段重建（实例构建代理）");
+    let mut ok = true;
     if do_clipboard {
         editor.handle_action(EditorAction::Paste); // 暖机
         // 追加锚点：播放位置移到轨道末尾之后 → prepend/append 快路径（无区间归并）
@@ -219,12 +293,27 @@ fn main() {
             editor.playback_position = 0.0;
             paste_merge_stat.measure(|| editor.handle_action(EditorAction::Paste));
         }
-        let instances = rebuild_stat.measure(|| build_track_instances_proxy(&editor, track));
-        all_ok &= instances.iter().any(|p| !p.is_empty());
+        let instances = rebuild_stat.measure(|| build_track_instances_proxy(editor, track));
+        ok = instances.iter().any(|p| !p.is_empty());
         drop(instances);
     }
+    (
+        PasteStats {
+            paste: paste_stat,
+            merge: paste_merge_stat,
+            rebuild: rebuild_stat,
+        },
+        ok,
+    )
+}
 
-    // ── 汇总 ──
+/// 汇总：逐项输出耗时与内存报告，返回（耗时全达标, 内存全达标）。
+fn report_ops(
+    stats: &CycleStats,
+    paste: &PasteStats,
+    do_clipboard: bool,
+    cycles: usize,
+) -> (bool, bool) {
     println!();
     println!("── UI 路径操作耗时 / 内存（{cycles} 轮热态；移动为全部样本合并）──");
     let (move_pass, move_mem) = report_op(
@@ -263,9 +352,9 @@ fn main() {
     let (paste_pass, paste_mem) = if do_clipboard {
         report_op(
             "粘贴（追加锚点·快路径）",
-            paste_stat.times(),
+            paste.paste.times(),
             PASTE_TARGET_MS,
-            paste_stat.max_peak_growth(),
+            paste.paste.max_peak_growth(),
             Some(PASTE_MEM_TARGET_MB),
         )
     } else {
@@ -277,9 +366,9 @@ fn main() {
         // 瞬时内存随归并区间长度增长，属固有预算 → 内存仅信息性报道
         report_op(
             "粘贴（重叠锚点·归并路径）",
-            paste_merge_stat.times(),
+            paste.merge.times(),
             PASTE_TARGET_MS,
-            paste_merge_stat.max_peak_growth(),
+            paste.merge.max_peak_growth(),
             None,
         )
     } else {
@@ -289,9 +378,9 @@ fn main() {
         // 实例缓冲（~3000W × 16B ≈ 480MB）是渲染侧固有预算，内存仅信息性报道
         report_op(
             "主轨段重建（实例构建代理）",
-            rebuild_stat.times(),
+            paste.rebuild.times(),
             REBUILD_TARGET_MS,
-            rebuild_stat.max_peak_growth(),
+            paste.rebuild.max_peak_growth(),
             None,
         )
     } else {
@@ -299,7 +388,18 @@ fn main() {
     };
 
     let mem_pass = move_mem && released_mem && binary_mem && full_mem && paste_mem;
+    let time_pass = move_pass
+        && released_pass
+        && binary_pass
+        && full_pass
+        && paste_pass
+        && paste_merge_pass
+        && rebuild_pass;
+    (time_pass, mem_pass)
+}
 
+/// 结束报告：进程内存总览与 PASS/FAIL 结论。
+fn report_conclusion(all_ok: bool, time_pass: bool, mem_pass: bool, baseline: usize) {
     let peak = run_peak();
     let growth = peak as i64 - baseline as i64;
     println!();
@@ -310,15 +410,7 @@ fn main() {
         mb(growth)
     );
 
-    let pass = all_ok
-        && move_pass
-        && released_pass
-        && binary_pass
-        && full_pass
-        && paste_pass
-        && paste_merge_pass
-        && rebuild_pass
-        && mem_pass;
+    let pass = all_ok && time_pass && mem_pass;
     println!();
     println!(
         "结论（超大轨道部分选中 框选+复制+粘贴）: {}",
