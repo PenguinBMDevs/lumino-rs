@@ -46,13 +46,7 @@ pub(super) fn draw_note(
         return 0;
     }
 
-    let color = if is_main {
-        job.style.fill(track, true)
-    } else {
-        job.style.fill(track, false)
-    };
-    let border_color = job.style.border(track, is_main);
-    let (owner_value, owner_limit) = if is_main { (2, 1) } else { (1, 0) };
+    let pass = note_pass(job, track, is_main, count_coverage, ruler_rows);
 
     // 每侧实际边框 = 2 × border_width = 2px。填充分界（浮点）。
     let border_px = NOTE_BORDER_PX;
@@ -70,101 +64,194 @@ pub(super) fn draw_note(
     fy1 = fy1.min(iy1);
     let has_fill = fx1 > fx0 && fy1 > fy0;
 
+    let rects = NoteRects {
+        ix0,
+        ix1,
+        iy0,
+        iy1,
+        fx0,
+        fx1,
+        fy0,
+        fy1,
+    };
+
     let mut covered = 0usize;
 
     if !has_fill {
-        // 细音符/纯描边：宽度 ≤ 8px 时直接遍历像素，避免每行一次函数调用。
-        let width_px = ix1 - ix0;
-        if width_px == 1 {
-            covered += draw_pixel_column(
-                buffer,
-                ix0 - job.x0 as i32,
-                iy0,
-                iy1,
-                border_color,
-                owner_value,
-                owner_limit,
-                count_coverage,
-                ruler_rows,
-            );
-        } else if width_px <= 8 {
-            covered += draw_owner_block(
-                buffer,
-                job.x0,
-                ix0,
-                ix1,
-                iy0,
-                iy1,
-                border_color,
-                owner_value,
-                owner_limit,
-                count_coverage,
-                ruler_rows,
-            );
-        } else {
-            for y in iy0..iy1 {
-                covered += draw_segment(
-                    buffer,
-                    y,
-                    job.x0,
-                    ix0,
-                    ix1,
-                    border_color,
-                    owner_value,
-                    owner_limit,
-                    job.simd,
-                    count_coverage,
-                    ruler_rows,
-                );
-            }
-        }
+        covered = draw_outline_pass(job, buffer, &rects, &pass, covered);
         stats.visible_notes += 1;
         return covered;
     }
 
-    for y in iy0..iy1 {
-        if y >= fy0 && y < fy1 {
-            if fx0 > ix0 {
+    covered = draw_fill_pass(job, buffer, &rects, &pass, covered);
+    stats.visible_notes += 1;
+    covered
+}
+
+/// 单音符解析出的屏幕像素边界（`draw_note` 的几何部分）。
+struct NoteRects {
+    /// x 方向外框区间 `[ix0, ix1)`。
+    ix0: i32,
+    ix1: i32,
+    /// y 方向外框区间 `[iy0, iy1)`。
+    iy0: i32,
+    iy1: i32,
+    /// 填充区间 `[fx0, fx1) × [fy0, fy1)`。
+    fx0: i32,
+    fx1: i32,
+    fy0: i32,
+    fy1: i32,
+}
+
+/// 本次 pass 的配色、owner 归属与覆盖统计开关。
+struct NotePass {
+    /// 填充色。
+    color: u32,
+    /// 描边色。
+    border_color: u32,
+    /// 本次 pass 写入的 owner 值（洋葱皮 1、主轨 2）。
+    owner_value: u32,
+    /// 允许被覆盖的 owner 上限。
+    owner_limit: u32,
+    /// 是否统计新覆盖像素（仅洋葱皮 pass）。
+    count_coverage: bool,
+    /// 标尺行数：其上才计入覆盖。
+    ruler_rows: usize,
+}
+
+/// 解析本次 pass 的配色、owner 归属与覆盖统计开关。
+fn note_pass(
+    job: &BandJob,
+    track: usize,
+    is_main: bool,
+    count_coverage: bool,
+    ruler_rows: usize,
+) -> NotePass {
+    let color = if is_main {
+        job.style.fill(track, true)
+    } else {
+        job.style.fill(track, false)
+    };
+    let border_color = job.style.border(track, is_main);
+    let (owner_value, owner_limit) = if is_main { (2, 1) } else { (1, 0) };
+
+    NotePass {
+        color,
+        border_color,
+        owner_value,
+        owner_limit,
+        count_coverage,
+        ruler_rows,
+    }
+}
+
+/// 细音符/纯描边 pass：宽度 ≤8px 时逐像素写，更宽时逐行覆盖。
+fn draw_outline_pass(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    rects: &NoteRects,
+    pass: &NotePass,
+    mut covered: usize,
+) -> usize {
+    // 细音符/纯描边：宽度 ≤ 8px 时直接遍历像素，避免每行一次函数调用。
+    let width_px = rects.ix1 - rects.ix0;
+    if width_px == 1 {
+        covered += draw_pixel_column(
+            buffer,
+            rects.ix0 - job.x0 as i32,
+            rects.iy0,
+            rects.iy1,
+            pass.border_color,
+            pass.owner_value,
+            pass.owner_limit,
+            pass.count_coverage,
+            pass.ruler_rows,
+        );
+    } else if width_px <= 8 {
+        covered += draw_owner_block(
+            buffer,
+            job.x0,
+            rects.ix0,
+            rects.ix1,
+            rects.iy0,
+            rects.iy1,
+            pass.border_color,
+            pass.owner_value,
+            pass.owner_limit,
+            pass.count_coverage,
+            pass.ruler_rows,
+        );
+    } else {
+        for y in rects.iy0..rects.iy1 {
+            covered += draw_segment(
+                buffer,
+                y,
+                job.x0,
+                rects.ix0,
+                rects.ix1,
+                pass.border_color,
+                pass.owner_value,
+                pass.owner_limit,
+                job.simd,
+                pass.count_coverage,
+                pass.ruler_rows,
+            );
+        }
+    }
+    covered
+}
+
+/// 有填充区 pass：逐行画左右描边与中间填充。
+fn draw_fill_pass(
+    job: &BandJob,
+    buffer: &mut BandBuffer,
+    rects: &NoteRects,
+    pass: &NotePass,
+    mut covered: usize,
+) -> usize {
+    for y in rects.iy0..rects.iy1 {
+        if y >= rects.fy0 && y < rects.fy1 {
+            if rects.fx0 > rects.ix0 {
                 covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
-                    ix0,
-                    fx0,
-                    border_color,
-                    owner_value,
-                    owner_limit,
+                    rects.ix0,
+                    rects.fx0,
+                    pass.border_color,
+                    pass.owner_value,
+                    pass.owner_limit,
                     job.simd,
-                    count_coverage,
-                    ruler_rows,
+                    pass.count_coverage,
+                    pass.ruler_rows,
                 );
             }
             covered += draw_segment(
                 buffer,
                 y,
                 job.x0,
-                fx0,
-                fx1,
-                color,
-                owner_value,
-                owner_limit,
+                rects.fx0,
+                rects.fx1,
+                pass.color,
+                pass.owner_value,
+                pass.owner_limit,
                 job.simd,
-                count_coverage,
-                ruler_rows,
+                pass.count_coverage,
+                pass.ruler_rows,
             );
-            if ix1 > fx1 {
+            if rects.ix1 > rects.fx1 {
                 covered += draw_segment(
                     buffer,
                     y,
                     job.x0,
-                    fx1,
-                    ix1,
-                    border_color,
-                    owner_value,
-                    owner_limit,
+                    rects.fx1,
+                    rects.ix1,
+                    pass.border_color,
+                    pass.owner_value,
+                    pass.owner_limit,
                     job.simd,
-                    count_coverage,
-                    ruler_rows,
+                    pass.count_coverage,
+                    pass.ruler_rows,
                 );
             }
         } else {
@@ -172,18 +259,17 @@ pub(super) fn draw_note(
                 buffer,
                 y,
                 job.x0,
-                ix0,
-                ix1,
-                border_color,
-                owner_value,
-                owner_limit,
+                rects.ix0,
+                rects.ix1,
+                pass.border_color,
+                pass.owner_value,
+                pass.owner_limit,
                 job.simd,
-                count_coverage,
-                ruler_rows,
+                pass.count_coverage,
+                pass.ruler_rows,
             );
         }
     }
-    stats.visible_notes += 1;
     covered
 }
 

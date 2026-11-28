@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use lumino_diagnostics::memtrace::TaggedAlloc;
 use lumino_midi_loader::{
-    NoteEvent,
+    MidiDocument, NoteEvent,
     loader::{ProgressCallback, load_parsed_midi},
 };
 
@@ -101,23 +101,30 @@ fn print_progress(message: &str, progress: f64) {
     println!("[load] {:>6.2}%  {}", progress * 100.0, message);
 }
 
-fn main() -> Result<()> {
+/// 进程级初始化：先起 Tracy 客户端，再提升 Win32 媒体定时器精度。
+fn init_process() {
     #[cfg(feature = "tracy")]
     {
         // 先启动客户端，保证 tokio worker 线程上的 zone 也能连上 Profiler。
         let _ = tracy_client::Client::start();
     }
+    start_media_timer();
+}
+
+/// 把系统时钟粒度提到 1 ms；非 Windows 平台是空实现。
+fn start_media_timer() {
     #[cfg(target_os = "windows")]
-    // SAFETY: timeBeginPeriod 是 Win32 媒体定时器 API，进程启动时调用一次；
-    // 不涉及指针/所有权，失败也只会退回系统默认时钟粒度。
-    unsafe {
-        windows::Win32::Media::timeBeginPeriod(1);
+    {
+        // SAFETY: timeBeginPeriod 是 Win32 媒体定时器 API，进程启动时调用一次；
+        // 不涉及指针/所有权，失败也只会退回系统默认时钟粒度。
+        unsafe {
+            windows::Win32::Media::timeBeginPeriod(1);
+        }
     }
-    let cli = Cli::parse();
-    anyhow::ensure!(
-        !(cli.overview && cli.bench_zoom),
-        "--overview 与 --bench-zoom 不能同时使用"
-    );
+}
+
+/// 解析 worker 数、打印启动横幅并创建 tokio 渲染运行时。
+fn create_render_runtime(cli: &Cli) -> Result<(tokio::runtime::Runtime, usize)> {
     let workers = cli
         .workers
         .unwrap_or_else(|| physical_cores().max(1))
@@ -134,7 +141,14 @@ fn main() -> Result<()> {
         .thread_name("cpu-onionskin-render")
         .build()
         .context("创建 tokio 渲染运行时失败")?;
+    Ok((runtime, workers))
+}
 
+/// 加载 MIDI 并取出可编辑文档，返回文档、音符总数与加载耗时（毫秒）。
+fn load_document(
+    cli: &Cli,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<(Arc<MidiDocument>, u64, u128)> {
     let load_start = Instant::now();
     let progress: ProgressCallback = Arc::new(print_progress);
     let parsed = runtime
@@ -145,14 +159,20 @@ fn main() -> Result<()> {
     let document = parsed
         .document
         .context("加载结果不含 MidiDocument（不是可编辑 MIDI？）")?;
+    Ok((document, parsed.info.total_notes, load_ms))
+}
 
-    // 与主程序 MidiParsed 处理一致：加载后切 Random 调色板并锁定。
+/// 与主程序 MidiParsed 处理一致：加载后切 Random 调色板并锁定。
+fn apply_random_palette() {
     let palette_ok = lumino_extras::palette::set_current_palette_by_name("Random");
     lumino_extras::palette::lock_palette();
     if !palette_ok {
         eprintln!("[warn] 未找到 Random 调色板，使用默认调色板");
     }
+}
 
+/// 解析音轨总数、当前音轨，并把时间轴向后延长 100 小节。
+fn resolve_tracks(cli: &Cli, document: &MidiDocument) -> Result<(usize, usize, u32)> {
     let track_count = document.track_count();
     let current_track = cli.track.unwrap_or_else(|| {
         (0..track_count)
@@ -168,10 +188,20 @@ fn main() -> Result<()> {
         .total_ticks()
         .saturating_add(measure_ticks.saturating_mul(100))
         .max(1);
+    Ok((track_count, current_track, timeline_ticks))
+}
 
+/// 打印加载结果的内存与音轨统计。
+fn print_load_summary(
+    document: &MidiDocument,
+    total_notes: u64,
+    track_count: usize,
+    current_track: usize,
+    load_ms: u128,
+) {
     println!(
         "[load] done: notes={} tracks={} ticks={} division={} load_ms={} rss_mb={}",
-        parsed.info.total_notes,
+        total_notes,
         track_count,
         document.total_ticks(),
         document.division(),
@@ -180,7 +210,7 @@ fn main() -> Result<()> {
     );
     println!(
         "[data] MidiDocument={} MiB (single authority, no render copy), NoteEvent={} B",
-        (parsed.info.total_notes as usize * std::mem::size_of::<NoteEvent>()) / (1024 * 1024),
+        (total_notes as usize * std::mem::size_of::<NoteEvent>()) / (1024 * 1024),
         std::mem::size_of::<NoteEvent>()
     );
     println!(
@@ -188,9 +218,12 @@ fn main() -> Result<()> {
         current_track,
         document.track_note_count(current_track as u16)
     );
+}
 
+/// 构建派生索引并打印规模统计。
+fn build_index(document: &MidiDocument) -> model::TrackIndex {
     let index_start = Instant::now();
-    let index = model::TrackIndex::build(&document);
+    let index = model::TrackIndex::build(document);
     println!(
         "[index] max_len/measure_counts built in {} ms; densest measure={} notes={}; long_notes={} ({} KiB)",
         index_start.elapsed().as_millis(),
@@ -199,6 +232,91 @@ fn main() -> Result<()> {
         index.long_note_count,
         index.long_note_count as usize * std::mem::size_of::<NoteEvent>() / 1024
     );
+    index
+}
+
+/// 截图基准相机：横向定位到最密小节。
+fn screenshot_camera(
+    index: &model::TrackIndex,
+    width: u32,
+    height: u32,
+    timeline_ticks: u32,
+    division: u16,
+    zoom: f32,
+) -> camera::Camera {
+    let mut camera = camera::Camera::new(width, height, 1.0, timeline_ticks, division, zoom);
+    let start_tick =
+        (index.densest_measure.saturating_sub(1) as u32).saturating_mul(index.measure_ticks);
+    camera.scroll_x = (start_tick as f32 * camera.zoom_x).clamp(0.0, camera.max_scroll_x());
+    camera.target_scroll_x = camera.scroll_x;
+    camera.center_on_key(60);
+    camera
+}
+
+/// 在渲染帧上叠加键盘/标尺/状态栏，并把结果写成 PNG。
+fn save_screenshot(
+    path: &std::path::Path,
+    renderer: &mut render::Renderer,
+    camera: &camera::Camera,
+    hud: &str,
+    width: u32,
+    height: u32,
+) -> Result<()> {
+    let font = text::TextRenderer::new();
+    {
+        let frame_width = renderer.width() as usize;
+        let frame = renderer.frame_mut();
+        render::chrome::draw_keyboard(frame, frame_width, camera, font.as_ref());
+        render::chrome::draw_ruler(frame, frame_width, camera, font.as_ref());
+        render::chrome::draw_status(frame, frame_width, camera, hud, font.as_ref());
+    }
+    save_png(path, renderer.frame(), width, height)
+        .with_context(|| format!("写入截图失败: {}", path.display()))?;
+    Ok(())
+}
+
+/// 构建全曲密度金字塔并打印内存占用。
+fn build_density(document: &MidiDocument, workers: usize) -> render::density::DensityPyramid {
+    let density_start = Instant::now();
+    let density = render::density::DensityPyramid::build(document, workers, camera::KEY_COUNT);
+    println!(
+        "[density] coverage+heat pyramid built in {} ms, {:.1} MiB",
+        density_start.elapsed().as_millis(),
+        density.memory_bytes() as f64 / (1024.0 * 1024.0)
+    );
+    density
+}
+
+/// 打印启动信息并运行事件循环；基准未达标时以非零码退出。
+fn run_app(config: app::AppConfig, simd: render::simd::SimdLevel) -> Result<()> {
+    println!(
+        "[start] window={}x{} zoom={} px/tick simd={}",
+        config.width,
+        config.height,
+        config.zoom,
+        simd.name()
+    );
+    let bench_pass = app::run(config)?;
+    if bench_pass == Some(false) {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    init_process();
+    let cli = Cli::parse();
+    anyhow::ensure!(
+        !(cli.overview && cli.bench_zoom),
+        "--overview 与 --bench-zoom 不能同时使用"
+    );
+    let (runtime, workers) = create_render_runtime(&cli)?;
+    let (document, total_notes, load_ms) = load_document(&cli, &runtime)?;
+    apply_random_palette();
+    let (track_count, current_track, timeline_ticks) = resolve_tracks(&cli, &document)?;
+    print_load_summary(&document, total_notes, track_count, current_track, load_ms);
+
+    let index = build_index(&document);
 
     let simd = render::simd::SimdLevel::detect(cli.no_simd);
     let style = Arc::new(render::color::NoteStyle::new(track_count));
@@ -209,19 +327,14 @@ fn main() -> Result<()> {
         let width = cli.width.max(64);
         let height = cli.height.max(64);
         renderer.resize(width, height);
-        let mut camera = camera::Camera::new(
+        let camera = screenshot_camera(
+            &index,
             width,
             height,
-            1.0,
             timeline_ticks,
             document.division(),
             cli.zoom,
         );
-        let start_tick =
-            (index.densest_measure.saturating_sub(1) as u32).saturating_mul(index.measure_ticks);
-        camera.scroll_x = (start_tick as f32 * camera.zoom_x).clamp(0.0, camera.max_scroll_x());
-        camera.target_scroll_x = camera.scroll_x;
-        camera.center_on_key(60);
         let render_start = Instant::now();
         let stats = renderer.render(
             Arc::clone(&document),
@@ -230,20 +343,11 @@ fn main() -> Result<()> {
             current_track,
             render::band::LodMode::Exact,
         );
-        let font = text::TextRenderer::new();
         let hud = format!(
             "screenshot exact | notes {} | visible {}",
-            parsed.info.total_notes, stats.visible_notes
+            total_notes, stats.visible_notes
         );
-        {
-            let frame_width = renderer.width() as usize;
-            let frame = renderer.frame_mut();
-            render::chrome::draw_keyboard(frame, frame_width, &camera, font.as_ref());
-            render::chrome::draw_ruler(frame, frame_width, &camera, font.as_ref());
-            render::chrome::draw_status(frame, frame_width, &camera, &hud, font.as_ref());
-        }
-        save_png(path, renderer.frame(), width, height)
-            .with_context(|| format!("写入截图失败: {}", path.display()))?;
+        save_screenshot(path, &mut renderer, &camera, &hud, width, height)?;
         println!(
             "[screenshot] {} ({}x{}, zoom={} px/tick, visible={}, render={} ms)",
             path.display(),
@@ -256,13 +360,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let density_start = Instant::now();
-    let density = render::density::DensityPyramid::build(&document, workers, camera::KEY_COUNT);
-    println!(
-        "[density] coverage+heat pyramid built in {} ms, {:.1} MiB",
-        density_start.elapsed().as_millis(),
-        density.memory_bytes() as f64 / (1024.0 * 1024.0)
-    );
+    let density = build_density(&document, workers);
     let config = app::AppConfig {
         document,
         index,
@@ -283,18 +381,7 @@ fn main() -> Result<()> {
         style,
         runtime,
     };
-    println!(
-        "[start] window={}x{} zoom={} px/tick simd={}",
-        config.width,
-        config.height,
-        config.zoom,
-        simd.name()
-    );
-    let bench_pass = app::run(config)?;
-    if bench_pass == Some(false) {
-        std::process::exit(1);
-    }
-    Ok(())
+    run_app(config, simd)
 }
 
 fn rss_mb() -> u64 {

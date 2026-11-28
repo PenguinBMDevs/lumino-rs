@@ -67,49 +67,9 @@ impl App {
             event_loop.exit();
             return;
         }
-        let mut camera = Camera::new(
-            width,
-            height,
-            window.scale_factor() as f32,
-            self.timeline_ticks,
-            self.ppq,
-            self.initial_zoom,
-        );
-        if self.overview {
-            let fit_x = camera.canvas_width() / camera.total_ticks.max(1) as f32;
-            camera.zoom_x = fit_x.clamp(0.0002, 40.0);
-            camera.zoom_y = (camera.canvas_height() / camera.key_count.max(1) as f32).max(1.0);
-            camera.scroll_x = 0.0;
-            camera.target_scroll_x = 0.0;
-            camera.scroll_y = 0.0;
-            self.initial_zoom = camera.zoom_x;
-        }
+        let mut camera = self.build_camera(width, height, window.scale_factor() as f32);
         if let Some(seconds) = self.bench_seconds {
-            let bench = if self.bench_zoom {
-                let bench = Bench::new_zoom(
-                    &camera,
-                    &self.index,
-                    seconds,
-                    self.bench_zoom_high,
-                    2.0,
-                    self.bench_zoom_low,
-                );
-                camera.zoom_x = bench.start_zoom();
-                camera.scroll_x = bench.start_scroll();
-                camera.target_scroll_x = camera.scroll_x;
-                bench
-            } else {
-                let mut bench = Bench::new(&camera, &self.index, seconds);
-                if self.overview {
-                    bench.set_start(0.0);
-                }
-                camera.scroll_x = bench.start_scroll();
-                camera.target_scroll_x = camera.scroll_x;
-                bench
-            };
-            self.bench = Some(bench);
-            self.frame_interval = Duration::ZERO;
-            self.stats.reset();
+            self.start_bench(&mut camera, seconds);
         }
         self.renderer.resize(width, height);
         self.camera = Some(camera);
@@ -161,5 +121,56 @@ impl App {
         }
         // 更高缩放保持 Exact：不允许省填充、省描边或丢音轨。
         LodMode::Exact
+    }
+
+    /// 按窗口尺寸与初始缩放构造相机，并应用总览适配。
+    fn build_camera(&mut self, width: u32, height: u32, scale: f32) -> Camera {
+        let mut camera = Camera::new(
+            width,
+            height,
+            scale,
+            self.timeline_ticks,
+            self.ppq,
+            self.initial_zoom,
+        );
+        if self.overview {
+            let fit_x = camera.canvas_width() / camera.total_ticks.max(1) as f32;
+            camera.zoom_x = fit_x.clamp(0.0002, 40.0);
+            camera.zoom_y = (camera.canvas_height() / camera.key_count.max(1) as f32).max(1.0);
+            camera.scroll_x = 0.0;
+            camera.target_scroll_x = 0.0;
+            camera.scroll_y = 0.0;
+            self.initial_zoom = camera.zoom_x;
+        }
+        camera
+    }
+
+    /// 基准模式下构造 Bench 并应用到相机，重置帧间隔与统计窗口。
+    fn start_bench(&mut self, camera: &mut Camera, seconds: u64) {
+        let bench = if self.bench_zoom {
+            let bench = Bench::new_zoom(
+                camera,
+                &self.index,
+                seconds,
+                self.bench_zoom_high,
+                2.0,
+                self.bench_zoom_low,
+            );
+            camera.zoom_x = bench.start_zoom();
+            camera.scroll_x = bench.start_scroll();
+            camera.target_scroll_x = camera.scroll_x;
+            bench
+        } else {
+            let mut bench = Bench::new(camera, &self.index, seconds);
+            if self.overview {
+                bench.set_start(0.0);
+            }
+            camera.scroll_x = bench.start_scroll();
+            camera.target_scroll_x = camera.scroll_x;
+            bench
+        };
+        self.bench = Some(bench);
+        self.frame_interval = Duration::ZERO;
+        self.stats.reset();
     }
 }
