@@ -64,6 +64,60 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
         return;
     }
 
+    let pill = compute_pill_rect(model, area);
+    let pill_resp = draw_pill(ui, pill);
+
+    let mut items: Vec<(ToolPanelItemKind, Rect)> = Vec::with_capacity(model.items.len());
+    let mut x = pill.left() + PAD;
+    let y = pill.top() + PAD;
+
+    let grip_resp = draw_grip(ui, x, y, &model.grip_tooltip);
+    x += GRIP_W + SPACING;
+    divider(ui, x, y);
+    x += 1.0 + SPACING;
+    x = draw_tool_items(ui, icons, model, x, y, &mut items);
+    divider(ui, x, y);
+    x += 1.0 + SPACING;
+    let thickness = draw_right_end(ui, icons, model, x, y);
+
+    handle_drag(ui, pill_resp, grip_resp);
+
+    let mut blocked = vec![pill];
+    if let Some(panel) = &model.panel {
+        let owner = match panel.owner() {
+            ToolPanelPanelOwner::Item(kind) => items
+                .iter()
+                .find(|(item, _)| *item == kind)
+                .map(|(_, rect)| *rect),
+            ToolPanelPanelOwner::Thickness => Some(thickness),
+        };
+        if let Some(owner) = owner {
+            let rect = place_panel(area, owner, panel_height(panel));
+            // 独立图层：设置面板覆盖区域内不再命中卷帘骨架。
+            super::floating_panel(ui.ctx(), "lumino.tool-panel.settings", rect, |ui| {
+                panels::show(ui, panel, rect, &mut blocked, icons);
+                None
+            });
+        }
+    }
+
+    close_if_outside(ui, model, &blocked);
+
+    super::menu::extend_blocked(ui.ctx(), blocked);
+
+    set_triggers(
+        ui.ctx(),
+        Triggers {
+            pill,
+            area,
+            items,
+            thickness,
+        },
+    );
+}
+
+/// 按条目数与固定按钮数推导胶囊矩形。
+fn compute_pill_rect(model: &ToolPanelModel, area: Rect) -> Rect {
     let widths: f32 = model.items.iter().map(|_| BUTTON).sum::<f32>();
     let separators = 1.0 + 1.0;
     let width = PAD * 2.0
@@ -73,14 +127,17 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
         + BUTTON * 2.0
         + SPACING * (model.items.len() as f32 + 4.0);
     let center_x = area.center().x + model.offset.0;
-    let pill = Rect::from_min_size(
+    Rect::from_min_size(
         Pos2::new(
             center_x - width / 2.0,
             area.bottom() - model.offset.1 - PILL_H,
         ),
         Vec2::new(width, PILL_H),
-    );
+    )
+}
 
+/// 绘制胶囊底与描边，并先注册拖动命中区。
+fn draw_pill(ui: &mut egui::Ui, pill: Rect) -> egui::Response {
     // 胶囊底 + 描边 + 内容。
     ui.painter().rect(
         pill,
@@ -92,16 +149,15 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
 
     // 胶囊拖动命中区必须先注册：egui 里后注册的控件在上层，若放到按钮之后
     // 会把所有按钮的点击吞掉（按压被胶囊抢走，按钮永远点不中）。
-    let pill_resp = ui.interact(
+    ui.interact(
         pill,
         Id::unique("lumino.tool-panel.pill"),
         Sense::click_and_drag(),
-    );
+    )
+}
 
-    let mut items: Vec<(ToolPanelItemKind, Rect)> = Vec::with_capacity(model.items.len());
-    let mut x = pill.left() + PAD;
-    let y = pill.top() + PAD;
-
+/// 绘制拖拽柄竖条并注册拖动命中区。
+fn draw_grip(ui: &mut egui::Ui, x: f32, y: f32, tooltip: &str) -> egui::Response {
     // 拖拽柄：两根竖条。
     let grip = Rect::from_min_size(Pos2::new(x, y), Vec2::new(GRIP_W, BUTTON));
     let bars_total = BAR_W * 2.0 + BAR_GAP;
@@ -122,26 +178,34 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
         Id::unique("lumino.tool-panel.grip"),
         Sense::click_and_drag(),
     );
-    let grip_resp = crate::widgets::hover_text(grip_resp, &model.grip_tooltip);
+    let grip_resp = crate::widgets::hover_text(grip_resp, tooltip);
     if grip_resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
-    x += GRIP_W + SPACING;
+    grip_resp
+}
 
-    // 分隔竖线。
-    let divider = |ui: &egui::Ui, x: f32| {
-        ui.painter().rect_filled(
-            Rect::from_min_size(
-                Pos2::new(x, y + (BUTTON - DIVIDER_H) / 2.0),
-                Vec2::new(1.0, DIVIDER_H),
-            ),
-            0,
-            theme::selected_bg(),
-        );
-    };
-    divider(ui, x);
-    x += 1.0 + SPACING;
+/// 分隔竖线。
+fn divider(ui: &egui::Ui, x: f32, y: f32) {
+    ui.painter().rect_filled(
+        Rect::from_min_size(
+            Pos2::new(x, y + (BUTTON - DIVIDER_H) / 2.0),
+            Vec2::new(1.0, DIVIDER_H),
+        ),
+        0,
+        theme::selected_bg(),
+    );
+}
 
+/// 绘制工具条目，返回更新后的横坐标。
+fn draw_tool_items(
+    ui: &mut egui::Ui,
+    icons: &mut IconCache,
+    model: &ToolPanelModel,
+    mut x: f32,
+    y: f32,
+    items: &mut Vec<(ToolPanelItemKind, Rect)>,
+) -> f32 {
     for entry in &model.items {
         let cell = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(BUTTON));
         let response = item_cell(
@@ -166,10 +230,17 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
         items.push((entry.kind, cell));
         x += BUTTON + SPACING;
     }
+    x
+}
 
-    divider(ui, x);
-    x += 1.0 + SPACING;
-
+/// 绘制右端「粗细」与齿轮按钮，返回「粗细」矩形。
+fn draw_right_end(
+    ui: &mut egui::Ui,
+    icons: &mut IconCache,
+    model: &ToolPanelModel,
+    mut x: f32,
+    y: f32,
+) -> Rect {
     // 右端「粗细」+ 齿轮。
     let thickness = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(BUTTON));
     let resp = item_cell(
@@ -201,7 +272,11 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
     if resp.clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::OpenDrawSettings);
     }
+    thickness
+}
 
+/// 处理胶囊拖动动作（优先拖拽柄，其次胶囊空白）。
+fn handle_drag(ui: &mut egui::Ui, pill_resp: egui::Response, grip_resp: egui::Response) {
     // 胶囊拖动：优先拖拽柄，其次胶囊空白（按钮在上层，不会误触）。
     // 释放帧 `dragged()` 已为 false、只有 `drag_stopped()` 为 true：
     // 必须把它也纳入选择，否则会回退到未拖拽的胶囊响应而丢掉结束事件。
@@ -225,48 +300,20 @@ pub fn show_overlay(ui: &mut egui::Ui, model: &ToolPanelModel, icons: &mut IconC
     } else if drag.drag_stopped() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::ToolPanelDragEnded);
     }
+}
 
-    let mut blocked = vec![pill];
-    if let Some(panel) = &model.panel {
-        let owner = match panel.owner() {
-            ToolPanelPanelOwner::Item(kind) => items
-                .iter()
-                .find(|(item, _)| *item == kind)
-                .map(|(_, rect)| *rect),
-            ToolPanelPanelOwner::Thickness => Some(thickness),
-        };
-        if let Some(owner) = owner {
-            let rect = place_panel(area, owner, panel_height(panel));
-            // 独立图层：设置面板覆盖区域内不再命中卷帘骨架。
-            super::floating_panel(ui.ctx(), "lumino.tool-panel.settings", rect, |ui| {
-                panels::show(ui, panel, rect, &mut blocked, icons);
-                None
-            });
-        }
-    }
-
+/// 面板外点击与 Esc 关闭。
+fn close_if_outside(ui: &egui::Ui, model: &ToolPanelModel, blocked: &[Rect]) {
     // 面板外点击 / Esc 关闭（点击胶囊按钮时其动作已占位，不会互相覆盖）。
     if let Some(panel) = &model.panel {
         let ctx = ui.ctx();
-        if !toolbar_popup::action_pending(ctx) && clicks_outside(ui, &blocked) {
+        if !toolbar_popup::action_pending(ctx) && clicks_outside(ui, blocked) {
             toolbar_popup::push_action(ctx, close_action(panel));
         }
         if !toolbar_popup::action_pending(ctx) && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             toolbar_popup::push_action(ctx, close_action(panel));
         }
     }
-
-    super::menu::extend_blocked(ui.ctx(), blocked);
-
-    set_triggers(
-        ui.ctx(),
-        Triggers {
-            pill,
-            area,
-            items,
-            thickness,
-        },
-    );
 }
 
 /// 指针是否在占用区外点击。

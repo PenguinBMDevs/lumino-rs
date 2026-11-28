@@ -45,17 +45,8 @@ pub(super) fn show(
     blocked: &mut Vec<Rect>,
 ) {
     let x = rect.left() + (rect.width() - CONTENT_W) / 2.0;
-    let mut y = rect.top() + PAD;
     let params = &model.params;
-
-    // Font 行：标签 + 自绘下拉（弹层在面板内容之后绘制，避免被后续行盖住）。
-    label(ui, x, y, FONT_ROW_H, "Font");
-    let field = Rect::from_min_size(
-        Pos2::new(x + LABEL_W + 6.0, y),
-        Vec2::new(150.0, FONT_ROW_H),
-    );
-    let font_open = font::field(ui, field, model);
-    y += FONT_ROW_H + GAP;
+    let (mut y, field, font_open) = font_row(ui, x, rect.top() + PAD, model);
 
     // Size：4..=96，步进 0.1。
     y = slider_row(
@@ -69,7 +60,38 @@ pub(super) fn show(
         |p, v| p.size = v,
         params,
     );
+    y = weight_row(ui, x, y, params);
+    y = italic_row(ui, x, y, params);
+    y = unit_row(ui, x, y, params);
 
+    // Tracking / Leading / Threshold / Grow。
+    y = tracking_leading_row(ui, x, y, params);
+    y = align_row(ui, x, y, params);
+    y = threshold_grow_row(ui, x, y, params);
+    mode_row(ui, x, y, model.mode);
+    y += 22.0 + GAP;
+    reset_row(ui, x, y);
+
+    // 字体弹层最后画：盖住面板内容而不是被后续行覆盖。
+    if font_open {
+        font::popup(ui, field, model, blocked);
+    }
+}
+
+/// 字体行：标签、自绘下拉框与展开状态。
+fn font_row(ui: &mut egui::Ui, x: f32, y: f32, model: &TextParamsPanelModel) -> (f32, Rect, bool) {
+    // Font 行：标签 + 自绘下拉（弹层在面板内容之后绘制，避免被后续行盖住）。
+    label(ui, x, y, FONT_ROW_H, "Font");
+    let field = Rect::from_min_size(
+        Pos2::new(x + LABEL_W + 6.0, y),
+        Vec2::new(150.0, FONT_ROW_H),
+    );
+    let font_open = font::field(ui, field, model);
+    (y + FONT_ROW_H + GAP, field, font_open)
+}
+
+/// 字重行：整数滑杆与数值显示。
+fn weight_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
     // Weight：100..=900，步进 100（显示整数）。
     label(ui, x, y, ROW_H, "Weight");
     let weight = f32::from(params.weight);
@@ -88,8 +110,11 @@ pub(super) fn show(
         push_changed(ui, next);
     }
     value_text(ui, x, y, &format!("{}", params.weight));
-    y += ROW_H + GAP;
+    y + ROW_H + GAP
+}
 
+/// 斜体开关行。
+fn italic_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
     // Italic 开关。
     label(ui, x, y, ROW_H, "Italic");
     let button = Rect::from_min_size(
@@ -101,8 +126,11 @@ pub(super) fn show(
         next.italic = !next.italic;
         push_changed(ui, next);
     }
-    y += ROW_H + GAP;
+    y + ROW_H + GAP
+}
 
+/// 排版单位行。
+fn unit_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
     // Unit：Font / Rows。
     label(ui, x, y, ROW_H, "Unit");
     let mut bx = x + LABEL_W + 4.0;
@@ -119,10 +147,12 @@ pub(super) fn show(
         }
         bx += button.width() + 4.0;
     }
-    y += ROW_H + GAP;
+    y + ROW_H + GAP
+}
 
-    // Tracking / Leading / Threshold / Grow。
-    y = slider_row(
+/// 字距与行距滑杆行。
+fn tracking_leading_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
+    let y = slider_row(
         ui,
         x,
         y,
@@ -133,7 +163,7 @@ pub(super) fn show(
         |p, v| p.tracking = v,
         params,
     );
-    y = slider_row(
+    slider_row(
         ui,
         x,
         y,
@@ -143,8 +173,37 @@ pub(super) fn show(
         0.1,
         |p, v| p.leading = v,
         params,
-    );
+    )
+}
 
+/// 阈值与增长滑杆行。
+fn threshold_grow_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
+    let y = slider_row(
+        ui,
+        x,
+        y,
+        "Threshold",
+        params.threshold,
+        0.0..=100.0,
+        0.1,
+        |p, v| p.threshold = v,
+        params,
+    );
+    slider_row(
+        ui,
+        x,
+        y,
+        "Grow",
+        params.grow,
+        -10.0..=10.0,
+        0.1,
+        |p, v| p.grow = v,
+        params,
+    )
+}
+
+/// 对齐方式行。
+fn align_row(ui: &mut egui::Ui, x: f32, y: f32, params: &TextParams) -> f32 {
     // Align：L / C / R。
     label(ui, x, y, ROW_H, "Align");
     let mut bx = x + LABEL_W + 4.0;
@@ -165,34 +224,14 @@ pub(super) fn show(
         }
         bx += button.width() + 4.0;
     }
-    y += ROW_H + GAP;
+    y + ROW_H + GAP
+}
 
-    y = slider_row(
-        ui,
-        x,
-        y,
-        "Threshold",
-        params.threshold,
-        0.0..=100.0,
-        0.1,
-        |p, v| p.threshold = v,
-        params,
-    );
-    y = slider_row(
-        ui,
-        x,
-        y,
-        "Grow",
-        params.grow,
-        -10.0..=10.0,
-        0.1,
-        |p, v| p.grow = v,
-        params,
-    );
-
+/// 布局模式行：当前模式提示与切换按钮。
+fn mode_row(ui: &mut egui::Ui, x: f32, y: f32, mode: TextLayoutMode) {
     // Mode：当前模式 + 切换按钮（LegacyBox ⇄ Parametric）。
     label(ui, x, y, 22.0, "Mode");
-    let (current, target) = match model.mode {
+    let (current, target) = match mode {
         TextLayoutMode::LegacyBox => ("LegacyBox", "Parametric"),
         TextLayoutMode::Parametric => ("Parametric", "LegacyBox"),
     };
@@ -240,9 +279,11 @@ pub(super) fn show(
     if response.clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::TextLayoutModeToggle);
     }
+}
 
+/// 恢复默认排版参数行。
+fn reset_row(ui: &mut egui::Ui, x: f32, y: f32) {
     // Reset：恢复默认排版参数（保留字体 / 模式）。单独一行，避免和 Mode 挤在一起误触。
-    y += 22.0 + GAP;
     label(ui, x, y, ROW_H, "Reset");
     let reset = Rect::from_min_size(
         Pos2::new(x + LABEL_W + 4.0, y),
@@ -250,11 +291,6 @@ pub(super) fn show(
     );
     if panels::small_button(ui, reset, "Defaults", false, "lumino.text.reset").clicked() {
         toolbar_popup::push_action(ui.ctx(), ToolbarAction::TextParamsReset);
-    }
-
-    // 字体弹层最后画：盖住面板内容而不是被后续行覆盖。
-    if font_open {
-        font::popup(ui, field, model, blocked);
     }
 }
 
