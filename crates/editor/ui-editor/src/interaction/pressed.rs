@@ -155,94 +155,15 @@ impl Editor {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
             match sel_hit_type {
                 crate::SelectionHitType::Inside => {
-                    // 飞行串行化：若有未完成的异步提交，先等待落盘再构建新拖动，
-                    // 否则新 DragState 基于旧索引 + 松手累积会污染飞行中的 pending。
-                    if self.editor_state.data.has_pending_commit() {
-                        self.drain_async_commit();
-                        if !self.has_selection() {
-                            return;
-                        }
-                    }
-                    // ghost 方案（累积模式）：从选中集合构建 DragState
-                    let note_count = self.editor_state.data.current_track_note_count();
-                    let drag_state = DragState::from_indices(
-                        self.get_selected_indices(),
-                        note_count,
-                        snapped_tick as i64,
-                        key as i16,
-                    );
-                    // 复制模式判定：
-                    // - 无 pending_copy（首次复制）：唯一框 = 选中集合框，
-                    //   Ctrl + 拖动 = 复制（原件不动、副本跟手）
-                    // - 有 pending_copy（复制未提交）：唯一框 = **副本框**
-                    //   （只保留最新件框选，原件不再框选）→ Ctrl + 拖动 =
-                    //   从副本继续复制下一份
-                    // - 无 Ctrl：移动（DraggingSelection）
-                    // 原件区域（复制模式下无框）走 priority 2 单音符命中 → 移动单个原件
-                    if self.ctrl_pressed() {
-                        // Ctrl + 拖动（首次复制 / 从副本框继续复制）：
-                        // 原始音符不动，副本跟随鼠标预览，松手后待点击空白处才写入内存层
-                        self.editor_state.interaction.edit_state =
-                            crate::EditState::DraggingSelectionCopy { drag_state };
-                    } else {
-                        // NoteMove 操作日志化：批量拖动期间不 push 快照，
-                        // 松手时构造 MoveOp 异步提交。
-                        self.editor_state.interaction.edit_state =
-                            crate::EditState::DraggingSelection { drag_state };
-                    }
+                    // 等待落盘后选区已空时，`press_selection_inside` 内部直接结束；
+                    // 本分支之后没有其它按下处理，函数自然返回。
+                    self.press_selection_inside(snapped_tick, key);
                 }
                 crate::SelectionHitType::LeftEdge => {
-                    // 框选左边缘拉伸：先串行化 pending 拖动（保留选区，要在当前选区上拉伸）
-                    // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
-                    // 未提交的复制（pending_copy）与新操作冲突：直接丢弃（不写入），
-                    // 否则 commit_pending_copy 会替换选中集合，导致拉伸作用到副本上。
-                    // 复合串行化例外：拖动已松手（操作完成）但框选未取消时，
-                    // 为避免 pending 索引在拉伸重排后失配 + 异步整轨写回覆盖拉伸变更，
-                    // 此处先提交并等待落盘（drain），保留新值选区再拉伸。
-                    // 纯拖动（无后续拉伸）仍只在空白处取消时落盘，满足幽灵语义。
-                    self.transient.pending_copy = None;
-                    if self.transient.pending_drag.is_some() {
-                        self.commit_pending_drag();
-                        // 等待异步整轨写回完成，避免后台线程覆盖随后的拉伸变更。
-                        self.drain_async_commit();
-                        // 落盘后选中已跟随新值（poll 按新值重选），远端高亮同步到新位置。
-                        if self.editor_state.data.collab_sync_enabled() {
-                            let fps = self.selected_fingerprints();
-                            self.transient.emit_local_selection_changed(true, &fps);
-                        }
-                        // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
-                        // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
-                        // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
-                        self.selection_ui.set_bounds(None);
-                    }
-                    self.push_history();
-                    self.editor_state.interaction.edit_state =
-                        crate::EditState::ResizingSelectionStart {
-                            origin_tick: snapped_tick,
-                            last_tick: snapped_tick,
-                        };
+                    self.press_selection_left_edge(snapped_tick);
                 }
                 crate::SelectionHitType::RightEdge => {
-                    // 框选右边缘拉伸：同 LeftEdge，串行化 pending 后保留选区
-                    // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
-                    self.transient.pending_copy = None;
-                    if self.transient.pending_drag.is_some() {
-                        self.commit_pending_drag();
-                        // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
-                        self.drain_async_commit();
-                        if self.editor_state.data.collab_sync_enabled() {
-                            let fps = self.selected_fingerprints();
-                            self.transient.emit_local_selection_changed(true, &fps);
-                        }
-                        // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
-                        self.selection_ui.set_bounds(None);
-                    }
-                    self.push_history();
-                    self.editor_state.interaction.edit_state =
-                        crate::EditState::ResizingSelectionEnd {
-                            origin_tick: snapped_tick,
-                            last_tick: snapped_tick,
-                        };
+                    self.press_selection_right_edge(snapped_tick);
                 }
             }
         } else if let Some((index, hit_type)) = hit_result {
@@ -261,43 +182,166 @@ impl Editor {
             self.start_note_edit(index, hit_type, pos);
         } else {
             // 优先级 3：都未命中 → 点击空白处，提交 pending 拖动 + 开始新框选
-            flush_pending_drag(self);
-            self.playback_position = snapped_tick;
-            self.selection_clear();
-            // Y 向框选工具：Y 维度自动覆盖全部可见键范围（纵向转置：Y 为 tick，X 为 key）
-            let (start_key, current_key, start_y, current_y) = if is_y_select {
-                if self.editor_state.is_vertical_roll {
-                    let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-                    let grid_bottom =
-                        self.editor_state.canvas.size_y - self.editor_state.view.keyboard_width;
-                    // 纵向 Y=时间，覆盖全高；key 覆盖全键盘（X 维度）
-                    (max_key, 0, 0.0, grid_bottom.max(0.0))
-                } else {
-                    let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-                    let top_y = self.editor_state.view.key_to_y(max_key);
-                    let bottom_y =
-                        self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
-                    (max_key, 0, top_y, bottom_y)
-                }
-            } else if self.editor_state.is_vertical_roll {
-                // 纵向：Y 为时间轴，起点为 tick 对应的屏幕 Y（零高初始框，拖动时扩展）
-                let y = self.tick_to_y_vertical(tick);
-                (key, key, y, y)
+            self.start_pointer_marquee(
+                snapped_tick,
+                tick,
+                key,
+                is_y_select,
+                (selection_start_tick, selection_current_tick),
+            );
+        }
+    }
+
+    /// 框选内部按下：构建 `DragState` 并进入拖动（Ctrl 为复制拖动）
+    ///
+    /// 等待落盘后选区已空时直接结束（本函数之后没有其它按下处理）。
+    fn press_selection_inside(&mut self, snapped_tick: f32, key: u16) {
+        // 飞行串行化：若有未完成的异步提交，先等待落盘再构建新拖动，
+        // 否则新 DragState 基于旧索引 + 松手累积会污染飞行中的 pending。
+        if self.editor_state.data.has_pending_commit() {
+            self.drain_async_commit();
+            if !self.has_selection() {
+                return;
+            }
+        }
+        // ghost 方案（累积模式）：从选中集合构建 DragState
+        let note_count = self.editor_state.data.current_track_note_count();
+        let drag_state = DragState::from_indices(
+            self.get_selected_indices(),
+            note_count,
+            snapped_tick as i64,
+            key as i16,
+        );
+        // 复制模式判定：
+        // - 无 pending_copy（首次复制）：唯一框 = 选中集合框，
+        //   Ctrl + 拖动 = 复制（原件不动、副本跟手）
+        // - 有 pending_copy（复制未提交）：唯一框 = **副本框**
+        //   （只保留最新件框选，原件不再框选）→ Ctrl + 拖动 =
+        //   从副本继续复制下一份
+        // - 无 Ctrl：移动（DraggingSelection）
+        // 原件区域（复制模式下无框）走 priority 2 单音符命中 → 移动单个原件
+        if self.ctrl_pressed() {
+            // Ctrl + 拖动（首次复制 / 从副本框继续复制）：
+            // 原始音符不动，副本跟随鼠标预览，松手后待点击空白处才写入内存层
+            self.editor_state.interaction.edit_state =
+                crate::EditState::DraggingSelectionCopy { drag_state };
+        } else {
+            // NoteMove 操作日志化：批量拖动期间不 push 快照，
+            // 松手时构造 MoveOp 异步提交。
+            self.editor_state.interaction.edit_state =
+                crate::EditState::DraggingSelection { drag_state };
+        }
+    }
+
+    /// 框选左边缘按下：串行化 pending 后进入「向左侧拉伸」状态
+    fn press_selection_left_edge(&mut self, snapped_tick: f32) {
+        // 框选左边缘拉伸：先串行化 pending 拖动（保留选区，要在当前选区上拉伸）
+        // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
+        // 未提交的复制（pending_copy）与新操作冲突：直接丢弃（不写入），
+        // 否则 commit_pending_copy 会替换选中集合，导致拉伸作用到副本上。
+        // 复合串行化例外：拖动已松手（操作完成）但框选未取消时，
+        // 为避免 pending 索引在拉伸重排后失配 + 异步整轨写回覆盖拉伸变更，
+        // 此处先提交并等待落盘（drain），保留新值选区再拉伸。
+        // 纯拖动（无后续拉伸）仍只在空白处取消时落盘，满足幽灵语义。
+        self.transient.pending_copy = None;
+        if self.transient.pending_drag.is_some() {
+            self.commit_pending_drag();
+            // 等待异步整轨写回完成，避免后台线程覆盖随后的拉伸变更。
+            self.drain_async_commit();
+            // 落盘后选中已跟随新值（poll 按新值重选），远端高亮同步到新位置。
+            if self.editor_state.data.collab_sync_enabled() {
+                let fps = self.selected_fingerprints();
+                self.transient.emit_local_selection_changed(true, &fps);
+            }
+            // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
+            // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
+            // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
+            self.selection_ui.set_bounds(None);
+        }
+        self.push_history();
+        self.editor_state.interaction.edit_state = crate::EditState::ResizingSelectionStart {
+            origin_tick: snapped_tick,
+            last_tick: snapped_tick,
+        };
+    }
+
+    /// 框选右边缘按下：同左边缘，串行化 pending 后进入「向右侧拉伸」状态
+    fn press_selection_right_edge(&mut self, snapped_tick: f32) {
+        // 框选右边缘拉伸：同 LeftEdge，串行化 pending 后保留选区
+        // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
+        self.transient.pending_copy = None;
+        if self.transient.pending_drag.is_some() {
+            self.commit_pending_drag();
+            // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
+            self.drain_async_commit();
+            if self.editor_state.data.collab_sync_enabled() {
+                let fps = self.selected_fingerprints();
+                self.transient.emit_local_selection_changed(true, &fps);
+            }
+            // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
+            self.selection_ui.set_bounds(None);
+        }
+        self.push_history();
+        self.editor_state.interaction.edit_state = crate::EditState::ResizingSelectionEnd {
+            origin_tick: snapped_tick,
+            last_tick: snapped_tick,
+        };
+    }
+
+    /// 空白处按下：提交 pending 拖动并进入新框选
+    ///
+    /// `marquee` 是按下阶段 `begin_marquee_ticks` 算出的框选两端 tick——该调用带锚点
+    /// 副作用，只能执行一次，故由调用方算好再传入。
+    fn start_pointer_marquee(
+        &mut self,
+        snapped_tick: f32,
+        tick: f32,
+        key: u16,
+        is_y_select: bool,
+        marquee: (f32, f32),
+    ) {
+        flush_pending_drag(self);
+        self.playback_position = snapped_tick;
+        self.selection_clear();
+        let (selection_start_tick, selection_current_tick) = marquee;
+        let (start_key, current_key, start_y, current_y) =
+            self.marquee_key_span(tick, key, is_y_select);
+        self.editor_state.interaction.edit_state = crate::EditState::Selecting {
+            start_tick: selection_start_tick,
+            start_key,
+            current_tick: selection_current_tick,
+            current_key,
+            start_y,
+            current_y,
+        };
+    }
+
+    /// 框选的起始/当前 key 与上下边界（Y 向工具纵向覆盖全部可见键）
+    fn marquee_key_span(&self, tick: f32, key: u16, is_y_select: bool) -> (u16, u16, f32, f32) {
+        // Y 向框选工具：Y 维度自动覆盖全部可见键范围（纵向转置：Y 为 tick，X 为 key）
+        if is_y_select {
+            if self.editor_state.is_vertical_roll {
+                let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+                let grid_bottom =
+                    self.editor_state.canvas.size_y - self.editor_state.view.keyboard_width;
+                // 纵向 Y=时间，覆盖全高；key 覆盖全键盘（X 维度）
+                (max_key, 0, 0.0, grid_bottom.max(0.0))
             } else {
-                // 上下精度 = 单个 key：起点/终点对齐到 key 线
-                let view = &self.editor_state.view;
-                let top_y = view.key_to_y(key);
-                let bottom_y = top_y + view.zoom_y;
-                (key, key, top_y, bottom_y)
-            };
-            self.editor_state.interaction.edit_state = crate::EditState::Selecting {
-                start_tick: selection_start_tick,
-                start_key,
-                current_tick: selection_current_tick,
-                current_key,
-                start_y,
-                current_y,
-            };
+                let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+                let top_y = self.editor_state.view.key_to_y(max_key);
+                let bottom_y = self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
+                (max_key, 0, top_y, bottom_y)
+            }
+        } else if self.editor_state.is_vertical_roll {
+            // 纵向：Y 为时间轴，起点为 tick 对应的屏幕 Y（零高初始框，拖动时扩展）
+            let y = self.tick_to_y_vertical(tick);
+            (key, key, y, y)
+        } else {
+            // 上下精度 = 单个 key：起点/终点对齐到 key 线
+            let view = &self.editor_state.view;
+            let top_y = view.key_to_y(key);
+            let bottom_y = top_y + view.zoom_y;
+            (key, key, top_y, bottom_y)
         }
     }
 

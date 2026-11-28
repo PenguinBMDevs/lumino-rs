@@ -6,6 +6,7 @@
 
 use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, Tool};
 use lumino_ui_core::Message;
+use lumino_ui_core::geom::Point;
 use lumino_ui_core::message::{EditorAction, LoopRangeAction, Point2};
 
 use super::PianoRollGrid;
@@ -80,89 +81,11 @@ pub fn dispatch(
             None
         }
         CanvasEvent::Press { local: pos, button } => match button {
-            CanvasButton::Left => {
-                let local_pos = local(pos);
-                // ShapeStore 列表 / 区域着色优先于普通画布交互。
-                if let Some(action) = crate::grid::shape_list_box::press_action(editor, local_pos) {
-                    return action.map(Message::EditorAction);
-                }
-                if let Some(action) = crate::grid::area_paint_box::press_action(editor, local_pos) {
-                    return action.map(Message::EditorAction);
-                }
-                grid.handle_left_press(state, local_pos)
-            }
-            CanvasButton::Right => {
-                let local_pos = local(pos);
-                if editor.shape_tools.list_open {
-                    return Some(Message::EditorAction(EditorAction::ShapeListClose));
-                }
-                // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
-                if let Some(action) = crate::grid::area_paint_box::clear_action(editor, local_pos) {
-                    return Some(Message::EditorAction(action));
-                }
-                // 仅在有效钢琴卷帘区域内打开右键菜单
-                if editor.is_inside_canvas(local_pos) {
-                    // 待确认镜像：选择工具与它的 owner 工具都可直接右键；
-                    // 已确认图形只在对齐的鼠标工具下开放。
-                    let target = match editor.drawn_shape_pending_at_screen(local_pos) {
-                        Some(true) => editor
-                            .pending_ref_at_screen(local_pos)
-                            .filter(|pending| editor.pending_menu_allowed(*pending))
-                            .map_or(ContextMenuTarget::Notes, |_| {
-                                ContextMenuTarget::PendingDrawnShape
-                            }),
-                        Some(false) if editor.editor_state.current_tool() == Tool::ShapeSelect => {
-                            ContextMenuTarget::DrawnShape
-                        }
-                        _ => ContextMenuTarget::Notes,
-                    };
-                    return Some(Message::PianoRollContextMenu(
-                        PianoRollContextMenuAction::Open {
-                            position: Point2::new(local_pos.x, local_pos.y),
-                            target,
-                        },
-                    ));
-                }
-                None
-            }
+            CanvasButton::Left => left_press(editor, state, &grid, local(pos)),
+            CanvasButton::Right => right_press(editor, local(pos)),
         },
-        CanvasEvent::Move { local: pos } => {
-            let local_pos = local(pos);
-            // 更新框选框平滑动画
-            editor.update_selection_box_animation(Some(local_pos));
-
-            if state.is_loop_dragging {
-                return Some(Message::LoopRange(LoopRangeAction::RulerMoved {
-                    x: local_pos.x,
-                    y: local_pos.y,
-                }));
-            }
-            if state.is_dragging_indicator {
-                return Some(Message::EditorAction(EditorAction::IndicatorDragMove {
-                    x: local_pos.x,
-                }));
-            }
-            if editor.is_inside_canvas(local_pos) {
-                return Some(Message::EditorAction(EditorAction::Moved(Point2::new(
-                    local_pos.x,
-                    local_pos.y,
-                ))));
-            }
-            None
-        }
-        CanvasEvent::Release => {
-            // 清除框选框动画状态
-            editor.selection_ui.clear_anim();
-
-            if state.is_loop_dragging {
-                state.is_loop_dragging = false;
-                return Some(Message::LoopRange(LoopRangeAction::RulerReleased));
-            }
-            if state.is_dragging_indicator {
-                state.is_dragging_indicator = false;
-            }
-            shared::released(editor)
-        }
+        CanvasEvent::Move { local: pos } => pointer_moved(editor, state, local(pos)),
+        CanvasEvent::Release => release(editor, state),
         CanvasEvent::Wheel {
             local: pos,
             delta_x,
@@ -185,6 +108,102 @@ pub fn dispatch(
             None
         }
     }
+}
+
+/// 左键：ShapeStore 列表 / 区域着色优先，其次交给网格按下逻辑。
+fn left_press(
+    editor: &Editor,
+    state: &mut GridInteractionState,
+    grid: &PianoRollGrid<'_>,
+    local_pos: Point,
+) -> Option<Message> {
+    // ShapeStore 列表 / 区域着色优先于普通画布交互。
+    if let Some(action) = crate::grid::shape_list_box::press_action(editor, local_pos) {
+        return action.map(Message::EditorAction);
+    }
+    if let Some(action) = crate::grid::area_paint_box::press_action(editor, local_pos) {
+        return action.map(Message::EditorAction);
+    }
+    grid.handle_left_press(state, local_pos)
+}
+
+/// 右键：关闭图形列表 / 清除区域着色 / 打开上下文菜单。
+fn right_press(editor: &Editor, local_pos: Point) -> Option<Message> {
+    if editor.shape_tools.list_open {
+        return Some(Message::EditorAction(EditorAction::ShapeListClose));
+    }
+    // 区域着色：右键写 colour=0（清除该区域），不打开上下文菜单。
+    if let Some(action) = crate::grid::area_paint_box::clear_action(editor, local_pos) {
+        return Some(Message::EditorAction(action));
+    }
+    // 仅在有效钢琴卷帘区域内打开右键菜单
+    if editor.is_inside_canvas(local_pos) {
+        // 待确认镜像：选择工具与它的 owner 工具都可直接右键；
+        // 已确认图形只在对齐的鼠标工具下开放。
+        let target = match editor.drawn_shape_pending_at_screen(local_pos) {
+            Some(true) => editor
+                .pending_ref_at_screen(local_pos)
+                .filter(|pending| editor.pending_menu_allowed(*pending))
+                .map_or(ContextMenuTarget::Notes, |_| {
+                    ContextMenuTarget::PendingDrawnShape
+                }),
+            Some(false) if editor.editor_state.current_tool() == Tool::ShapeSelect => {
+                ContextMenuTarget::DrawnShape
+            }
+            _ => ContextMenuTarget::Notes,
+        };
+        return Some(Message::PianoRollContextMenu(
+            PianoRollContextMenuAction::Open {
+                position: Point2::new(local_pos.x, local_pos.y),
+                target,
+            },
+        ));
+    }
+    None
+}
+
+/// 指针移动：循环区拖拽 / 指示线拖拽 / 画布内移动。
+fn pointer_moved(
+    editor: &Editor,
+    state: &GridInteractionState,
+    local_pos: Point,
+) -> Option<Message> {
+    // 更新框选框平滑动画
+    editor.update_selection_box_animation(Some(local_pos));
+
+    if state.is_loop_dragging {
+        return Some(Message::LoopRange(LoopRangeAction::RulerMoved {
+            x: local_pos.x,
+            y: local_pos.y,
+        }));
+    }
+    if state.is_dragging_indicator {
+        return Some(Message::EditorAction(EditorAction::IndicatorDragMove {
+            x: local_pos.x,
+        }));
+    }
+    if editor.is_inside_canvas(local_pos) {
+        return Some(Message::EditorAction(EditorAction::Moved(Point2::new(
+            local_pos.x,
+            local_pos.y,
+        ))));
+    }
+    None
+}
+
+/// 左键释放：结束循环区拖拽并发出 `Released`。
+fn release(editor: &Editor, state: &mut GridInteractionState) -> Option<Message> {
+    // 清除框选框动画状态
+    editor.selection_ui.clear_anim();
+
+    if state.is_loop_dragging {
+        state.is_loop_dragging = false;
+        return Some(Message::LoopRange(LoopRangeAction::RulerReleased));
+    }
+    if state.is_dragging_indicator {
+        state.is_dragging_indicator = false;
+    }
+    shared::released(editor)
 }
 
 #[cfg(test)]

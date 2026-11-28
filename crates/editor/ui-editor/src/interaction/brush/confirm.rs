@@ -9,6 +9,7 @@
 //! 小规模逐笔 `insert_note_with_id`（自动记录 GPU 段内增量事件），
 //! 大规模走批量归并（O(N+M) 单次重建）并显式补标受影响轨。
 
+use super::cells::BrushNoteItem;
 use crate::interaction::bake::BakePending;
 use crate::{Editor, Note};
 use lumino_core::shape::{ShapeGeometry, ShapeKind, ShapeModel};
@@ -37,6 +38,45 @@ impl Editor {
         }
         let snap = self.editor_state.view.snap_precision.max(1.0);
         let pending: Vec<_> = pending_with_stroke.iter().map(|(_, item)| *item).collect();
+        let (create_ops, affected) = self.write_brush_pending_notes(&pending, snap);
+
+        if create_ops.is_empty() {
+            return false;
+        }
+
+        // 一次 ✓ = 一个独立历史记录（多轨合并为一组，不参与 NoteCreate 合并窗口）
+        let group = self
+            .editor_state
+            .data
+            .history
+            .push_note_create_new_group(create_ops);
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected));
+        // Bake：保存 ✓ 前笔画，undo 恢复；✓ 后不登记 DrawnShape。
+        let pending = BakePending::Brush {
+            state: self.editor_state.brush_tool.clone(),
+            config: self.brush.clone(),
+        };
+        self.remember_bake(group, pending);
+        let models = self.brush_shape_models(pending_with_stroke, snap);
+        self.record_baked_shape_models(models);
+        // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
+        self.editor_state.brush_tool.reset();
+        self.rebuild_pending_mirrors();
+        self.mark_notes_changed();
+        true
+    }
+
+    /// 按规模分流写入待生成音符项，返回创建操作与受影响音轨集合
+    ///
+    /// 小规模逐笔插入（自动记录 GPU 段内增量事件），大规模按轨批量归并并由调用方
+    /// 补标受影响轨——批量 API 只标当前轨。
+    fn write_brush_pending_notes(
+        &mut self,
+        pending: &[BrushNoteItem],
+        snap: f32,
+    ) -> (Vec<CreateOp>, HashSet<usize>) {
         let total = pending.len();
 
         let track_count = self
@@ -51,7 +91,7 @@ impl Editor {
 
         if total <= BATCH_INSERT_THRESHOLD {
             // 小规模：逐笔插入（当前轨自动记录 GPU 段内增量事件，各轨自行标脏）
-            for item in &pending {
+            for item in pending {
                 let track = item.track;
                 if track >= track_count {
                     continue;
@@ -109,25 +149,15 @@ impl Editor {
             }
         }
 
-        if create_ops.is_empty() {
-            return false;
-        }
+        (create_ops, affected)
+    }
 
-        // 一次 ✓ = 一个独立历史记录（多轨合并为一组，不参与 NoteCreate 合并窗口）
-        let group = self
-            .editor_state
-            .data
-            .history
-            .push_note_create_new_group(create_ops);
-        self.editor_state
-            .data
-            .mark_track_notes_changed_for(Some(affected));
-        // Bake：保存 ✓ 前笔画，undo 恢复；✓ 后不登记 DrawnShape。
-        let pending = BakePending::Brush {
-            state: self.editor_state.brush_tool.clone(),
-            config: self.brush.clone(),
-        };
-        self.remember_bake(group, pending);
+    /// 按笔画归并已生成音符 → 只读图形模型（每条笔画一个；跨轨笔画跳过）
+    fn brush_shape_models(
+        &self,
+        pending_with_stroke: Vec<(usize, BrushNoteItem)>,
+        snap: f32,
+    ) -> Vec<(ShapeModel, Vec<ShapeNote>)> {
         // DRAW-041B / 242C：按笔画保留只读模型（每条笔画一个；跨轨笔画跳过）。
         let mut by_stroke: BTreeMap<usize, Vec<ShapeNote>> = BTreeMap::new();
         for (stroke, item) in pending_with_stroke {
@@ -140,7 +170,7 @@ impl Editor {
                 channel: 0,
             });
         }
-        let models = by_stroke
+        by_stroke
             .into_iter()
             .filter_map(|(stroke, notes)| {
                 let points = self
@@ -161,13 +191,7 @@ impl Editor {
                 model.geometry = ShapeGeometry::from_points(points);
                 Some((model, notes))
             })
-            .collect();
-        self.record_baked_shape_models(models);
-        // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
-        self.editor_state.brush_tool.reset();
-        self.rebuild_pending_mirrors();
-        self.mark_notes_changed();
-        true
+            .collect()
     }
 
     /// 取消全部待确认笔画（× 按钮）：笔画与**笔画历史栈**一并清空

@@ -158,9 +158,58 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
 
     // ① 待确认镜像：几何在拖动过程中已**即时写回**（`sync_pending_drag_geometry`），
     //    此处只补「尚未写回的残差」并为整次移动记一次历史（无文档变更）
+    let pending_moved = write_back_pending_residual(editor, &selected, dtick, dkey);
+
+    // ② 已确认图形：按值定位文档音符 → MoveOp（镜像无音符，天然不参与）
+    let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
+    let dt = dtick.round() as i64;
+    let dk = dkey.round() as i32;
+
+    // ②-1 按轨聚合「按值定位用的音符值」（登记时的值语义，与写入同源）
+    //    跨图形聚合后由同一份 `used` 集合去重，杜绝两个图形重复认领同一文档事件
+    let lookups_by_track = collect_move_lookups(&selected);
+
+    // ②-2 逐轨按值定位真实事件，构造 originals / moved（同值多份按份数分配）
+    let ops = build_move_ops(editor, &lookups_by_track, max_key, dt, dk);
+    if ops.is_empty() {
+        // 仅待确认几何被移动：文档未变 → 不写历史、不重建空间索引
+        return pending_moved;
+    }
+
+    let modified = editor
+        .editor_state
+        .data
+        .apply_move_ops(&ops, false, max_key);
+    if modified == 0 {
+        return pending_moved;
+    }
+    let group = editor.editor_state.data.push_move_op(ops);
+    // 整组共用同一分组：几何 / 音符值随组一起平移（待确认镜像已在 ① 写回）
+    for (id, _, pending) in selected {
+        if pending.is_some() {
+            continue;
+        }
+        editor
+            .editor_state
+            .shape_select
+            .translate_shape(id, Some(group), dtick, dkey);
+    }
+    editor.mark_notes_changed();
+    true
+}
+
+/// ① 待确认镜像的残差写回：补写尚未落到 owning tool 的几何增量，并记一次待确认历史
+///
+/// 返回是否有待确认几何被移动（此时文档可能完全没变）。
+fn write_back_pending_residual(
+    editor: &mut Editor,
+    selected: &[(u64, Vec<ShapeNote>, Option<PendingShapeRef>)],
+    dtick: f32,
+    dkey: f32,
+) -> bool {
     let mut pending_moved = false;
     let residual = editor.shape_tools.take_pending_drag_increment(dtick, dkey);
-    for (id, _, pending) in &selected {
+    for (id, _, pending) in selected {
         let Some(r) = *pending else {
             continue;
         };
@@ -177,16 +226,15 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
         pending_moved = true;
     }
     editor.shape_tools.reset_pending_drag_applied();
+    pending_moved
+}
 
-    // ② 已确认图形：按值定位文档音符 → MoveOp（镜像无音符，天然不参与）
-    let max_key = editor.editor_state.view.visible_key_count.saturating_sub(1);
-    let dt = dtick.round() as i64;
-    let dk = dkey.round() as i32;
-
-    // ②-1 按轨聚合「按值定位用的音符值」（登记时的值语义，与写入同源）
-    //    跨图形聚合后由同一份 `used` 集合去重，杜绝两个图形重复认领同一文档事件
+/// ②-1 按轨聚合「按值定位用的音符值」：待确认镜像没有文档音符，天然被跳过
+fn collect_move_lookups(
+    selected: &[(u64, Vec<ShapeNote>, Option<PendingShapeRef>)],
+) -> HashMap<usize, Vec<NoteEvent>> {
     let mut lookups_by_track: HashMap<usize, Vec<NoteEvent>> = HashMap::new();
-    for (_, notes, pending) in &selected {
+    for (_, notes, pending) in selected {
         if pending.is_some() {
             continue;
         }
@@ -199,11 +247,20 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
                 )));
         }
     }
+    lookups_by_track
+}
 
-    // ②-2 逐轨按值定位真实事件，构造 originals / moved（同值多份按份数分配）
+/// ②-2 逐轨按值定位真实事件，构造 originals / moved（同值多份按份数分配）
+fn build_move_ops(
+    editor: &Editor,
+    lookups_by_track: &HashMap<usize, Vec<NoteEvent>>,
+    max_key: u16,
+    dt: i64,
+    dk: i32,
+) -> Vec<MoveOp> {
     let mut ops: Vec<MoveOp> = Vec::new();
     let mut seq = 0u16;
-    for (track, lookups) in &lookups_by_track {
+    for (track, lookups) in lookups_by_track {
         let mut used: HashSet<usize> = HashSet::new();
         let mut originals: Vec<NoteEvent> = Vec::new();
         let mut moved: Vec<NoteEvent> = Vec::new();
@@ -254,31 +311,7 @@ fn move_selected_shapes(editor: &mut Editor, dtick: f32, dkey: f32) -> bool {
         });
         seq = seq.saturating_add(1);
     }
-    if ops.is_empty() {
-        // 仅待确认几何被移动：文档未变 → 不写历史、不重建空间索引
-        return pending_moved;
-    }
-
-    let modified = editor
-        .editor_state
-        .data
-        .apply_move_ops(&ops, false, max_key);
-    if modified == 0 {
-        return pending_moved;
-    }
-    let group = editor.editor_state.data.push_move_op(ops);
-    // 整组共用同一分组：几何 / 音符值随组一起平移（待确认镜像已在 ① 写回）
-    for (id, _, pending) in selected {
-        if pending.is_some() {
-            continue;
-        }
-        editor
-            .editor_state
-            .shape_select
-            .translate_shape(id, Some(group), dtick, dkey);
-    }
-    editor.mark_notes_changed();
-    true
+    ops
 }
 
 /// 删除一件待确认几何（鼠标工具 Delete；无音符 → 不动文档）

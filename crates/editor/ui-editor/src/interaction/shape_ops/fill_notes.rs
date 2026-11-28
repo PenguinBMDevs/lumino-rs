@@ -116,6 +116,50 @@ impl Editor {
             poly32.push(first);
         }
         let velocity = model.style.velocity.max(1);
+        let mut out = Vec::new();
+        for (key, pieces) in self.fill_rows(&poly32, key_count, model, spam) {
+            // 区域色只影响内部填充：未着色段保持 channel 0，之后仍可被 Cycle 接管；
+            // 显式区域色写成 AREA_LOCK_BASE + colour，Cycle 会跳过，生成结束后统一解锁。
+            for (span, colour) in row_coloured(&pieces, key, area, model) {
+                let Some(channel) =
+                    area_channel(colour, self.editor_state.use10, model.style.colour_slot)
+                else {
+                    continue;
+                };
+                if span.end > span.start {
+                    out.push(ShapeNote {
+                        track,
+                        tick: span.start,
+                        key,
+                        length: span.end - span.start,
+                        velocity,
+                        channel,
+                    });
+                }
+            }
+        }
+        if out.is_empty() {
+            // 显式 Areas 可能把整个内部标空；此时不能再退回描边，否则“空区域”失效。
+            if area.is_some() {
+                return Vec::new();
+            }
+            // 自交/退化轮廓可能一行区间都没有；保持可见性
+            return self.shape_outline_notes(poly, track, key_count, min_ticks, false, model);
+        }
+        out
+    }
+
+    /// 每行的成品区间：门长参数推导、整块方块与逐行切门都在这里一次完成
+    ///
+    /// `normalize` 的曲线只在本次调用内使用，调用方只拿到切好的区间，行循环
+    /// 不再重复推导 `gate0`/`gate1`/键范围。
+    fn fill_rows(
+        &self,
+        poly32: &[(f32, f32)],
+        key_count: i32,
+        model: &ShapeModel,
+        spam: bool,
+    ) -> Vec<(u16, Vec<Span>)> {
         let gate = spam_gate_ticks(self, model);
         let range = model.ops.iter().find_map(|op| match op {
             ShapeOp::GateRange(params) => Some(params),
@@ -133,28 +177,8 @@ impl Editor {
                     .max(1.0) as i64
             })
             .unwrap_or(gate0);
-        let k0 = poly32
-            .iter()
-            .map(|(_, key)| *key)
-            .fold(f32::INFINITY, f32::min)
-            .floor()
-            .max(0.0) as u16;
-        let k1 = poly32
-            .iter()
-            .map(|(_, key)| *key)
-            .fold(f32::NEG_INFINITY, f32::max)
-            .ceil()
-            .max(1.0) as u16;
-        let k1 = k1.max(k0.saturating_add(1));
-        let row_spans_all: Vec<(u16, Vec<Span>)> = (0..key_count)
-            .map(|key| {
-                let spans = row_spans_with(&poly32, key as f32, model.style.union)
-                    .into_iter()
-                    .map(|(start, end)| Span { start, end })
-                    .collect();
-                (key as u16, spans)
-            })
-            .collect();
+        let (k0, k1) = keys_span(poly32);
+        let row_spans_all = polygon_rows(poly32, key_count, model.style.union);
         let (time_lo, time_hi) = row_spans_all
             .iter()
             .flat_map(|(_, spans)| spans.iter())
@@ -201,61 +225,75 @@ impl Editor {
             } else {
                 spans
             };
-            // 区域色只影响内部填充：未着色段保持 channel 0，之后仍可被 Cycle 接管；
-            // 显式区域色写成 AREA_LOCK_BASE + colour，Cycle 会跳过，生成结束后统一解锁。
-            let coloured: Vec<(RowSpan, u8)> = match area {
-                Some(ctx) => {
-                    let rows: Vec<RowSpan> = pieces
-                        .iter()
-                        .map(|span| RowSpan {
-                            key,
-                            start: span.start,
-                            end: span.end,
-                        })
-                        .collect();
-                    row_pieces_coloured_with_borders(&rows, &ctx.map, ctx.box_, model.style.borders)
-                }
-                None => pieces
-                    .iter()
-                    .map(|span| {
-                        (
-                            RowSpan {
-                                key,
-                                start: span.start,
-                                end: span.end,
-                            },
-                            AREA_UNASSIGNED,
-                        )
-                    })
-                    .collect(),
-            };
-            for (span, colour) in coloured {
-                let Some(channel) =
-                    area_channel(colour, self.editor_state.use10, model.style.colour_slot)
-                else {
-                    continue;
-                };
-                if span.end > span.start {
-                    out.push(ShapeNote {
-                        track,
-                        tick: span.start,
-                        key,
-                        length: span.end - span.start,
-                        velocity,
-                        channel,
-                    });
-                }
-            }
-        }
-        if out.is_empty() {
-            // 显式 Areas 可能把整个内部标空；此时不能再退回描边，否则“空区域”失效。
-            if area.is_some() {
-                return Vec::new();
-            }
-            // 自交/退化轮廓可能一行区间都没有；保持可见性
-            return self.shape_outline_notes(poly, track, key_count, min_ticks, false, model);
+            out.push((key, pieces));
         }
         out
+    }
+}
+
+/// 按行解析多边形内部区间：`(key, 该行原始区间)`，行序即 `0..key_count`
+fn polygon_rows(poly32: &[(f32, f32)], key_count: i32, union: bool) -> Vec<(u16, Vec<Span>)> {
+    (0..key_count)
+        .map(|key| {
+            let spans = row_spans_with(poly32, key as f32, union)
+                .into_iter()
+                .map(|(start, end)| Span { start, end })
+                .collect();
+            (key as u16, spans)
+        })
+        .collect()
+}
+
+/// 多边形覆盖的键跨度；`k1` 至少为 `k0 + 1`，避免 keys 方向出现零宽区间
+fn keys_span(poly32: &[(f32, f32)]) -> (u16, u16) {
+    let k0 = poly32
+        .iter()
+        .map(|(_, key)| *key)
+        .fold(f32::INFINITY, f32::min)
+        .floor()
+        .max(0.0) as u16;
+    let k1 = poly32
+        .iter()
+        .map(|(_, key)| *key)
+        .fold(f32::NEG_INFINITY, f32::max)
+        .ceil()
+        .max(1.0) as u16;
+    let k1 = k1.max(k0.saturating_add(1));
+    (k0, k1)
+}
+
+/// 把一行的切片按区域色切开；无区域时统一标 `AREA_UNASSIGNED`
+fn row_coloured(
+    pieces: &[Span],
+    key: u16,
+    area: Option<&AreaContext>,
+    model: &ShapeModel,
+) -> Vec<(RowSpan, u8)> {
+    match area {
+        Some(ctx) => {
+            let rows: Vec<RowSpan> = pieces
+                .iter()
+                .map(|span| RowSpan {
+                    key,
+                    start: span.start,
+                    end: span.end,
+                })
+                .collect();
+            row_pieces_coloured_with_borders(&rows, &ctx.map, ctx.box_, model.style.borders)
+        }
+        None => pieces
+            .iter()
+            .map(|span| {
+                (
+                    RowSpan {
+                        key,
+                        start: span.start,
+                        end: span.end,
+                    },
+                    AREA_UNASSIGNED,
+                )
+            })
+            .collect(),
     }
 }
 
