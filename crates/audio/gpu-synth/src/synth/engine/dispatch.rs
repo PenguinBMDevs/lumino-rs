@@ -207,7 +207,6 @@ impl GpuSynth {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), SynthError> {
-        let device = &self.res.ctx.device;
         // Voice parameter uploads, staged through the persistent belt into
         // the SAME submission as the compute passes (one submit per block).
         {
@@ -220,7 +219,6 @@ impl GpuSynth {
                     self.params_dyn_buf.buffer(),
                     0,
                     checked_buffer_size(std::mem::size_of::<VoiceParamsDyn>() * n)?,
-                    device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_params[..n]));
             self.belt
@@ -229,7 +227,6 @@ impl GpuSynth {
                     self.states_buf.buffer(),
                     0,
                     checked_buffer_size(std::mem::size_of::<VoiceState>() * n)?,
-                    device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_states[..n]));
             // REF-LGS-010: 只上传本块新分配/改写的静态槽位（连续区间合并后
@@ -244,7 +241,6 @@ impl GpuSynth {
                         self.params_static_buf.buffer(),
                         u64::from(start) * VoiceParamsStatic::SIZE as u64,
                         checked_buffer_size(bytes.len())?,
-                        device,
                     )
                     .copy_from_slice(bytes);
             }
@@ -259,7 +255,6 @@ impl GpuSynth {
                         self.env_buf.buffer(),
                         env_start as u64 * EnvStageGpu::SIZE as u64,
                         checked_buffer_size(bytes.len())?,
-                        device,
                     )
                     .copy_from_slice(bytes);
                 self.env_pool.mark_uploaded();

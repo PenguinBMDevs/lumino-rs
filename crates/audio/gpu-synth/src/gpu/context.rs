@@ -73,7 +73,7 @@ pub fn create_gpu_context_offline() -> Result<GpuContext, SynthError> {
 
 /// 合成器期望的单 binding 上限（2 GiB - 1）：1 GiB 采样块必须整块绑定
 /// （见 [`SAMPLES_CHUNK_BYTES`] 与 `gpu.rs` 中 `SAMPLES_CHUNKS` 的注释）。
-const DESIRED_STORAGE_BINDING_SIZE: u32 = (1 << 31) - 1;
+const DESIRED_STORAGE_BINDING_SIZE: u64 = (1 << 31) - 1;
 
 /// 合成器期望的单 buffer 上限（2 GiB - 1），与 binding 上限同口径。
 const DESIRED_BUFFER_SIZE: u64 = (1 << 31) - 1;
@@ -109,7 +109,7 @@ fn required_limits(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
 /// 否则症状推迟到首次分配采样块才爆（`buffer size ... exceeds limit`），
 /// 现场归因成本高。
 fn warn_on_capability_shortfall(adapter_limits: &wgpu::Limits, adapter_info: &wgpu::AdapterInfo) {
-    let binding_limit = u64::from(adapter_limits.max_storage_buffer_binding_size);
+    let binding_limit = adapter_limits.max_storage_buffer_binding_size;
     if binding_limit < SAMPLES_CHUNK_BYTES {
         tracing::warn!(
             adapter = %adapter_info.name,
@@ -122,15 +122,16 @@ fn warn_on_capability_shortfall(adapter_limits: &wgpu::Limits, adapter_info: &wg
 }
 
 fn create_gpu_context_impl(forward_lost_hook: bool) -> Result<GpuContext, SynthError> {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
 
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         force_fallback_adapter: false,
         compatible_surface: None,
+        apply_limit_buckets: false,
     }))
     .map_err(|e| SynthError::GpuInit(format!("request_adapter failed: {e:?}")))?;
 
@@ -243,7 +244,7 @@ mod tests {
     fn test_required_limits_keep_desired_on_capable_adapter() {
         let capable = wgpu::Limits {
             max_storage_buffers_per_shader_stage: DESIRED_STORAGE_BUFFERS_PER_STAGE,
-            max_storage_buffer_binding_size: u32::MAX,
+            max_storage_buffer_binding_size: u64::from(u32::MAX),
             max_buffer_size: u64::MAX,
             ..wgpu::Limits::default()
         };
@@ -269,10 +270,10 @@ mod tests {
     #[test]
     fn test_required_limits_never_exceed_adapter() {
         let cases = [
-            (4_u32, 64_u32 << 20, 128_u64 << 20),
+            (4_u32, 64_u64 << 20, 128_u64 << 20),
             (8, 128 << 20, 256 << 20),
-            (16, 2_u32 << 30, 4_u64 << 30),
-            (32, u32::MAX, u64::MAX),
+            (16, 2_u64 << 30, 4_u64 << 30),
+            (32, u64::from(u32::MAX), u64::MAX),
         ];
 
         for (buffers, binding, buffer) in cases {

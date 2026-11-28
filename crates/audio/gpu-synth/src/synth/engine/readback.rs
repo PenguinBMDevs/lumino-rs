@@ -84,7 +84,17 @@ impl GpuSynth {
         let out_ok = out_res.unwrap_or(false);
         if out_ok {
             let slice = self.out_readback[p.out_slot].slice(..);
-            let mapped = slice.get_mapped_range();
+            let mapped = match slice.get_mapped_range() {
+                Ok(mapped) => mapped,
+                Err(e) => {
+                    // 映射已建立但取范围失败时必须解映射，否则下一次提交会因
+                    // 「buffer is still mapped」被 wgpu 校验拒绝。
+                    safe_unmap(&self.out_readback[p.out_slot]);
+                    return Err(SynthError::Gpu(format!(
+                        "output readback map range failed: {e:?}"
+                    )));
+                }
+            };
             let mut bytes = std::mem::take(&mut self.readback_out_scratch);
             bytes.clear();
             bytes.extend_from_slice(&mapped);
@@ -97,7 +107,16 @@ impl GpuSynth {
         let states_ok = states_res.unwrap_or(false);
         if states_ok {
             let rb = self.states_readback[p.states_slot].buffer();
-            let mapped = rb.slice(..).get_mapped_range();
+            let slice = rb.slice(..);
+            let mapped = match slice.get_mapped_range() {
+                Ok(mapped) => mapped,
+                Err(e) => {
+                    safe_unmap(rb);
+                    return Err(SynthError::Gpu(format!(
+                        "states readback map range failed: {e:?}"
+                    )));
+                }
+            };
             let mut bytes = self.last_states.take().unwrap_or_default();
             bytes.clear();
             bytes.extend_from_slice(&mapped);
@@ -112,10 +131,10 @@ impl GpuSynth {
         self.out_readback_cur ^= 1;
         self.states_readback_cur ^= 1;
         // The poll confirmed the pending submission (and every earlier one)
-        // finished, so every closed belt chunk is safe to reclaim. wgpu 27's
-        // StagingBelt additionally guards reuse itself: recalled chunks are
-        // re-mapped and only re-enter the free pool after the GPU releases
-        // them, so a chunk can never be overwritten while in flight.
+        // finished, so every closed belt chunk is safe to reclaim. StagingBelt
+        // additionally guards reuse itself: recalled chunks are re-mapped and
+        // only re-enter the free pool after the GPU releases them, so a chunk
+        // can never be overwritten while in flight.
         self.belt.recall();
         Ok(())
     }

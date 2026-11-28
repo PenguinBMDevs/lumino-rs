@@ -91,12 +91,11 @@ rand = "0.8"
 base64 = "0.22"
 async-trait = "0.1"
 # ── egui UI 层（草稿 / 重构）──
-# egui 0.37 需要 wgpu 30；当前主程序仍是 wgpu 27。两者只在 Cargo 层共存，
-# 运行期由独立 example 使用 wgpu 30，重构阶段再通过桥接收口。
+# egui 0.37 / egui-wgpu 0.37 要求 wgpu 30；全仓统一到 30，避免双版本共存。
 egui = { version = "0.37.0", features = ["default_fonts", "monochrome_emoji_fonts"] }
 egui_extras = "0.37.0"
 egui_kittest = { version = "0.37.0", features = ["wgpu"] }
-wgpu = "27.0"
+wgpu = "30.0"
 # GPU 合成后端（lumino-gpu-synth）所需音频/系统依赖
 # 注意：必须锁定 0.15.x 以与 xsynth-realtime 依赖的 cpal 版本统一，
 # 否则会出现两个 alsa-sys（native link）版本冲突，且 cpal 0.16+ 移除了
@@ -160,7 +159,7 @@ arboard = "3.4"
 im = { version = "15.1.0", features = ["rayon"] }
 # ── 渲染 ──
 half = "2.4"
-naga = "27.0"
+naga = "30.0"
 # ── 网络 ──
 tokio-tungstenite = "0.28"
 # ── 音频 / MIDI / 播放 ──

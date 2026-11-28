@@ -383,6 +383,8 @@ impl GpuSynth {
     fn assemble(config: SynthConfig, res: GpuResources, b: GpuBuffers, state: InitState) -> Self {
         let midi_channels = config.midi_channels;
         let max_voices = config.max_voices;
+        // wgpu 30 起 StagingBelt 在构造时持有 Device，write_buffer 不再逐次传入。
+        let belt = wgpu::util::StagingBelt::new(res.ctx.device.clone(), 1 << 20);
         Self {
             config,
             base_max_voices: max_voices,
@@ -458,7 +460,7 @@ impl GpuSynth {
             voice_templates: std::collections::HashMap::new(),
             states_sync_counter: 0,
             pending: None,
-            belt: wgpu::util::StagingBelt::new(1 << 20),
+            belt,
             render_checkpoint: None,
             render_progress: None,
         }
