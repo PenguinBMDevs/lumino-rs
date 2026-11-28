@@ -1,20 +1,10 @@
 {
-  "files_total": 2295,
-  "lines_total": 419820,
+  "files_total": 2304,
+  "lines_total": 420049,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
       "lines": 876,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/video_clip_timeline.rs",
-      "lines": 856,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/cloud_browser.rs",
-      "lines": 787,
       "test": false
     },
     {
@@ -134,7 +124,7 @@
     }
   ],
   "test_files_over_800": [],
-  "production_files_over_600": 13,
+  "production_files_over_600": 11,
   "functions_over_100": [
     {
       "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
@@ -669,13 +659,6 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-egui/src/cloud_browser.rs",
-      "name": "entry_row",
-      "line": 397,
-      "lines": 184,
-      "test": false
-    },
-    {
       "path": "crates/editor/gfx/src/midiconsole_renderer/render.rs",
       "name": "new",
       "line": 15,
@@ -897,13 +880,6 @@
       "name": "render_notes",
       "line": 112,
       "lines": 155,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/cloud_browser.rs",
-      "name": "show",
-      "line": 114,
-      "lines": 154,
       "test": false
     },
     {
@@ -1614,9 +1590,9 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui-egui/src/video_clip_timeline.rs",
+      "path": "crates/editor/ui-egui/src/video_clip_timeline/paint.rs",
       "name": "show",
-      "line": 335,
+      "line": 115,
       "lines": 112,
       "test": false
     },
