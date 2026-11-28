@@ -107,29 +107,7 @@ impl Root {
     pub(crate) fn handle_piano_roll_context_menu(&mut self, action: PianoRollContextMenuAction) {
         match action {
             PianoRollContextMenuAction::Open { position, target } => {
-                let pos = lumino_ui_core::geom::Point::new(position.x, position.y);
-                match target {
-                    // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
-                    // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
-                    ContextMenuTarget::DrawnShape | ContextMenuTarget::PendingDrawnShape => {
-                        if let Some(id) = self.editor.drawn_shape_at_screen(pos) {
-                            self.editor.select_drawn_shape(id);
-                        }
-                    }
-                    // 音符目标：右键点击音符且该音符不在选中集合时，先将其设为唯一选中。
-                    // 使菜单的 删除/剪切/复制 作用于"右键目标"，与 Delete 键
-                    // "有选中集合即删除选中集合"的语义一致——否则右键一个未选中的
-                    // 音符，菜单"删除"会删掉旧的批量选区。
-                    ContextMenuTarget::Notes => {
-                        if let Some((index, _)) = self.editor.hit_test_note(pos)
-                            && !self.editor.is_note_selected(index)
-                        {
-                            self.editor.selection_clear();
-                            self.editor.selection_insert(index);
-                        }
-                    }
-                }
-                self.editor.context_menu.open(pos, target);
+                self.open_piano_roll_menu(position, target);
             }
             PianoRollContextMenuAction::Close => {
                 self.editor.context_menu.close();
@@ -138,294 +116,412 @@ impl Root {
                 // 面板锚点要先取：`close()` 会清空 position
                 let menu_pos = self.editor.context_menu.position;
                 self.editor.context_menu.close();
-                match item {
-                    PianoRollContextMenuItem::BatchEdit => {
-                        crate::event::emit(crate::event::Event::Window(
-                            crate::event::window::Event::open_batch_edit_dialog(),
-                        ));
+                self.handle_piano_roll_menu_item(item, menu_pos);
+            }
+        }
+    }
+
+    /// 打开菜单：按目标把右键点落到对应选区，再记录锚点。
+    fn open_piano_roll_menu(
+        &mut self,
+        position: lumino_message::Point2,
+        target: ContextMenuTarget,
+    ) {
+        let pos = lumino_ui_core::geom::Point::new(position.x, position.y);
+        match target {
+            // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
+            // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
+            ContextMenuTarget::DrawnShape | ContextMenuTarget::PendingDrawnShape => {
+                if let Some(id) = self.editor.drawn_shape_at_screen(pos) {
+                    self.editor.select_drawn_shape(id);
+                }
+            }
+            // 音符目标：右键点击音符且该音符不在选中集合时，先将其设为唯一选中。
+            // 使菜单的 删除/剪切/复制 作用于"右键目标"，与 Delete 键
+            // "有选中集合即删除选中集合"的语义一致——否则右键一个未选中的
+            // 音符，菜单"删除"会删掉旧的批量选区。
+            ContextMenuTarget::Notes => {
+                if let Some((index, _)) = self.editor.hit_test_note(pos)
+                    && !self.editor.is_note_selected(index)
+                {
+                    self.editor.selection_clear();
+                    self.editor.selection_insert(index);
+                }
+            }
+        }
+        self.editor.context_menu.open(pos, target);
+    }
+
+    /// 菜单项分发：按职责域交给对应处理器，避免一个 match 继续膨胀。
+    fn handle_piano_roll_menu_item(
+        &mut self,
+        item: PianoRollContextMenuItem,
+        menu_pos: Option<lumino_ui_core::geom::Point>,
+    ) {
+        match item {
+            PianoRollContextMenuItem::BatchEdit
+            | PianoRollContextMenuItem::Cut
+            | PianoRollContextMenuItem::Copy
+            | PianoRollContextMenuItem::Paste
+            | PianoRollContextMenuItem::Delete
+            | PianoRollContextMenuItem::DeleteDrawnShape
+            | PianoRollContextMenuItem::SelectAll => self.handle_menu_basic(item),
+            PianoRollContextMenuItem::ReturnToDrawer
+            | PianoRollContextMenuItem::LiveShape
+            | PianoRollContextMenuItem::SplitLiveShape
+            | PianoRollContextMenuItem::SplitJoinedShape
+            | PianoRollContextMenuItem::JoinShapes
+            | PianoRollContextMenuItem::MergeShapes => self.handle_menu_pending_shape(item),
+            PianoRollContextMenuItem::EditShape
+            | PianoRollContextMenuItem::PaintAreas
+            | PianoRollContextMenuItem::ShapeList => self.handle_menu_shape_state(item),
+            PianoRollContextMenuItem::MaskToggle
+            | PianoRollContextMenuItem::MaskSettings
+            | PianoRollContextMenuItem::MaskApply => self.handle_menu_mask(item, menu_pos),
+            PianoRollContextMenuItem::SymmetryVertical
+            | PianoRollContextMenuItem::SymmetryHorizontal
+            | PianoRollContextMenuItem::Straighten
+            | PianoRollContextMenuItem::StraightenOff => self.handle_menu_transform(item),
+            PianoRollContextMenuItem::SliceCut
+            | PianoRollContextMenuItem::MouldSetKnife
+            | PianoRollContextMenuItem::MouldClearKnife
+            | PianoRollContextMenuItem::MouldShapes
+            | PianoRollContextMenuItem::RoundCorners => self.handle_shape_ops_menu(item),
+            PianoRollContextMenuItem::BetweenCreate
+            | PianoRollContextMenuItem::CopyAlong
+            | PianoRollContextMenuItem::VelocityUp => self.handle_menu_ops(item),
+            PianoRollContextMenuItem::CopyShapeText | PianoRollContextMenuItem::PasteShapeText => {
+                self.handle_menu_share(item)
+            }
+        }
+    }
+
+    /// 基础编辑：批量编辑 / 剪贴板 / 删除 / 全选。
+    fn handle_menu_basic(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::BatchEdit => {
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::open_batch_edit_dialog(),
+                ));
+            }
+            PianoRollContextMenuItem::Cut => {
+                let _ = self.handle_editor_action(EditorAction::Cut);
+            }
+            PianoRollContextMenuItem::Copy => {
+                let _ = self.handle_editor_action(EditorAction::Copy);
+            }
+            PianoRollContextMenuItem::Paste => {
+                let _ = self.handle_editor_action(EditorAction::Paste);
+            }
+            PianoRollContextMenuItem::Delete => {
+                let _ = self.handle_editor_action(EditorAction::DeletePressed);
+            }
+            PianoRollContextMenuItem::DeleteDrawnShape => {
+                // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
+                let _ = self.handle_editor_action(EditorAction::DeletePressed);
+            }
+            PianoRollContextMenuItem::SelectAll => {
+                let _ = self.handle_editor_action(EditorAction::SelectAll);
+            }
+            _ => {}
+        }
+    }
+
+    /// 待确认形状：退回抽屉 / 转活 / 拆分 / 连接 / 合并。
+    fn handle_menu_pending_shape(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::ReturnToDrawer => {
+                // DEBT-14：只对「从抽屉 Insert 进来的 pending」有效；
+                // 退回成功才移动数据，失败保留 pending（见 return_pending_to_drawer）。
+                let index = self
+                    .editor
+                    .editor_state
+                    .shape_select
+                    .selected_shapes()
+                    .filter_map(|shape| shape.pending)
+                    .find_map(|reference| match reference {
+                        lumino_editor_state::PendingShapeRef::Composed(index) => Some(index),
+                        _ => None,
+                    });
+                match index.and_then(|index| self.editor.return_pending_to_drawer(index)) {
+                    Some(drawer) => {
+                        self.state.shape_drawer_return = Some(drawer);
                     }
-                    PianoRollContextMenuItem::Cut => {
-                        let _ = self.handle_editor_action(EditorAction::Cut);
-                    }
-                    PianoRollContextMenuItem::Copy => {
-                        let _ = self.handle_editor_action(EditorAction::Copy);
-                    }
-                    PianoRollContextMenuItem::Paste => {
-                        let _ = self.handle_editor_action(EditorAction::Paste);
-                    }
-                    PianoRollContextMenuItem::Delete => {
-                        let _ = self.handle_editor_action(EditorAction::DeletePressed);
-                    }
-                    PianoRollContextMenuItem::DeleteDrawnShape => {
-                        // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
-                        let _ = self.handle_editor_action(EditorAction::DeletePressed);
-                    }
-                    PianoRollContextMenuItem::ReturnToDrawer => {
-                        // DEBT-14：只对「从抽屉 Insert 进来的 pending」有效；
-                        // 退回成功才移动数据，失败保留 pending（见 return_pending_to_drawer）。
-                        let index = self
-                            .editor
-                            .editor_state
-                            .shape_select
-                            .selected_shapes()
-                            .filter_map(|shape| shape.pending)
-                            .find_map(|reference| match reference {
-                                lumino_editor_state::PendingShapeRef::Composed(index) => {
-                                    Some(index)
-                                }
-                                _ => None,
-                            });
-                        match index.and_then(|index| self.editor.return_pending_to_drawer(index)) {
-                            Some(drawer) => {
-                                self.state.shape_drawer_return = Some(drawer);
-                            }
-                            None => {
-                                self.toast.push(
-                                    crate::toast::ToastLevel::Warning,
-                                    tr!("退回失败：请选中一个从抽屉插入的待确认形状"),
-                                );
-                            }
-                        }
-                    }
-                    PianoRollContextMenuItem::LiveShape => {
-                        if !self.editor.live_selected_shapes() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("转为活形状失败：请选中两个及以上待确认图形（已 Bake 只读）"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::SplitLiveShape
-                    | PianoRollContextMenuItem::SplitJoinedShape => {
-                        let _ = self.editor.split_composed_shape();
-                    }
-                    PianoRollContextMenuItem::JoinShapes => {
-                        if !self.editor.join_selected_shapes() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("连接图形失败：请选中至少两个待确认图形（已 Bake 只读）"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::MergeShapes => {
-                        if !self.editor.merge_selected_shapes() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("门控合并失败：请恰好选中两个待确认图形（已 Bake 只读）"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::EditShape => {
-                        if self.editor.enable_shape_edit() {
-                            let message = if self.editor.is_shape_edit_armed() {
-                                tr!("已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动")
-                            } else {
-                                tr!("已退出编辑图形")
-                            };
-                            self.toast.push(crate::toast::ToastLevel::Info, message);
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("编辑图形失败：请选中一个单支待确认组合（已 Bake 只读）"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::PaintAreas => {
-                        if self.editor.begin_area_paint() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("区域着色已开启：点击形状内部上色，切工具退出"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("区域着色失败：请选中一个待确认闭合形状"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::MaskToggle => {
-                        if self.editor.toggle_mask_selected() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("已切换遮罩（仅预览；确认后固定）"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("遮罩失败：请选中一个待确认形状"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::MaskSettings => {
-                        // 菜单坐标是 canvas 局部，覆盖层面板用窗口坐标
-                        let anchor = menu_pos
-                            .map(|pos| {
-                                let canvas = &self.editor.editor_state.canvas;
-                                lumino_ui_core::geom::Point::new(
-                                    pos.x + canvas.offset_x,
-                                    pos.y + canvas.offset_y,
-                                )
-                            })
-                            .unwrap_or(lumino_ui_core::geom::Point::new(320.0, 200.0));
-                        self.open_mask_panel(anchor);
-                    }
-                    PianoRollContextMenuItem::MaskApply => {
-                        let model_id = self
-                            .editor
-                            .editor_state
-                            .shape_select
-                            .selected_shapes()
-                            .find_map(|shape| shape.model_id);
-                        let applied = model_id.and_then(|id| self.editor.apply_mask(id));
-                        if applied.is_some() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Success,
-                                tr!("已实体化遮罩：可见片段写成新形状"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("实体化失败：请选中一个带遮罩的已 Bake 形状"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::ShapeList => {
-                        // 没有可列出的已 Bake 形状时给出明确反馈：
-                        // 旧行为是静默失败，表现为「形状列表又没了」。
-                        if !self.editor.open_shape_list() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("当前音轨没有可列出的已 Bake 形状"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::SymmetryVertical => {
-                        if let Err(reason) = self.editor.toggle_symmetry(true) {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                lumino_ui_editor::sym_reject_message(reason),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::SymmetryHorizontal => {
-                        if let Err(reason) = self.editor.toggle_symmetry(false) {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                lumino_ui_editor::sym_reject_message(reason),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::Straighten => {
-                        let _ = self.editor.set_straighten(true);
-                    }
-                    PianoRollContextMenuItem::StraightenOff => {
-                        let _ = self.editor.set_straighten(false);
-                    }
-                    PianoRollContextMenuItem::SliceCut
-                    | PianoRollContextMenuItem::MouldSetKnife
-                    | PianoRollContextMenuItem::MouldClearKnife
-                    | PianoRollContextMenuItem::MouldShapes
-                    | PianoRollContextMenuItem::RoundCorners => {
-                        self.handle_shape_ops_menu(item);
-                    }
-                    PianoRollContextMenuItem::BetweenCreate => {
-                        if self.editor.create_between_selected() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("已生成补间（首 + 步 + 末）；确认后才写入音符"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("补间失败：请恰好选中两个待确认形状/曲线"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::CopyAlong => {
-                        if self.editor.copy_along_selected() {
-                            if let Some(summary) = self.editor.copy_along_summary() {
-                                self.toast.push(
-                                    crate::toast::ToastLevel::Info,
-                                    format!("沿路径复制：{summary}"),
-                                );
-                            }
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先确认"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::VelocityUp => {
-                        if self.editor.velocity_up_selected() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Info,
-                                tr!("已应用力度渐强；确认后才写入音符"),
-                            );
-                        } else {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("力度渐强失败：请选中一个待确认形状/曲线；组合结果需先确认"),
-                            );
-                        }
-                    }
-                    PianoRollContextMenuItem::CopyShapeText => {
-                        let mut models = self.editor.selected_shape_models();
-                        // 待确认图形没有 ShapeStore 模型，但有几何：按当前几何临时构造，
-                        // 让用户可以在 √ / Bake 之前先复制分享文本。
-                        if models.is_empty()
-                            && let Some(pending) = self.editor.selected_pending_shape_model()
-                        {
-                            models.push(pending);
-                        }
-                        if models.is_empty() {
-                            self.toast.push(
-                                crate::toast::ToastLevel::Warning,
-                                tr!("没有可分享的形状，请先用鼠标工具选中已确认或待确认图形"),
-                            );
-                        } else {
-                            let ppq = self.editor.editor_state.view.ppq;
-                            match lumino_core::shape::share::encode_shapes(&models, ppq) {
-                                Ok(text) => match lumino_platform::clipboard::set_text(text) {
-                                    Ok(()) => self.toast.push(
-                                        crate::toast::ToastLevel::Success,
-                                        tr!("已复制形状分享文本"),
-                                    ),
-                                    Err(error) => self.toast.push(
-                                        crate::toast::ToastLevel::Error,
-                                        format!("{}: {error}", tr!("复制到剪贴板失败")),
-                                    ),
-                                },
-                                Err(error) => self.toast.push(
-                                    crate::toast::ToastLevel::Error,
-                                    format!("{}: {error}", tr!("形状分享编码失败")),
-                                ),
-                            };
-                        }
-                    }
-                    PianoRollContextMenuItem::PasteShapeText => {
-                        match lumino_platform::clipboard::get_text() {
-                            Ok(text) => match self.editor.paste_shapes_from_text(&text) {
-                                Ok(count) => self.toast.push(
-                                    crate::toast::ToastLevel::Success,
-                                    format!("{}: {count}", tr!("已粘贴形状")),
-                                ),
-                                Err(error) => self.toast.push(
-                                    crate::toast::ToastLevel::Error,
-                                    format!("{}: {error}", tr!("形状分享粘贴失败")),
-                                ),
-                            },
-                            Err(error) => self.toast.push(
-                                crate::toast::ToastLevel::Error,
-                                format!("{}: {error}", tr!("读取剪贴板失败")),
-                            ),
-                        };
-                    }
-                    PianoRollContextMenuItem::SelectAll => {
-                        let _ = self.handle_editor_action(EditorAction::SelectAll);
+                    None => {
+                        self.toast.push(
+                            crate::toast::ToastLevel::Warning,
+                            tr!("退回失败：请选中一个从抽屉插入的待确认形状"),
+                        );
                     }
                 }
             }
+            PianoRollContextMenuItem::LiveShape => {
+                if !self.editor.live_selected_shapes() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("转为活形状失败：请选中两个及以上待确认图形（已 Bake 只读）"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::SplitLiveShape
+            | PianoRollContextMenuItem::SplitJoinedShape => {
+                let _ = self.editor.split_composed_shape();
+            }
+            PianoRollContextMenuItem::JoinShapes => {
+                if !self.editor.join_selected_shapes() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("连接图形失败：请选中至少两个待确认图形（已 Bake 只读）"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::MergeShapes => {
+                let merged = self.editor.merge_selected_shapes();
+                if !merged {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("门控合并失败：请恰好选中两个待确认图形（已 Bake 只读）"),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 形状状态：进入编辑 / 区域着色 / 形状列表。
+    fn handle_menu_shape_state(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::EditShape => {
+                if self.editor.enable_shape_edit() {
+                    let message = if self.editor.is_shape_edit_armed() {
+                        tr!("已进入编辑图形：角=缩放，边=拉伸，角外=旋转，中心=移动")
+                    } else {
+                        tr!("已退出编辑图形")
+                    };
+                    self.toast.push(crate::toast::ToastLevel::Info, message);
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("编辑图形失败：请选中一个单支待确认组合（已 Bake 只读）"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::PaintAreas => {
+                if self.editor.begin_area_paint() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Info,
+                        tr!("区域着色已开启：点击形状内部上色，切工具退出"),
+                    );
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("区域着色失败：请选中一个待确认闭合形状"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::ShapeList => {
+                // 没有可列出的已 Bake 形状时给出明确反馈：
+                // 旧行为是静默失败，表现为「形状列表又没了」。
+                if !self.editor.open_shape_list() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("当前音轨没有可列出的已 Bake 形状"),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 遮罩：切换 / 打开设置 / 实体化。
+    fn handle_menu_mask(
+        &mut self,
+        item: PianoRollContextMenuItem,
+        menu_pos: Option<lumino_ui_core::geom::Point>,
+    ) {
+        match item {
+            PianoRollContextMenuItem::MaskToggle => {
+                if self.editor.toggle_mask_selected() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Info,
+                        tr!("已切换遮罩（仅预览；确认后固定）"),
+                    );
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("遮罩失败：请选中一个待确认形状"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::MaskSettings => {
+                // 菜单坐标是 canvas 局部，覆盖层面板用窗口坐标
+                let anchor = menu_pos
+                    .map(|pos| {
+                        let canvas = &self.editor.editor_state.canvas;
+                        lumino_ui_core::geom::Point::new(
+                            pos.x + canvas.offset_x,
+                            pos.y + canvas.offset_y,
+                        )
+                    })
+                    .unwrap_or(lumino_ui_core::geom::Point::new(320.0, 200.0));
+                self.open_mask_panel(anchor);
+            }
+            PianoRollContextMenuItem::MaskApply => {
+                let model_id = self
+                    .editor
+                    .editor_state
+                    .shape_select
+                    .selected_shapes()
+                    .find_map(|shape| shape.model_id);
+                let applied = model_id.and_then(|id| self.editor.apply_mask(id));
+                if applied.is_some() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Success,
+                        tr!("已实体化遮罩：可见片段写成新形状"),
+                    );
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("实体化失败：请选中一个带遮罩的已 Bake 形状"),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 对称与拉直。
+    fn handle_menu_transform(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::SymmetryVertical => {
+                if let Err(reason) = self.editor.toggle_symmetry(true) {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        lumino_ui_editor::sym_reject_message(reason),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::SymmetryHorizontal => {
+                if let Err(reason) = self.editor.toggle_symmetry(false) {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        lumino_ui_editor::sym_reject_message(reason),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::Straighten => {
+                let _ = self.editor.set_straighten(true);
+            }
+            PianoRollContextMenuItem::StraightenOff => {
+                let _ = self.editor.set_straighten(false);
+            }
+            _ => {}
+        }
+    }
+
+    /// 生成类操作：补间 / 沿路径复制 / 力度渐变。
+    fn handle_menu_ops(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::BetweenCreate => {
+                if self.editor.create_between_selected() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Info,
+                        tr!("已生成补间（首 + 步 + 末）；确认后才写入音符"),
+                    );
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("补间失败：请恰好选中两个待确认形状/曲线"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::CopyAlong => {
+                if self.editor.copy_along_selected() {
+                    if let Some(summary) = self.editor.copy_along_summary() {
+                        self.toast.push(
+                            crate::toast::ToastLevel::Info,
+                            format!("沿路径复制：{summary}"),
+                        );
+                    }
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("沿路径复制失败：请选中一个待确认形状/曲线；组合结果需先确认"),
+                    );
+                }
+            }
+            PianoRollContextMenuItem::VelocityUp => {
+                if self.editor.velocity_up_selected() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Info,
+                        tr!("已应用力度渐强；确认后才写入音符"),
+                    );
+                } else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("力度渐强失败：请选中一个待确认形状/曲线；组合结果需先确认"),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 形状分享文本：复制 / 粘贴。
+    fn handle_menu_share(&mut self, item: PianoRollContextMenuItem) {
+        match item {
+            PianoRollContextMenuItem::CopyShapeText => {
+                let mut models = self.editor.selected_shape_models();
+                // 待确认图形没有 ShapeStore 模型，但有几何：按当前几何临时构造，
+                // 让用户可以在 √ / Bake 之前先复制分享文本。
+                if models.is_empty()
+                    && let Some(pending) = self.editor.selected_pending_shape_model()
+                {
+                    models.push(pending);
+                }
+                if models.is_empty() {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        tr!("没有可分享的形状，请先用鼠标工具选中已确认或待确认图形"),
+                    );
+                } else {
+                    let ppq = self.editor.editor_state.view.ppq;
+                    match lumino_core::shape::share::encode_shapes(&models, ppq) {
+                        Ok(text) => match lumino_platform::clipboard::set_text(text) {
+                            Ok(()) => self
+                                .toast
+                                .push(crate::toast::ToastLevel::Success, tr!("已复制形状分享文本")),
+                            Err(error) => self.toast.push(
+                                crate::toast::ToastLevel::Error,
+                                format!("{}: {error}", tr!("复制到剪贴板失败")),
+                            ),
+                        },
+                        Err(error) => self.toast.push(
+                            crate::toast::ToastLevel::Error,
+                            format!("{}: {error}", tr!("形状分享编码失败")),
+                        ),
+                    };
+                }
+            }
+            PianoRollContextMenuItem::PasteShapeText => {
+                match lumino_platform::clipboard::get_text() {
+                    Ok(text) => match self.editor.paste_shapes_from_text(&text) {
+                        Ok(count) => self.toast.push(
+                            crate::toast::ToastLevel::Success,
+                            format!("{}: {count}", tr!("已粘贴形状")),
+                        ),
+                        Err(error) => self.toast.push(
+                            crate::toast::ToastLevel::Error,
+                            format!("{}: {error}", tr!("形状分享粘贴失败")),
+                        ),
+                    },
+                    Err(error) => self.toast.push(
+                        crate::toast::ToastLevel::Error,
+                        format!("{}: {error}", tr!("读取剪贴板失败")),
+                    ),
+                };
+            }
+            _ => {}
         }
     }
 }

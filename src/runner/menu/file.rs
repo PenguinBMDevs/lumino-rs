@@ -27,6 +27,31 @@ use crate::runner::inner::PendingCloseAction;
 
 use self::util::format_created_at_from_path;
 
+/// `MidiParsed` 中必须在 `import_midi_to_editor` 之前取出的工程级元数据。
+struct ParsedProjectMeta {
+    source_path: std::path::PathBuf,
+    accumulated_editing_secs: f64,
+    author: String,
+    copyright: String,
+    use10: bool,
+    i2m: Option<lumino_core::I2mSettings>,
+    port_soundfonts: lumino_midi_loader::PortSoundfontMap,
+}
+
+impl ParsedProjectMeta {
+    fn take(parsed: &lumino_midi_loader::ParsedMidi) -> Self {
+        Self {
+            source_path: std::path::PathBuf::from(&parsed.info.path),
+            accumulated_editing_secs: parsed.accumulated_editing_secs,
+            author: parsed.author.clone(),
+            copyright: parsed.copyright.clone(),
+            use10: parsed.use10,
+            i2m: parsed.i2m.clone(),
+            port_soundfonts: parsed.port_soundfonts.clone(),
+        }
+    }
+}
+
 impl RunnerInner {
     /// 保存/导出前自动提交当前编辑（ghost 方案：松手即提交）。
     ///
@@ -53,6 +78,40 @@ impl RunnerInner {
         use lumino_ui::event::menu::file::Event::*;
 
         match file_event {
+            Exit | New | Open | OpenProjectFolder | OpenRecent(_) | Close => {
+                self.handle_close_event(event_loop, file_event)
+            }
+            OpenFileSelected(_)
+            | ImportFiles
+            | ImportFilesSelected(_)
+            | ImportFromCloud
+            | ClearRecent => self.handle_import_event(file_event),
+            SaveToCloud | Save | SaveCompleted(_) | SaveFailed(_) | SaveHintTimeout => {
+                self.handle_save_event(file_event)
+            }
+            MidiLoaded(_) | MidiLoadError(_) | MidiParsed(_) | MidiParseError(_) => {
+                self.handle_midi_event(event_loop, file_event)
+            }
+            ProjectShapes(_) | ProjectOnionSkinMode(_) | ProjectSettings | Settings => {
+                self.handle_project_event(file_event)
+            }
+            TrackSelected(track_idx) => self.handle_track_selected(track_idx),
+            ExportProjectArchive | ExportProjectFolder | ExportMaterial | ExportMidi => {
+                self.handle_export_event(file_event)
+            }
+            _ => tracing::debug!("未处理的文件事件：{file_event:?}"),
+        }
+    }
+
+    /// 关闭 / 新建 / 打开工程：统一走未保存确认。
+    fn handle_close_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: lumino_ui::event::menu::file::Event,
+    ) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
             Exit => {
                 // 退出前检查未保存更改；有则弹保存确认对话框，无则直接退出
                 self.request_close_action(PendingCloseAction::Exit, event_loop);
@@ -93,12 +152,45 @@ impl RunnerInner {
                 // 与「打开」一致：先走未保存确认，再加载。
                 self.request_close_action(PendingCloseAction::OpenRecent(path), event_loop);
             }
+            Close => {
+                // 关闭工程前检查未保存更改；有则弹保存确认对话框，无则直接关闭
+                self.request_close_action(PendingCloseAction::CloseProject, event_loop);
+            }
+            _ => {}
+        }
+    }
+
+    /// 打开 / 导入 / 最近文件。
+    fn handle_import_event(&mut self, event: lumino_ui::event::menu::file::Event) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
+            OpenFileSelected(path) => {
+                // 记住用户最初选择的路径（压缩包不是解压临时文件）；加载成功后
+                // 由 `MidiParsed` 消费并写入「最近打开」。
+                //
+                // 同一时刻只保留一个候选：若用户在上一个加载未完成时又打开新文件，
+                // 保留先选中的那个（宁可漏记，也不把成功事件错配到后一个文件）。
+                if self.file_state.pending_open_path.is_none() {
+                    self.file_state.pending_open_path = Some(path.clone());
+                }
+                self.handle_selected_file(path);
+            }
             ClearRecent => self.clear_recent_files(),
             ImportFiles => self.handle_import_files(),
             ImportFilesSelected(path) => self.handle_selected_file(path),
             ImportFromCloud => {
                 self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Import);
             }
+            _ => {}
+        }
+    }
+
+    /// 保存 / 云保存 / 保存结果提示。
+    fn handle_save_event(&mut self, event: lumino_ui::event::menu::file::Event) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
             SaveToCloud => {
                 self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Save);
             }
@@ -111,6 +203,19 @@ impl RunnerInner {
                 // 3 秒提示超时：恢复底边栏默认"就绪"
                 self.window_state.window.ui_mut().set_status_message(None);
             }
+            _ => {}
+        }
+    }
+
+    /// MIDI 加载 / 解析结果。
+    fn handle_midi_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        event: lumino_ui::event::menu::file::Event,
+    ) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
             MidiLoaded(info) => {
                 tracing::info!("MIDI 文件加载完成：{}", info);
             }
@@ -118,6 +223,135 @@ impl RunnerInner {
                 self.file_state.pending_open_path = None;
                 tracing::error!("MIDI 文件加载失败：{}", err);
             }
+            MidiParsed(parsed) => self.handle_midi_parsed(parsed),
+            MidiParseError(err) => {
+                // 加载失败：丢弃候选路径，避免把打不开的文件写进历史。
+                self.file_state.pending_open_path = None;
+                tracing::error!("MIDI 文件解析失败：{}", err);
+                if self.autosave_recovery.is_some() {
+                    self.handle_autosave_load_failed();
+                    return;
+                }
+                if self.test_state.test_mode_state.is_some() {
+                    tracing::error!("测试模式因 MIDI 加载失败而退出");
+                    event_loop.exit();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// MIDI 解析成功：导入编辑器并恢复工程级元数据。
+    fn handle_midi_parsed(&mut self, parsed: std::sync::Arc<lumino_midi_loader::ParsedMidi>) {
+        // 只有「用户从打开对话框选择」的加载才进历史：候选路径由
+        // `OpenFileSelected` 设置，自动保存恢复/云下载/命令行加载均不设置。
+        // 自动保存恢复的 `MidiParsed` 不消费候选（它属于用户的在飞打开）。
+        if self.autosave_recovery.is_none()
+            && let Some(path) = self.file_state.pending_open_path.take()
+        {
+            self.remember_recent_file(path);
+        }
+        tracing::info!("MIDI 文件解析完成：{}", parsed.info);
+
+        // MIDI 加载后强制使用 Random 调色板并锁定（禁止用户修改）
+        lumino_extras::palette::set_current_palette_by_name("Random");
+        lumino_extras::palette::lock_palette();
+
+        // 拆出所有权（事件传递路径上 Arc 唯一；极端情况有额外引用时
+        // 浅拷贝 ParsedMidi——其 document 为 Arc 浅 clone，代价可忽略）
+        let parsed = match std::sync::Arc::try_unwrap(parsed) {
+            Ok(parsed) => parsed,
+            Err(arc) => (*arc).clone(),
+        };
+
+        let meta = ParsedProjectMeta::take(&parsed);
+        self.import_parsed_midi(parsed, &meta.source_path);
+        self.restore_imported_project(meta);
+    }
+
+    /// 把 `ParsedMidi` 导入编辑器，并清空 runner 侧旧文档引用。
+    fn import_parsed_midi(
+        &mut self,
+        parsed: lumino_midi_loader::ParsedMidi,
+        source_path: &std::path::Path,
+    ) {
+        // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
+        self.import_midi_to_editor(parsed);
+
+        tracing::debug!("MIDI 文档已导入编辑器（MidiDocument 已移入 UI 单一权威源）");
+
+        self.log_memory_usage_after_import();
+
+        // 保留 source 路径；document 已通过 import_midi_to_editor 移入 UI
+        // （EditorData.document 独占），runner 不再持有文档副本，避免双份数据。
+        self.midi_state.current_midi_source = Some(source_path.to_path_buf());
+        self.midi_state.current_midi = None;
+    }
+
+    /// 恢复工程级数据：编辑计时 / 设置 / 端口音色库 / 创建时间 / 干净标记。
+    fn restore_imported_project(&mut self, meta: ParsedProjectMeta) {
+        // 工程级数据随新文件加载一起归零：编辑计时/累计时间
+        // （创建时间随后从文件系统重新设置；工程设置对话框的
+        //   标题/作者/版权同样重置，防止上一工程的设置残留）
+        self.session_tracker.reset();
+        // 从 .lmpj 工程文件恢复历史累计创作时间（metadata.stats.working_time_seconds），
+        // 常规 MIDI 文件加载时该值为 0——跨会话累计的关键一环。
+        self.session_tracker.accumulated_editing_secs = meta.accumulated_editing_secs;
+        self.window_state.window.ui_mut().reset_project_settings();
+
+        // 回填 .lmpj 携带的作者/版权到工程设置对话框状态
+        // （reset 已清空，此处重新写入，关闭工程后重开面板显示正确值）
+        self.window_state
+            .window
+            .ui_mut()
+            .set_project_author_and_copyright(meta.author, meta.copyright, meta.use10, meta.i2m);
+
+        // REND-005：端口音色库映射随工程恢复；UI 作为保存/导出的权威源，
+        // 实时合成器走后台延迟应用（播放中自动延后到停播）。
+        self.window_state
+            .window
+            .ui_mut()
+            .apply_project_port_soundfonts(meta.port_soundfonts.clone());
+        self.midi_state
+            .midi
+            .apply_port_soundfonts_deferred(meta.port_soundfonts);
+
+        // 设置工程创建时间（从文件系统获取）
+        self.session_tracker.created_at = self
+            .midi_state
+            .current_midi_source
+            .as_ref()
+            .and_then(|p| format_created_at_from_path(p));
+        if self.session_tracker.created_at.is_some() {
+            tracing::info!(
+                "工程创建时间已设置: {}",
+                self.session_tracker.created_at.as_deref().unwrap_or("")
+            );
+        }
+
+        if let Some(state) = &mut self.test_state.test_mode_state {
+            state.active = true;
+        }
+
+        // 诊断：LUMINO_BENCH_EXPORT 存在时延迟自动发起视频导出（Tracy 基线）
+        self.maybe_start_bench_export();
+
+        // 加载完成后工程处于干净状态（无相对磁盘文件的未保存更改），
+        // 标记清零避免误弹保存确认对话框。
+        self.window_state.window.ui_mut().mark_project_clean();
+
+        // 自动保存恢复必须覆盖上面的 clean：恢复内容不是用户主动
+        // 保存的源文件，必须按未保存工程处理并建立 backup 快照。
+        if self.autosave_recovery.is_some() {
+            self.finish_autosave_recovery();
+        }
+    }
+
+    /// 工程形状 / 洋葱皮 / 工程设置 / 设置。
+    fn handle_project_event(&mut self, event: lumino_ui::event::menu::file::Event) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
             ProjectShapes(shapes) => {
                 // S0-5：把工程里的形状对象灌回编辑器。
                 // 必须晚于 `MidiParsed`（那条路径会清空形状存储）。
@@ -136,197 +370,7 @@ impl RunnerInner {
                 self.window_state.window.ui_mut().set_onion_skin_mode(mode);
                 tracing::info!("工程洋葱皮显示范围已恢复：{mode:?}");
             }
-            MidiParsed(parsed) => {
-                // 只有「用户从打开对话框选择」的加载才进历史：候选路径由
-                // `OpenFileSelected` 设置，自动保存恢复/云下载/命令行加载均不设置。
-                // 自动保存恢复的 `MidiParsed` 不消费候选（它属于用户的在飞打开）。
-                if self.autosave_recovery.is_none()
-                    && let Some(path) = self.file_state.pending_open_path.take()
-                {
-                    self.remember_recent_file(path);
-                }
-                tracing::info!("MIDI 文件解析完成：{}", parsed.info);
-
-                // MIDI 加载后强制使用 Random 调色板并锁定（禁止用户修改）
-                lumino_extras::palette::set_current_palette_by_name("Random");
-                lumino_extras::palette::lock_palette();
-
-                // 拆出所有权（事件传递路径上 Arc 唯一；极端情况有额外引用时
-                // 浅拷贝 ParsedMidi——其 document 为 Arc 浅 clone，代价可忽略）
-                let parsed = match std::sync::Arc::try_unwrap(parsed) {
-                    Ok(parsed) => parsed,
-                    Err(arc) => (*arc).clone(),
-                };
-
-                // 在 move 之前保存 info 相关数据（import 后 parsed.document 已移出）
-                let source_path = std::path::PathBuf::from(&parsed.info.path);
-                // 历史累计创作时间（.lmpj 工程文件跨会话累计）——必须在 parsed move 前提取
-                let accumulated_editing_secs = parsed.accumulated_editing_secs;
-                // 作者/版权（.lmpj 工程文件携带，常规 MIDI 为空）——必须在 parsed move 前提取，
-                // 加载后回填工程设置对话框，修复"保存后重新打开显示空白"
-                let project_author = parsed.author.clone();
-                let project_copyright = parsed.copyright.clone();
-                let project_use10 = parsed.use10;
-                // 图片转 MIDI 参数（DRAW-030），必须在 parsed move 前提取
-                let project_i2m = parsed.i2m.clone();
-                // 端口音色库映射（REND-005），必须在 parsed move 前提取
-                let project_port_soundfonts = parsed.port_soundfonts.clone();
-
-                // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
-                self.import_midi_to_editor(parsed);
-
-                tracing::debug!("MIDI 文档已导入编辑器（MidiDocument 已移入 UI 单一权威源）");
-
-                self.log_memory_usage_after_import();
-
-                // 保留 source 路径；document 已通过 import_midi_to_editor 移入 UI
-                // （EditorData.document 独占），runner 不再持有文档副本，避免双份数据。
-                self.midi_state.current_midi_source = Some(source_path);
-                self.midi_state.current_midi = None;
-
-                // 工程级数据随新文件加载一起归零：编辑计时/累计时间
-                // （创建时间随后从文件系统重新设置；工程设置对话框的
-                //   标题/作者/版权同样重置，防止上一工程的设置残留）
-                self.session_tracker.reset();
-                // 从 .lmpj 工程文件恢复历史累计创作时间（metadata.stats.working_time_seconds），
-                // 常规 MIDI 文件加载时该值为 0——跨会话累计的关键一环。
-                self.session_tracker.accumulated_editing_secs = accumulated_editing_secs;
-                self.window_state.window.ui_mut().reset_project_settings();
-
-                // 回填 .lmpj 携带的作者/版权到工程设置对话框状态
-                // （reset 已清空，此处重新写入，关闭工程后重开面板显示正确值）
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .set_project_author_and_copyright(
-                        project_author,
-                        project_copyright,
-                        project_use10,
-                        project_i2m,
-                    );
-
-                // REND-005：端口音色库映射随工程恢复；UI 作为保存/导出的权威源，
-                // 实时合成器走后台延迟应用（播放中自动延后到停播）。
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .apply_project_port_soundfonts(project_port_soundfonts.clone());
-                self.midi_state
-                    .midi
-                    .apply_port_soundfonts_deferred(project_port_soundfonts);
-
-                // 设置工程创建时间（从文件系统获取）
-                self.session_tracker.created_at = self
-                    .midi_state
-                    .current_midi_source
-                    .as_ref()
-                    .and_then(|p| format_created_at_from_path(p));
-                if self.session_tracker.created_at.is_some() {
-                    tracing::info!(
-                        "工程创建时间已设置: {}",
-                        self.session_tracker.created_at.as_deref().unwrap_or("")
-                    );
-                }
-
-                if let Some(state) = &mut self.test_state.test_mode_state {
-                    state.active = true;
-                }
-
-                // 诊断：LUMINO_BENCH_EXPORT 存在时延迟自动发起视频导出（Tracy 基线）
-                self.maybe_start_bench_export();
-
-                // 加载完成后工程处于干净状态（无相对磁盘文件的未保存更改），
-                // 标记清零避免误弹保存确认对话框。
-                self.window_state.window.ui_mut().mark_project_clean();
-
-                // 自动保存恢复必须覆盖上面的 clean：恢复内容不是用户主动
-                // 保存的源文件，必须按未保存工程处理并建立 backup 快照。
-                if self.autosave_recovery.is_some() {
-                    self.finish_autosave_recovery();
-                }
-            }
-            MidiParseError(err) => {
-                // 加载失败：丢弃候选路径，避免把打不开的文件写进历史。
-                self.file_state.pending_open_path = None;
-                tracing::error!("MIDI 文件解析失败：{}", err);
-                if self.autosave_recovery.is_some() {
-                    self.handle_autosave_load_failed();
-                    return;
-                }
-                if self.test_state.test_mode_state.is_some() {
-                    tracing::error!("测试模式因 MIDI 加载失败而退出");
-                    event_loop.exit();
-                }
-            }
-            Close => {
-                // 关闭工程前检查未保存更改；有则弹保存确认对话框，无则直接关闭
-                self.request_close_action(PendingCloseAction::CloseProject, event_loop);
-            }
-            ProjectSettings => {
-                let saved_title = self.window_state.window.ui().get_project_settings_title();
-                let display_title = if saved_title.is_empty() {
-                    self.midi_state
-                        .current_midi_source
-                        .as_ref()
-                        .and_then(|p| p.file_stem())
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| tr!("无标题").to_string())
-                } else {
-                    saved_title
-                };
-                let title = format!("{} - Lumino Midi", display_title);
-
-                // 计算真实的创建时间和累计编辑时间
-                let created_display = self.session_tracker.created_at.clone().unwrap_or_default();
-                let total_editing_time_seconds = self.session_tracker.current_editing_secs();
-
-                // 从编辑器获取当前 BPM 和拍号
-                let (tempo, time_signatures, copyright, author) = {
-                    let ui = self.window_state.window.ui();
-                    let root = ui.root();
-                    let tempo = root
-                        .editor
-                        .editor_state
-                        .data
-                        .tempo_points
-                        .first()
-                        .map(|tp| format!("{:.1}", tp.bpm))
-                        .unwrap_or_else(|| "120.0".to_string());
-                    let time_signatures = root.editor.editor_state.data.time_signatures.clone();
-                    // 版权/作者来自对话框状态：同一工程内多次打开保留已填写的值；
-                    // 跨工程（关闭/新建/加载新文件）时状态已重置为空，不会残留。
-                    let copyright = ui.get_project_copyright();
-                    let author = ui.get_project_author();
-                    (tempo, time_signatures, copyright, author)
-                };
-
-                // 将真实数据设置到 UI 状态中
-                let note_count = self.window_state.window.ui().get_editor_note_count();
-                let note_count_display = self.window_state.window.ui().note_count_display();
-                // DRAW-032：勾选状态随对话框数据快照带过去（独立窗口只有自己的 Root）
-                let use10 = self.window_state.window.ui().get_project_use10();
-                // REND-005：端口音色库快照（对话框内展示摘要 + 入口）
-                let port_soundfonts = self.window_state.window.ui().get_project_port_soundfonts();
-                self.window_state.window.ui_mut().set_project_settings_data(
-                    lumino_ui::root::ProjectSettingsDialogData {
-                        title: display_title.clone(),
-                        tempo,
-                        copyright,
-                        author,
-                        created_display,
-                        total_editing_time_seconds,
-                        note_count,
-                        note_count_display,
-                        time_signatures,
-                        use10,
-                        port_soundfonts,
-                    },
-                );
-
-                self.window_state
-                    .dialog_manager
-                    .open_project_settings(title);
-            }
+            ProjectSettings => self.handle_project_settings_menu(),
             Settings => {
                 // 打开设置面板前刷新云存储快照（云管理页显示最新状态）
                 self.refresh_cloud_connections();
@@ -334,28 +378,106 @@ impl RunnerInner {
                     .dialog_manager
                     .open_dialog(crate::runner::dialog_manager::DialogType::Settings);
             }
-            TrackSelected(track_idx) => {
-                // DEBT-03 #120：异步提交窗口内禁止切轨（Runner 侧兜底；UI 内部
-                // `switch_to_track` 亦有守卫）——提交结果按发起轨写回，切轨会错位。
-                if self
-                    .window_state
-                    .window
-                    .ui()
-                    .root()
-                    .editor
-                    .has_pending_commit()
-                {
-                    tracing::warn!("异步提交进行中，忽略切轨请求：{}", track_idx);
-                    return;
-                }
-                // 统一使用 cache-only 模式，只切换音轨索引
-                // 播放时从 cache 流式读取，不单独加载音轨到编辑器
-                tracing::info!("切换到音轨：{}", track_idx);
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .set_current_track(track_idx, true);
-            }
+            _ => {}
+        }
+    }
+
+    /// 打开工程设置对话框：装配标题 / 时间 / BPM / 拍号 / 版权等快照。
+    fn handle_project_settings_menu(&mut self) {
+        let saved_title = self.window_state.window.ui().get_project_settings_title();
+        let display_title = if saved_title.is_empty() {
+            self.midi_state
+                .current_midi_source
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| tr!("无标题").to_string())
+        } else {
+            saved_title
+        };
+        let title = format!("{} - Lumino Midi", display_title);
+
+        // 计算真实的创建时间和累计编辑时间
+        let created_display = self.session_tracker.created_at.clone().unwrap_or_default();
+        let total_editing_time_seconds = self.session_tracker.current_editing_secs();
+
+        // 从编辑器获取当前 BPM 和拍号
+        let (tempo, time_signatures, copyright, author) = {
+            let ui = self.window_state.window.ui();
+            let root = ui.root();
+            let tempo = root
+                .editor
+                .editor_state
+                .data
+                .tempo_points
+                .first()
+                .map(|tp| format!("{:.1}", tp.bpm))
+                .unwrap_or_else(|| "120.0".to_string());
+            let time_signatures = root.editor.editor_state.data.time_signatures.clone();
+            // 版权/作者来自对话框状态：同一工程内多次打开保留已填写的值；
+            // 跨工程（关闭/新建/加载新文件）时状态已重置为空，不会残留。
+            let copyright = ui.get_project_copyright();
+            let author = ui.get_project_author();
+            (tempo, time_signatures, copyright, author)
+        };
+
+        // 将真实数据设置到 UI 状态中
+        let note_count = self.window_state.window.ui().get_editor_note_count();
+        let note_count_display = self.window_state.window.ui().note_count_display();
+        // DRAW-032：勾选状态随对话框数据快照带过去（独立窗口只有自己的 Root）
+        let use10 = self.window_state.window.ui().get_project_use10();
+        // REND-005：端口音色库快照（对话框内展示摘要 + 入口）
+        let port_soundfonts = self.window_state.window.ui().get_project_port_soundfonts();
+        self.window_state.window.ui_mut().set_project_settings_data(
+            lumino_ui::root::ProjectSettingsDialogData {
+                title: display_title.clone(),
+                tempo,
+                copyright,
+                author,
+                created_display,
+                total_editing_time_seconds,
+                note_count,
+                note_count_display,
+                time_signatures,
+                use10,
+                port_soundfonts,
+            },
+        );
+
+        self.window_state
+            .dialog_manager
+            .open_project_settings(title);
+    }
+
+    /// 切轨（异步提交窗口内拒绝）。
+    fn handle_track_selected(&mut self, track_idx: usize) {
+        // DEBT-03 #120：异步提交窗口内禁止切轨（Runner 侧兜底；UI 内部
+        // `switch_to_track` 亦有守卫）——提交结果按发起轨写回，切轨会错位。
+        if self
+            .window_state
+            .window
+            .ui()
+            .root()
+            .editor
+            .has_pending_commit()
+        {
+            tracing::warn!("异步提交进行中，忽略切轨请求：{}", track_idx);
+            return;
+        }
+        // 统一使用 cache-only 模式，只切换音轨索引
+        // 播放时从 cache 流式读取，不单独加载音轨到编辑器
+        tracing::info!("切换到音轨：{}", track_idx);
+        self.window_state
+            .window
+            .ui_mut()
+            .set_current_track(track_idx, true);
+    }
+
+    /// 导出入口：工程归档 / 工程文件夹 / 素材 / MIDI。
+    fn handle_export_event(&mut self, event: lumino_ui::event::menu::file::Event) {
+        use lumino_ui::event::menu::file::Event::*;
+
+        match event {
             ExportProjectArchive => {
                 // 「导出为单文件」也是导出：先弹风险警告，确认后再进入（与保存共用的
                 // `handle_save_single_file` 本身不弹，避免 Ctrl+S 被打扰）。
@@ -372,9 +494,7 @@ impl RunnerInner {
             ExportMidi => {
                 self.handle_export_midi();
             }
-            _ => {
-                tracing::debug!("未处理的文件事件：{:?}", file_event);
-            }
+            _ => {}
         }
     }
 }
