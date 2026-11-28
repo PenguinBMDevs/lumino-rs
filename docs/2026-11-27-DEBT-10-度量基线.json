@@ -1,6 +1,6 @@
 {
   "files_total": 2353,
-  "lines_total": 423982,
+  "lines_total": 424208,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -133,13 +133,6 @@
       "test": false
     },
     {
-      "path": "src/runner/inner/persist.rs",
-      "name": "save_storage",
-      "line": 140,
-      "lines": 243,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/offline.rs",
       "name": "render_midi_parsed",
       "line": 59,
@@ -147,24 +140,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/settings_ui.rs",
-      "name": "page",
-      "line": 19,
-      "lines": 234,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/render/separate_thread/runner/params.rs",
       "name": "build_render_params",
       "line": 62,
       "lines": 226,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
-      "name": "video_export_model",
-      "line": 193,
-      "lines": 225,
       "test": false
     },
     {
@@ -193,13 +172,6 @@
       "name": "show_overlay",
       "line": 56,
       "lines": 215,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/shape_canvas.rs",
-      "name": "canvas_model",
-      "line": 52,
-      "lines": 214,
       "test": false
     },
     {
@@ -1654,13 +1626,6 @@
       "test": false
     },
     {
-      "path": "src/runner/inner/persist.rs",
-      "name": "save_storage",
-      "line": 140,
-      "lines": 243,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/offline.rs",
       "name": "render_midi_parsed",
       "line": 59,
@@ -1668,24 +1633,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/settings_ui.rs",
-      "name": "page",
-      "line": 19,
-      "lines": 234,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui/src/host/render/separate_thread/runner/params.rs",
       "name": "build_render_params",
       "line": 62,
       "lines": 226,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/video_export.rs",
-      "name": "video_export_model",
-      "line": 193,
-      "lines": 225,
       "test": false
     },
     {
@@ -1714,13 +1665,6 @@
       "name": "show_overlay",
       "line": 56,
       "lines": 215,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/view/egui_chrome/shape_canvas.rs",
-      "name": "canvas_model",
-      "line": 52,
-      "lines": 214,
       "test": false
     },
     {
@@ -1793,7 +1737,7 @@
     ],
     [
       "RunnerInner",
-      234
+      245
     ],
     [
       "Default",
