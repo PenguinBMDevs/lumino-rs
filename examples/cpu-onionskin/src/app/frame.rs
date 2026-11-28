@@ -33,8 +33,7 @@ struct FrameContext {
 
 impl App {
     pub(super) fn redraw(&mut self, event_loop: &ActiveEventLoop) {
-        let Some((camera, bench_active, bench_finished, dt, gap_ms)) =
-            self.begin_frame(event_loop)
+        let Some((camera, bench_active, bench_finished, dt, gap_ms)) = self.begin_frame(event_loop)
         else {
             return;
         };
