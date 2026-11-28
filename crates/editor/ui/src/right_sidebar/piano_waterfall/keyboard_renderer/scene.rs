@@ -10,6 +10,22 @@ use super::{
     WORKGROUP_SIZE, ZERO_KEYCOLORS,
 };
 
+/// 场景尺寸与相机参数：收敛 `render_scene` 的入参，逐阶段传给私有方法。
+///
+/// 不新增对外 API，仅在本模块内流转；字段顺序即离屏渲染的依赖顺序。
+#[derive(Debug)]
+struct SceneParams {
+    width: u32,
+    height: u32,
+    key_count: u32,
+    count: u32,
+    zoom_x: f32,
+    scroll_x: f32,
+    current_track: u32,
+    kb_h: f32,
+    keyboard_y: f32,
+}
+
 impl KeyboardRenderer {
     /// 渲染「下落式音符 + 底部键盘」到离屏纹理，返回其纹理视图供 上一代 `shader` 图元直接采样合成。
     ///
@@ -38,16 +54,78 @@ impl KeyboardRenderer {
         puffin::profile_scope!("kbrd_render_scene");
         let width = width.max(1);
         let height = height.max(1);
-        let count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
-
         // 键盘底条：高度按宽度比例联动，贴底
         let kb_h = (width as f32 * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
-        let keyboard_y = height as f32 - kb_h;
+        let p = SceneParams {
+            width,
+            height,
+            key_count,
+            count: note_data.as_ref().map(|(_, c)| *c).unwrap_or(0),
+            zoom_x,
+            scroll_x,
+            current_track,
+            kb_h,
+            keyboard_y: height as f32 - kb_h,
+        };
 
-        self.ensure_targets(device, width, height);
-        self.ensure_visible_indices(device, count);
-        self.ensure_key_colors(device);
+        // 资源准备阶段：扩容 + 清零 + 每帧 uniform/间接参数上传
+        let key_instance_count = self.prepare_resources(device, queue, &p)?;
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        // 两个 compute pass 严格先于 render pass，顺序即语义
+        self.dispatch_cull(device, &mut encoder, note_data.as_ref());
+        self.dispatch_keycolor(device, &mut encoder, note_data.as_ref());
+
         let tex_view = self.tex_view.as_ref()?;
+        {
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("piano_waterfall_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: tex_view.as_ref(),
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        // 透明清屏：不填白，瀑布流区域透出面板背景
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // 绘制顺序：音符 → 键盘，键盘覆盖落点线
+            self.draw_notes(device, &mut rp, note_data.as_ref(), p.count);
+            self.draw_keyboard(device, &mut rp, key_instance_count);
+        }
+
+        queue.submit(std::iter::once(encoder.finish()));
+
+        // 不做 CPU 读回：直接返回离屏纹理视图，由 上一代 `shader` 图元在自身渲染通道内采样合成
+        // （GPU→GPU）。返回克隆的 `Arc`，即使后续纹理重建，旧视图仍可被在途图元安全引用。
+        self.tex_view.clone()
+    }
+
+    /// 准备离屏资源与每帧上传：纹理/缓冲扩容、活跃键颜色清零、键位实例缓冲、
+    /// 音符 uniform 与间接绘制参数。返回键盘实例数供后续绘制阶段使用。
+    fn prepare_resources(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        p: &SceneParams,
+    ) -> Option<u32> {
+        self.ensure_targets(device, p.width, p.height);
+        self.ensure_visible_indices(device, p.count);
+        self.ensure_key_colors(device);
+        // `ensure_targets` 刚保证分配；理论不可达，防御性跳过本帧
+        self.tex_view.as_ref()?;
 
         // 活跃键颜色缓冲：每帧先清零，再由 keycolor compute 写入“正落键”的键
         let Some(key_colors_buf) = self.key_colors.as_ref() else {
@@ -57,17 +135,17 @@ impl KeyboardRenderer {
         queue.write_buffer(key_colors_buf, 0, &ZERO_KEYCOLORS);
 
         let colors = KeyboardColors::pure();
-        let mut keys = key_layout::build_layout(width as f32, kb_h, key_count);
+        let mut keys = key_layout::build_layout(p.width as f32, p.kb_h, p.key_count);
         keys.sort_by_key(|k| k.is_black); // 白键在前、黑键在后，黑键覆盖白键
-        let instances = build_instances(width, height as f32, keyboard_y, &keys, &colors);
+        let instances = build_instances(p.width, p.height as f32, p.keyboard_y, &keys, &colors);
 
         // 复用持久化实例缓冲：键盘几何仅依赖 (width, height, key_count)，
         // 与滚动/缩放/播放进度无关，逐帧重建 + drop 会触发驱动延迟释放，
         // 在播放自动滚动时造成突发性尖刺。仅当三者变化时才新建。
         if self.instance_buffer.is_none()
-            || self.inst_w != width
-            || self.inst_h != height
-            || self.inst_keys != key_count
+            || self.inst_w != p.width
+            || self.inst_h != p.height
+            || self.inst_keys != p.key_count
         {
             let instance_bytes = instances_to_bytes(&instances);
             let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -76,24 +154,22 @@ impl KeyboardRenderer {
                 usage: wgpu::BufferUsages::VERTEX,
             });
             self.instance_buffer = Some(buf);
-            self.inst_w = width;
-            self.inst_h = height;
-            self.inst_keys = key_count;
+            self.inst_w = p.width;
+            self.inst_h = p.height;
+            self.inst_keys = p.key_count;
         }
-        let Some(instance_buffer) = self.instance_buffer.as_ref() else {
-            // 上方刚保证分配；理论不可达，防御性跳过本帧
-            return None;
-        };
+        // 上方刚保证分配；理论不可达，防御性跳过本帧
+        self.instance_buffer.as_ref()?;
 
         // 音符 uniform（含落点线 keyboard_y）
         let uni = build_uniforms(
-            width as f32,
-            height as f32,
-            zoom_x,
-            scroll_x,
-            current_track,
-            key_count,
-            keyboard_y,
+            p.width as f32,
+            p.height as f32,
+            p.zoom_x,
+            p.scroll_x,
+            p.current_track,
+            p.key_count,
+            p.keyboard_y,
         );
         queue.write_buffer(&self.uniform_buffer, 0, &uni);
 
@@ -107,12 +183,20 @@ impl KeyboardRenderer {
         };
         queue.write_buffer(&self.draw_args, 0, &draw_args_bytes);
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        Some(instances.len() as u32)
+    }
 
+    /// 可视区间剔除 compute：把可见音符索引写入 visible_indices + draw_args[1]。
+    fn dispatch_cull(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        note_data: Option<&(wgpu::Buffer, u32)>,
+    ) {
         // 可视区间剔除：仅把可见音符索引写入 visible_indices + draw_args[1]
         // 超量音符（>65535 工作群组）分块调度，每块带各自 dispatch 偏移，
         // 仍累加到同一 draw_args 原子计数，主绘制只画可见音符。
-        if let Some((buf, c)) = &note_data
+        if let Some((buf, c)) = note_data
             && *c > 0
         {
             let total_wg = (*c).div_ceil(WORKGROUP_SIZE);
@@ -173,12 +257,24 @@ impl KeyboardRenderer {
                 dispatched += wg_count;
             }
         }
+    }
 
+    /// 活跃键颜色 compute：把落键高亮写入 key_colors。
+    fn dispatch_keycolor(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        note_data: Option<&(wgpu::Buffer, u32)>,
+    ) {
         // 活跃键颜色 compute：把“正跨过键盘线（落键）”的音符对应键颜色写入 key_colors。
         // 与剔除同分块策略（>65535 工作群组分块），复用同一条 notes 缓冲与 uniform。
-        if let Some((buf, c)) = &note_data
+        if let Some((buf, c)) = note_data
             && *c > 0
         {
+            // `prepare_resources` 已保证分配；理论不可达，防御性跳过本 pass
+            let Some(key_colors_buf) = self.key_colors.as_ref() else {
+                return;
+            };
             let total_wg = (*c).div_ceil(WORKGROUP_SIZE);
             let max_wg = 65535u32;
             let mut cp2 = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -231,87 +327,79 @@ impl KeyboardRenderer {
                 dispatched += wg_count;
             }
         }
+    }
 
+    /// 绘制下落式音符：仅可见音符，间接绘制，复用渲染线程活体 GPU 实例缓冲。
+    fn draw_notes(
+        &self,
+        device: &wgpu::Device,
+        rp: &mut wgpu::RenderPass<'_>,
+        note_data: Option<&(wgpu::Buffer, u32)>,
+        count: u32,
+    ) {
+        // 1) 下落式音符（仅可见音符，间接绘制；复用渲染线程活体 GPU 实例缓冲）
+        if let Some((buf, _)) = note_data
+            && count > 0
         {
-            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("piano_waterfall_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: tex_view.as_ref(),
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // 透明清屏：不填白，瀑布流区域透出面板背景
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
+            let bg_note = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("piano_waterfall_note_bg"),
+                layout: &self.note_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
                     },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(
+                            self.uniform_buffer.as_entire_buffer_binding(),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer(
+                            self.visible_indices.as_entire_buffer_binding(),
+                        ),
+                    },
+                ],
             });
-
-            // 1) 下落式音符（仅可见音符，间接绘制；复用渲染线程活体 GPU 实例缓冲）
-            if let Some((buf, _)) = &note_data
-                && count > 0
-            {
-                let bg_note = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("piano_waterfall_note_bg"),
-                    layout: &self.note_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.uniform_buffer.as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Buffer(
-                                self.visible_indices.as_entire_buffer_binding(),
-                            ),
-                        },
-                    ],
-                });
-                rp.set_pipeline(&self.note_pipeline);
-                rp.set_bind_group(0, &bg_note, &[]);
-                rp.draw_indirect(&self.draw_args, 0);
-            }
-
-            // 2) 底部钢琴键盘（覆盖在落点线处，确保键位清晰）
-            // 绑定活跃键颜色缓冲：键盘着色器据此混合“落键”高亮（复用卷帘瀑布流配色）
-            let bg_key = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("piano_waterfall_key_bg"),
-                layout: &self.key_bgl,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(
-                        key_colors_buf.as_entire_buffer_binding(),
-                    ),
-                }],
-            });
-            rp.set_pipeline(&self.pipeline);
-            rp.set_bind_group(0, &bg_key, &[]);
-            rp.set_vertex_buffer(0, self.quad_buffer.slice(..));
-            rp.set_vertex_buffer(1, instance_buffer.slice(..));
-            let kcount = instances.len() as u32;
-            if kcount > 0 {
-                rp.draw(0..6, 0..kcount);
-            }
+            rp.set_pipeline(&self.note_pipeline);
+            rp.set_bind_group(0, &bg_note, &[]);
+            rp.draw_indirect(&self.draw_args, 0);
         }
+    }
 
-        queue.submit(std::iter::once(encoder.finish()));
-
-        // 不做 CPU 读回：直接返回离屏纹理视图，由 上一代 `shader` 图元在自身渲染通道内采样合成
-        // （GPU→GPU）。返回克隆的 `Arc`，即使后续纹理重建，旧视图仍可被在途图元安全引用。
-        self.tex_view.clone()
+    /// 绘制底部钢琴键盘：绑定活跃键颜色缓冲，覆盖在落点线处。
+    fn draw_keyboard(
+        &self,
+        device: &wgpu::Device,
+        rp: &mut wgpu::RenderPass<'_>,
+        key_instance_count: u32,
+    ) {
+        // 2) 底部钢琴键盘（覆盖在落点线处，确保键位清晰）
+        // 绑定活跃键颜色缓冲：键盘着色器据此混合“落键”高亮（复用卷帘瀑布流配色）
+        let Some(key_colors_buf) = self.key_colors.as_ref() else {
+            // `prepare_resources` 已保证分配；理论不可达，防御性跳过本层
+            return;
+        };
+        let Some(instance_buffer) = self.instance_buffer.as_ref() else {
+            // 上方刚保证分配；理论不可达，防御性跳过本层
+            return;
+        };
+        let bg_key = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("piano_waterfall_key_bg"),
+            layout: &self.key_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(key_colors_buf.as_entire_buffer_binding()),
+            }],
+        });
+        rp.set_pipeline(&self.pipeline);
+        rp.set_bind_group(0, &bg_key, &[]);
+        rp.set_vertex_buffer(0, self.quad_buffer.slice(..));
+        rp.set_vertex_buffer(1, instance_buffer.slice(..));
+        if key_instance_count > 0 {
+            rp.draw(0..6, 0..key_instance_count);
+        }
     }
 }
