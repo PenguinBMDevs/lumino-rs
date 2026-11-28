@@ -1,5 +1,19 @@
 use super::*;
 
+/// 一个渲染块内各阶段的时间戳：仅用于 `LUMINO_PROFILE` / 慢块诊断，
+/// 不参与任何渲染数学。
+struct BlockTimings {
+    t0: std::time::Instant,
+    t1: std::time::Instant,
+    t1b: std::time::Instant,
+    t1c: std::time::Instant,
+    t2: std::time::Instant,
+    t3: std::time::Instant,
+    t4: std::time::Instant,
+    t5: std::time::Instant,
+    t6: std::time::Instant,
+}
+
 impl GpuSynth {
     /// Renders one block of `block_size` frames into `out` (interleaved
     /// L/R, length `block_size * channels`).
@@ -59,47 +73,39 @@ impl GpuSynth {
         }
         let t1b = std::time::Instant::now();
 
-        // Fast path: no voices at all - the block is pure silence (the mix
-        // pass would sum nothing). Advance the controller states so CC
-        // smoothing stays continuous and skip the GPU round trip. Dense-
-        // but-sparse MIDI spends a large fraction of its timeline in note
-        // gaps, so this is a significant win.
-        //
-        // We did NOT dispatch this block, so the GPU state did not advance
-        // and this block's own audio is silence; the output owed to the
-        // listener is the audio of the last DISPATCHED block, collected
-        // above - exactly one block old, which is this block's turn to play.
-        // With nothing pending (two consecutive silent blocks) it is
-        // silence. `last_states`/`prev_voice_ids` are left intact: they are
-        // the resume state of the last dispatch, still valid because the GPU
-        // state did not move.
+        // Fast path：无声部时本块是纯静音，跳过整轮 GPU 往返（行为与注释见
+        // `render_silent_block`）。
         if self.voices.is_empty() {
-            self.update_mix_params(base)?;
-            if let Some(mut data) = self.last_out.take() {
-                let count = (data.len() / 4).min(block * chs);
-                out[..count].copy_from_slice(bytemuck::cast_slice(&data[..count * 4]));
-                if count < block * chs {
-                    out[count..block * chs].fill(0.0);
-                }
-                data.clear();
-                self.readback_out_scratch = data;
-            } else {
-                out[..block * chs].fill(0.0);
-            }
-            // The replayed block is the last DISPATCHED block's audio, which
-            // the limiter would have scaled at its own readback; scale it
-            // again so the limiter state stays continuous either way.
-            self.apply_limiter(&mut out[..block * chs]);
-            self.global_frame += block as u64;
-            if prof {
-                eprintln!(
-                    "[profile] block {}: silent skip",
-                    self.global_frame / block as u64 - 1
-                );
-            }
-            return Ok(());
+            return self.render_silent_block(out, base, prof);
         }
 
+        let timings = self.submit_block(out, base, t0, t1, t1b)?;
+        self.log_block_profile(&timings, block, prof);
+
+        self.global_frame += block as u64;
+
+        self.diagnose_slow_block(&timings, block);
+
+        Ok(())
+    }
+
+    /// 提交本块：同步回读状态、上传参数与采样、派发并取回音频。
+    ///
+    /// `t0`/`t1`/`t1b` 是本块在事件应用与回读收集后测得的时间戳，本方法不
+    /// 自己测量它们，只随返回的 [`BlockTimings`] 一并交给诊断输出。
+    ///
+    /// # Errors
+    ///
+    /// 上传、派发或回读失败时返回 [`SynthError::Gpu`]。
+    fn submit_block(
+        &mut self,
+        out: &mut [f32],
+        base: u64,
+        t0: std::time::Instant,
+        t1: std::time::Instant,
+        t1b: std::time::Instant,
+    ) -> Result<BlockTimings, SynthError> {
+        let block = self.config.block_size;
         // States from the same readback: apply the previous block's GPU
         // state to the CPU mirror BEFORE uploading this block's parameters,
         // so `upload_voices` (a) prunes voices that ended on the GPU and
@@ -124,29 +130,98 @@ impl GpuSynth {
         self.readback(out)?;
         let t6 = std::time::Instant::now();
 
+        Ok(BlockTimings {
+            t0,
+            t1,
+            t1b,
+            t1c,
+            t2,
+            t3,
+            t4,
+            t5,
+            t6,
+        })
+    }
+
+    /// 无声块的快速路径：不派发 GPU，只回放上一派发块的音频（详见块内注释）。
+    ///
+    /// # Errors
+    ///
+    /// 状态推进或限幅器应用失败时返回 [`SynthError::Gpu`]。
+    fn render_silent_block(
+        &mut self,
+        out: &mut [f32],
+        base: u64,
+        prof: bool,
+    ) -> Result<(), SynthError> {
+        let block = self.config.block_size;
+        let chs = self.output_channels();
+        // Fast path: no voices at all - the block is pure silence (the mix
+        // pass would sum nothing). Advance the controller states so CC
+        // smoothing stays continuous and skip the GPU round trip. Dense-
+        // but-sparse MIDI spends a large fraction of its timeline in note
+        // gaps, so this is a significant win.
+        //
+        // We did NOT dispatch this block, so the GPU state did not advance
+        // and this block's own audio is silence; the output owed to the
+        // listener is the audio of the last DISPATCHED block, collected
+        // above - exactly one block old, which is this block's turn to play.
+        // With nothing pending (two consecutive silent blocks) it is
+        // silence. `last_states`/`prev_voice_ids` are left intact: they are
+        // the resume state of the last dispatch, still valid because the GPU
+        // state did not move.
+        self.update_mix_params(base)?;
+        if let Some(mut data) = self.last_out.take() {
+            let count = (data.len() / 4).min(block * chs);
+            out[..count].copy_from_slice(bytemuck::cast_slice(&data[..count * 4]));
+            if count < block * chs {
+                out[count..block * chs].fill(0.0);
+            }
+            data.clear();
+            self.readback_out_scratch = data;
+        } else {
+            out[..block * chs].fill(0.0);
+        }
+        // The replayed block is the last DISPATCHED block's audio, which
+        // the limiter would have scaled at its own readback; scale it
+        // again so the limiter state stays continuous either way.
+        self.apply_limiter(&mut out[..block * chs]);
+        self.global_frame += block as u64;
+        if prof {
+            eprintln!(
+                "[profile] block {}: silent skip",
+                self.global_frame / block as u64 - 1
+            );
+        }
+        Ok(())
+    }
+
+    /// PREF-006 B：块级阶段耗时诊断（`LUMINO_PROFILE` 开启时每 25 块输出一次）。
+    fn log_block_profile(&self, timings: &BlockTimings, block: usize, prof: bool) {
         if prof && self.global_frame.is_multiple_of(block as u64 * 25) {
             let block_no = self.global_frame / block as u64;
             eprintln!(
                 "[profile] block {block_no}: apply={}us collect={}us sync={}us upload={}us samples={}us mix={}us dispatch={}us readback={}us total={}us voices={}",
-                (t1 - t0).as_micros(),
-                (t1b - t1).as_micros(),
-                (t1c - t1b).as_micros(),
-                (t2 - t1c).as_micros(),
-                (t3 - t2).as_micros(),
-                (t4 - t3).as_micros(),
-                (t5 - t4).as_micros(),
-                (t6 - t5).as_micros(),
-                (t6 - t0).as_micros(),
+                (timings.t1 - timings.t0).as_micros(),
+                (timings.t1b - timings.t1).as_micros(),
+                (timings.t1c - timings.t1b).as_micros(),
+                (timings.t2 - timings.t1c).as_micros(),
+                (timings.t3 - timings.t2).as_micros(),
+                (timings.t4 - timings.t3).as_micros(),
+                (timings.t5 - timings.t4).as_micros(),
+                (timings.t6 - timings.t5).as_micros(),
+                (timings.t6 - timings.t0).as_micros(),
                 self.voices.len()
             );
         }
+    }
 
-        self.global_frame += block as u64;
-
+    /// REND-016 #139：慢块诊断（判定与输出内容见块内注释）。
+    fn diagnose_slow_block(&self, timings: &BlockTimings, block: usize) {
         // REND-016 #139：慢块诊断——块耗时超过 1.5×预算时输出阶段分解（限频 1s）。
         // 用于定位"缓速"：`samples=` 高 → 懒重采样在渲染线程同步执行；
         // `apply=` 高 → 事件应用；`dispatch/readback` 高 → GPU。
-        let total_us = (t6 - t0).as_micros();
+        let total_us = (timings.t6 - timings.t0).as_micros();
         let budget_us = (block as u128) * 1_000_000 / self.config.sample_rate.max(1) as u128;
         if total_us > budget_us * 3 / 2 {
             use std::sync::atomic::{AtomicI64, Ordering};
@@ -163,20 +238,19 @@ impl GpuSynth {
                     total_us,
                     budget_us,
                     self.voices.len(),
-                    (t1 - t0).as_micros(),
-                    (t1b - t1).as_micros(),
-                    (t1c - t1b).as_micros(),
-                    (t2 - t1c).as_micros(),
-                    (t3 - t2).as_micros(),
-                    (t4 - t3).as_micros(),
-                    (t5 - t4).as_micros(),
-                    (t6 - t5).as_micros(),
+                    (timings.t1 - timings.t0).as_micros(),
+                    (timings.t1b - timings.t1).as_micros(),
+                    (timings.t1c - timings.t1b).as_micros(),
+                    (timings.t2 - timings.t1c).as_micros(),
+                    (timings.t3 - timings.t2).as_micros(),
+                    (timings.t4 - timings.t3).as_micros(),
+                    (timings.t5 - timings.t4).as_micros(),
+                    (timings.t6 - timings.t5).as_micros(),
                 );
                 tracing::warn!("{msg}");
                 eprintln!("{msg}");
             }
         }
-        Ok(())
     }
 
     /// Renders a full MIDI file to memory, stopping once all voices have

@@ -4,11 +4,29 @@ use crate::gpu::{CHUNK_PARAMS_MIX_BINDING, CHUNK_PARAMS_RENDER_BINDING, ChunkPar
 
 impl GpuSynth {
     pub(crate) fn update_mix_params(&mut self, base: u64) -> Result<(), SynthError> {
-        let queue = &self.res.ctx.queue;
         let block = self.config.block_size as u32;
         let end = base + block as u64;
         let sr = self.config.sample_rate;
 
+        let in_block = self.take_block_mix_events(end);
+        let events = self.build_mix_events(&in_block, base);
+        let mut starts = self.advance_channel_starts(&in_block, end, sr);
+        self.upload_mix_event_buf(&events)?;
+        let params = self.build_mix_params(&mut starts, events.len() as u32, block, sr)?;
+        self.debug_dump_mix_state(base);
+        // 这里的 `queue` 在 scratch 取用之后再借用：`mem::take` 需要独占
+        // `self`，提前持有的队列借用无法跨越。
+        let queue = &self.res.ctx.queue;
+        queue.write_buffer(&self.mix_params_buf, 0, bytemuck::cast_slice(&[params]));
+        self.upload_mix_bucket_tables()?;
+        // scratch 归还（下块复用，零分配）
+        self.mix_events = events;
+        self.mix_starts = starts;
+        Ok(())
+    }
+
+    /// 取出本块到期的控制器事件，按 `(channel, frame)` 排好序交给调用方。
+    fn take_block_mix_events(&mut self, end: u64) -> Vec<(u64, u8, u8, u8)> {
         // Take this block's deferred controller events; keep the rest for
         // the blocks that follow. PREF-006 B：两个缓冲均复用——`pending_mix_events`
         // 原地 retain 保留后续事件，`mix_in_block` 为常驻 scratch。
@@ -29,7 +47,11 @@ impl GpuSynth {
         // 只扫描自己的事件；缓存局部性也从「全块事件」缩到「本通道事件」。
         // 键打包成 u64：块内帧 < 8192，高 32 位放 channel，比较比元组便宜。
         in_block.sort_by_key(|e| (u64::from(e.1) << 32) | (e.0 & 0xFFFF_FFFF));
+        in_block
+    }
 
+    /// 把块内事件元组转成 mix 内核的 `MixEvent`（帧号取块内相对值）。
+    fn build_mix_events(&mut self, in_block: &[(u64, u8, u8, u8)], base: u64) -> Vec<MixEvent> {
         // Frame-exact controller curve: the mix kernel replays this block's
         // events against the block-start lerp states, so the output does not
         // depend on the block size or on how many events a block contains.
@@ -41,7 +63,16 @@ impl GpuSynth {
             cc: e.2 as u32,
             value: e.3 as f32 / 128.0,
         }));
+        events
+    }
 
+    /// 采集块起点的 lerp 状态，并把 CPU 侧状态机推进到块末。
+    fn advance_channel_starts(
+        &mut self,
+        in_block: &[(u64, u8, u8, u8)],
+        end: u64,
+        sr: u32,
+    ) -> Vec<MixStart> {
         // Per-channel block-start states, then advance the CPU-side lerp
         // state machines through this block (all events + the block end) so
         // the next block starts from the right values.
@@ -90,29 +121,49 @@ impl GpuSynth {
             st.expression.advance_to(end);
             st.pan.advance_to(end);
         }
+        starts
+    }
 
+    /// 上传本块的 `MixEvent` 表；缓冲增长时标记 bind group 需要重建。
+    fn upload_mix_event_buf(&mut self, events: &[MixEvent]) -> Result<(), SynthError> {
         let device = &self.res.ctx.device;
+        let queue = &self.res.ctx.queue;
         if self
             .mix_events_buf
-            .write(device, queue, 0, bytemuck::cast_slice(&events))?
+            .write(device, queue, 0, bytemuck::cast_slice(events))?
         {
             self.mix_bg_dirty = true;
         }
+        Ok(())
+    }
+
+    /// 组装本块的 `MixParams`：通道起始状态补齐到定长 `MAX_MIDI_CHANNELS`。
+    fn build_mix_params(
+        &self,
+        starts: &mut Vec<MixStart>,
+        event_count: u32,
+        block: u32,
+        sr: u32,
+    ) -> Result<MixParams, SynthError> {
         // `starts` 是定长数组（上限 256）：未使用的通道槽位保持零值。
         starts.resize(MAX_MIDI_CHANNELS, bytemuck::Zeroable::zeroed());
         let starts_arr: [MixStart; MAX_MIDI_CHANNELS] = starts
             .as_slice()
             .try_into()
             .map_err(|_| SynthError::Gpu("channel count mismatch".into()))?;
-        let params = MixParams {
+        Ok(MixParams {
             voice_count: self.active_voice_count,
             block_size: block,
             channel_count: self.channels.len() as u32,
-            event_count: events.len() as u32,
+            event_count,
             lerp_len: sr as f32 * 0.01,
             _pad: [0.0; 3],
             starts: starts_arr,
-        };
+        })
+    }
+
+    /// `LUMINO_VOICEDUMP` 调试输出：只在固定帧窗口打印通道 0 的三个控制器值。
+    fn debug_dump_mix_state(&self, base: u64) {
         // PREF-006 B：环境开关一次性缓存（每块 `env::var` 会走进程锁）
         static VOICEDUMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *VOICEDUMP.get_or_init(|| std::env::var("LUMINO_VOICEDUMP").is_ok())
@@ -125,7 +176,10 @@ impl GpuSynth {
                 s.volume.current, s.expression.current, s.pan.current
             );
         }
-        queue.write_buffer(&self.mix_params_buf, 0, bytemuck::cast_slice(&[params]));
+    }
+
+    /// 上传 mix 桶表（偏移 + 声部索引）；缓冲增长时标记 bind group 需要重建。
+    fn upload_mix_bucket_tables(&mut self) -> Result<(), SynthError> {
         // REF-LGS-001: upload the stable buckets (offsets + indices) used by
         // the per-channel gather. **Offsets are uploaded even when
         // `active_voice_count == 0`**: a block whose voices ended on the GPU
@@ -155,9 +209,6 @@ impl GpuSynth {
         if grown {
             self.mix_bg_dirty = true;
         }
-        // scratch 归还（下块复用，零分配）
-        self.mix_events = events;
-        self.mix_starts = starts;
         Ok(())
     }
 

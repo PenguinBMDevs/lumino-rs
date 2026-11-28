@@ -92,6 +92,17 @@ impl PlaybackEngine {
         late_bound: f32,
         messages: &mut Vec<MidiMessage>,
     ) {
+        self.process_streaming_notes(current_tick, late_bound, messages);
+        self.process_streaming_controls(current_tick, messages);
+    }
+
+    /// 合并本区间内全部音轨的 NoteOn/NoteOff（游标 + 最小堆，契约见方法级说明）。
+    fn process_streaming_notes(
+        &mut self,
+        current_tick: f32,
+        late_bound: f32,
+        messages: &mut Vec<MidiMessage>,
+    ) {
         let Some(doc) = &self.document else { return };
         let tick_start_u = self.last_processed_tick as u32;
         let tick_end_u = current_tick as u32;
@@ -158,6 +169,11 @@ impl PlaybackEngine {
                 }
             }
         }
+    }
+
+    /// 流式下发非当前音轨的控制事件（CC/PC/PB）。
+    fn process_streaming_controls(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
+        let Some(doc) = &self.document else { return };
 
         // ── 控制事件（CC/PC/PB）从 document 流式读取 ──
         //

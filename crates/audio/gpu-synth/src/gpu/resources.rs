@@ -40,95 +40,8 @@ impl GpuResources {
     ) -> Result<Self, SynthError> {
         let device = &ctx.device;
 
-        // --- render bind group layout ---
-        // binding 0: voice params, 1..=4: sample chunks, 5: sinc table,
-        // 6: env stages, 7: voice states (rw), 8: voice output (rw),
-        // 9: per-chunk params (dynamic uniform, REF-LGS-002).
-        let mut render_entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::with_capacity(13);
-        render_entries.push(bind_entry(
-            0,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: true },
-        ));
-        for i in 0..SAMPLES_CHUNKS {
-            render_entries.push(bind_entry(
-                SAMPLES_CHUNK_BINDING_BASE + i as u32,
-                wgpu::ShaderStages::COMPUTE,
-                wgpu::BufferBindingType::Storage { read_only: true },
-            ));
-        }
-        render_entries.push(bind_entry(
-            SINC_BINDING,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: true },
-        ));
-        render_entries.push(bind_entry(
-            ENV_BINDING,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: true },
-        ));
-        render_entries.push(bind_entry(
-            STATES_BINDING,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: false },
-        ));
-        render_entries.push(bind_entry(
-            VOICE_OUT_BINDING,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: false },
-        ));
-        render_entries.push(bind_entry_dynamic_uniform(
-            CHUNK_PARAMS_RENDER_BINDING,
-            ChunkParams::SIZE as u64,
-        ));
-        // REF-LGS-010: 静态声部参数表（按槽位索引，只在分配槽位时写）。
-        render_entries.push(bind_entry(
-            PARAMS_STATIC_BINDING,
-            wgpu::ShaderStages::COMPUTE,
-            wgpu::BufferBindingType::Storage { read_only: true },
-        ));
-        let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("render bind group layout"),
-            entries: &render_entries,
-        });
-
-        // --- mix bind group layout ---
-        let mix_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("mix bind group layout"),
-            entries: &[
-                bind_entry(
-                    0,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Storage { read_only: true },
-                ),
-                bind_entry(
-                    1,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Storage { read_only: false },
-                ),
-                bind_entry(
-                    2,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Storage { read_only: true },
-                ),
-                bind_entry(
-                    3,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Storage { read_only: true },
-                ),
-                bind_entry(
-                    4,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Uniform,
-                ),
-                bind_entry(
-                    5,
-                    wgpu::ShaderStages::COMPUTE,
-                    wgpu::BufferBindingType::Storage { read_only: false },
-                ),
-                bind_entry_dynamic_uniform(CHUNK_PARAMS_MIX_BINDING, ChunkParams::SIZE as u64),
-            ],
-        });
+        let render_layout = render_bind_group_layout(device);
+        let mix_layout = mix_bind_group_layout(device);
 
         let chunk_size = crate::gpu::render_chunk_size(block_size);
         let render_pipeline = create_render_pipeline(device, &render_layout, chunk_size)?;
@@ -147,4 +60,100 @@ impl GpuResources {
             max_voices,
         })
     }
+}
+
+/// 构建 render 管线的绑定组布局。
+fn render_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    // --- render bind group layout ---
+    // binding 0: voice params, 1..=4: sample chunks, 5: sinc table,
+    // 6: env stages, 7: voice states (rw), 8: voice output (rw),
+    // 9: per-chunk params (dynamic uniform, REF-LGS-002).
+    let mut render_entries: Vec<wgpu::BindGroupLayoutEntry> = Vec::with_capacity(13);
+    render_entries.push(bind_entry(
+        0,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: true },
+    ));
+    for i in 0..SAMPLES_CHUNKS {
+        render_entries.push(bind_entry(
+            SAMPLES_CHUNK_BINDING_BASE + i as u32,
+            wgpu::ShaderStages::COMPUTE,
+            wgpu::BufferBindingType::Storage { read_only: true },
+        ));
+    }
+    render_entries.push(bind_entry(
+        SINC_BINDING,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: true },
+    ));
+    render_entries.push(bind_entry(
+        ENV_BINDING,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: true },
+    ));
+    render_entries.push(bind_entry(
+        STATES_BINDING,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: false },
+    ));
+    render_entries.push(bind_entry(
+        VOICE_OUT_BINDING,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: false },
+    ));
+    render_entries.push(bind_entry_dynamic_uniform(
+        CHUNK_PARAMS_RENDER_BINDING,
+        ChunkParams::SIZE as u64,
+    ));
+    // REF-LGS-010: 静态声部参数表（按槽位索引，只在分配槽位时写）。
+    render_entries.push(bind_entry(
+        PARAMS_STATIC_BINDING,
+        wgpu::ShaderStages::COMPUTE,
+        wgpu::BufferBindingType::Storage { read_only: true },
+    ));
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("render bind group layout"),
+        entries: &render_entries,
+    })
+}
+
+/// 构建 mix 与 mix_reduce 管线共享的绑定组布局。
+fn mix_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    // --- mix bind group layout ---
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("mix bind group layout"),
+        entries: &[
+            bind_entry(
+                0,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Storage { read_only: true },
+            ),
+            bind_entry(
+                1,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Storage { read_only: false },
+            ),
+            bind_entry(
+                2,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Storage { read_only: true },
+            ),
+            bind_entry(
+                3,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Storage { read_only: true },
+            ),
+            bind_entry(
+                4,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Uniform,
+            ),
+            bind_entry(
+                5,
+                wgpu::ShaderStages::COMPUTE,
+                wgpu::BufferBindingType::Storage { read_only: false },
+            ),
+            bind_entry_dynamic_uniform(CHUNK_PARAMS_MIX_BINDING, ChunkParams::SIZE as u64),
+        ],
+    })
 }

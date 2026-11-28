@@ -8,7 +8,7 @@ mod sync;
 use crate::playback::engine::{MidiTrackEvent, PlaybackEngine};
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use commands::Command;
-use crossbeam_channel::{Receiver, bounded};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -82,94 +82,7 @@ impl PlaybackManager {
             let frame_tx = frame_tx;
             let last_frame = Arc::clone(&last_frame);
             let callback = Arc::clone(&callback);
-            move || {
-                let mut engine = engine;
-                let mut midi_output: Option<Box<dyn crate::PlaybackOutput>> = None;
-
-                loop {
-                    // 处理所有挂起的命令
-                    crate::profiling::tracy_zone!("playback_cmds", {
-                        while let Ok(cmd) = receiver.try_recv() {
-                            if matches!(cmd, Command::Quit) {
-                                return;
-                            }
-                            commands::handle_command(
-                                cmd,
-                                &mut engine,
-                                &mut midi_output,
-                                &frame_tx,
-                                &last_frame,
-                            );
-                        }
-                    });
-
-                    // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
-                    // 空闲时阻塞等待命令，避免空转烧满一个核。
-                    if engine.is_playing() {
-                        // 更新引擎并发送 MIDI 消息
-                        let messages =
-                            crate::profiling::tracy_zone!("playback_update", { engine.update() });
-                        crate::profiling::tracy_zone!("playback_flush", {
-                            commands::flush_midi_messages(messages, &mut midi_output);
-                        });
-
-                        // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
-                        // 同时触发用户注册的回调（轻量非阻塞）。
-                        // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
-                        crate::profiling::tracy_zone!("playback_frame", {
-                            let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
-                            // 实时响度峰值：从输出连接读取（XSynth 实现为真实演奏响度）；
-                            // 非合成类输出返回全零。无输出连接时同样为零。
-                            let (channel_levels, master_level) = midi_output
-                                .as_ref()
-                                .map(|out| (out.get_channel_levels(), out.get_master_level()))
-                                .unwrap_or(([0.0; 16], 0.0));
-                            let frame = PlaybackFrame {
-                                tick: engine.current_tick(),
-                                state: engine.state(),
-                                bpm,
-                                channel_levels,
-                                master_level,
-                            };
-                            let _ = frame_tx.try_send(frame);
-                            *last_frame.lock() = Some(frame);
-                            if let Some(cb) = callback.lock().as_mut() {
-                                cb(frame);
-                            }
-                        });
-
-                        // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
-                        // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
-                        // 导致事件突发（15ms 的音符被一次性发送）。
-                        // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
-                        let target = std::time::Instant::now() + Duration::from_millis(1);
-                        thread::sleep(Duration::from_micros(700));
-                        while std::time::Instant::now() < target {
-                            std::hint::spin_loop();
-                        }
-                    } else {
-                        // 空闲分支：阻塞等待命令（50ms 超时兜底，处理 Seek/Pause 后残留引擎状态）
-                        match receiver.recv_timeout(Duration::from_millis(50)) {
-                            Ok(cmd) => {
-                                if matches!(cmd, Command::Quit) {
-                                    return;
-                                }
-                                commands::handle_command(
-                                    cmd,
-                                    &mut engine,
-                                    &mut midi_output,
-                                    &frame_tx,
-                                    &last_frame,
-                                );
-                            }
-                            Err(mpsc::RecvTimeoutError::Timeout) => {
-                                // 空闲心跳：清空可能残留的 MIDI 状态（如暂停后的 all_notes_off 已在命令中处理）
-                            }
-                            Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                        }
-                    }
-                }
-            }
+            move || run_playback_thread(receiver, engine, frame_tx, last_frame, callback)
         });
 
         Self {
@@ -179,6 +92,103 @@ impl PlaybackManager {
             last_frame,
             callback,
             thread_handle: Some(thread_handle),
+        }
+    }
+}
+
+/// 播放线程主循环：处理命令、驱动引擎更新并向 UI 推送播放帧。
+///
+/// 由 [`PlaybackManager::new`] 在独立线程中调用，生命周期与播放线程一致。
+fn run_playback_thread(
+    receiver: mpsc::Receiver<Command>,
+    engine: PlaybackEngine,
+    frame_tx: Sender<PlaybackFrame>,
+    last_frame: Arc<Mutex<Option<PlaybackFrame>>>,
+    callback: Arc<Mutex<Option<PlaybackCallback>>>,
+) {
+    let mut engine = engine;
+    let mut midi_output: Option<Box<dyn crate::PlaybackOutput>> = None;
+
+    loop {
+        // 处理所有挂起的命令
+        crate::profiling::tracy_zone!("playback_cmds", {
+            while let Ok(cmd) = receiver.try_recv() {
+                if matches!(cmd, Command::Quit) {
+                    return;
+                }
+                commands::handle_command(
+                    cmd,
+                    &mut engine,
+                    &mut midi_output,
+                    &frame_tx,
+                    &last_frame,
+                );
+            }
+        });
+
+        // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
+        // 空闲时阻塞等待命令，避免空转烧满一个核。
+        if engine.is_playing() {
+            // 更新引擎并发送 MIDI 消息
+            let messages = crate::profiling::tracy_zone!("playback_update", { engine.update() });
+            crate::profiling::tracy_zone!("playback_flush", {
+                commands::flush_midi_messages(messages, &mut midi_output);
+            });
+
+            // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
+            // 同时触发用户注册的回调（轻量非阻塞）。
+            // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
+            crate::profiling::tracy_zone!("playback_frame", {
+                let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
+                // 实时响度峰值：从输出连接读取（XSynth 实现为真实演奏响度）；
+                // 非合成类输出返回全零。无输出连接时同样为零。
+                let (channel_levels, master_level) = midi_output
+                    .as_ref()
+                    .map(|out| (out.get_channel_levels(), out.get_master_level()))
+                    .unwrap_or(([0.0; 16], 0.0));
+                let frame = PlaybackFrame {
+                    tick: engine.current_tick(),
+                    state: engine.state(),
+                    bpm,
+                    channel_levels,
+                    master_level,
+                };
+                let _ = frame_tx.try_send(frame);
+                *last_frame.lock() = Some(frame);
+                if let Some(cb) = callback.lock().as_mut() {
+                    cb(frame);
+                }
+            });
+
+            // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
+            // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
+            // 导致事件突发（15ms 的音符被一次性发送）。
+            // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
+            let target = std::time::Instant::now() + Duration::from_millis(1);
+            thread::sleep(Duration::from_micros(700));
+            while std::time::Instant::now() < target {
+                std::hint::spin_loop();
+            }
+        } else {
+            // 空闲分支：阻塞等待命令（50ms 超时兜底，处理 Seek/Pause 后残留引擎状态）
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(cmd) => {
+                    if matches!(cmd, Command::Quit) {
+                        return;
+                    }
+                    commands::handle_command(
+                        cmd,
+                        &mut engine,
+                        &mut midi_output,
+                        &frame_tx,
+                        &last_frame,
+                    );
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // 空闲心跳：清空可能残留的 MIDI 状态（如暂停后的 all_notes_off 已在命令中处理）
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
         }
     }
 }

@@ -71,17 +71,79 @@ impl GpuSynth {
         Ok(())
     }
 
+    /// 丢弃越界通道的事件，引擎生命周期内只告警一次。
+    fn warn_channel_out_of_range(&self, ch: usize) {
+        // 配置与事件流不同步（例如多端口事件喂给单端口引擎）：丢弃并只告警一次。
+        static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if WARNED.set(()).is_ok() {
+            eprintln!(
+                "[gpu-synth] channel {ch} >= midi_channels {}; event dropped (REND-002 #87)",
+                self.config.midi_channels
+            );
+        }
+    }
+
+    /// 处理 note-on：抗风暴门槛 + 全局池上限，通过后派生声部。
+    fn handle_note_on(
+        &mut self,
+        ch: usize,
+        key: u8,
+        vel: u8,
+        sample: u64,
+    ) -> Result<(), SynthError> {
+        // Velocity 0 is converted to a note-off by the parser; a
+        // velocity of 1 is a barely-audible note that XSynth does
+        // not render. Dropping it saves a voice slot without any
+        // audible change.
+        if vel <= 1 {
+            return Ok(());
+        }
+        // Per-key anti-storm guard, checked HERE so a pathological
+        // burst (millions of note-ons on one key in one block) skips
+        // the spawn call entirely. This is NOT the per-key polyphony
+        // limit: every admitted note-on must sound, and
+        // `trim_key_voices` steals the quietest OLD group afterwards
+        // (XSynth semantics). The old per-`max_voices_per_key`
+        // budget dropped the NEWEST notes and broke dense passages.
+        let slot = &mut self.spawn_budget[ch * 128 + key as usize];
+        if !spawn_budget_allows(*slot) {
+            return Ok(());
+        }
+        *slot += 1;
+        // Global pool gate: bound per-block spawn cost WITHOUT dropping
+        // audible notes. `upload_voices` trims the pool down to `pool`
+        // keeping the OLDEST voices, so a new note-on must still be
+        // spawned even when the pool is already full - it steals an
+        // older voice and sounds. We therefore only stop spawning once
+        // we are a full pool ABOVE the cap, which leaves enough
+        // headroom for the per-key loudest-pick and the global
+        // oldest-survives steal while capping event processing at
+        // ~2*pool spawns/block instead of the unbounded note-on burst
+        // that dominated `apply_events` (and starved the realtime
+        // queue). Notes past the `2*pool` bound would be trimmed away
+        // by the pool cap anyway, so nothing audible is lost.
+        // In unlimited mode (max_voices == 0) every note must sound, so
+        // the gate is disabled - but we still cap per-block spawns to
+        // a very large budget (200k) to avoid a pathological 10M note
+        // burst stalling the render thread for seconds.
+        if self.config.max_voices != 0 {
+            let pool = self.config.max_voices + self.config.max_voices / FADE_SLOTS_FRACTION;
+            if self.voices.len() >= pool + pool {
+                return Ok(());
+            }
+        } else if self.voices.len() >= 400_000 {
+            // Unlimited but still bound the worst-case single-block burst
+            // to keep the block time bounded; black MIDI peaks are far
+            // below this, so nothing audible is lost.
+            return Ok(());
+        }
+        self.spawn_voices(ch, key, vel, sample)
+    }
+
     pub(crate) fn handle_event(&mut self, ev: TimedEvent) -> Result<(), SynthError> {
         let ch = ev.channel() as usize;
         if !crate::midi::port::channel_in_range(ev.channel(), self.config.midi_channels) {
-            // 配置与事件流不同步（例如多端口事件喂给单端口引擎）：丢弃并只告警一次。
-            static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-            if WARNED.set(()).is_ok() {
-                eprintln!(
-                    "[gpu-synth] channel {ch} >= midi_channels {}; event dropped (REND-002 #87)",
-                    self.config.midi_channels
-                );
-            }
+            self.warn_channel_out_of_range(ch);
             return Ok(());
         }
         // Fast path on packed kind/payload to avoid constructing MidiEvent
@@ -91,54 +153,7 @@ impl GpuSynth {
                 let payload = ev.payload();
                 let key = payload as u8;
                 let vel = (payload >> 8) as u8;
-                // Velocity 0 is converted to a note-off by the parser; a
-                // velocity of 1 is a barely-audible note that XSynth does
-                // not render. Dropping it saves a voice slot without any
-                // audible change.
-                if vel <= 1 {
-                    return Ok(());
-                }
-                // Per-key anti-storm guard, checked HERE so a pathological
-                // burst (millions of note-ons on one key in one block) skips
-                // the spawn call entirely. This is NOT the per-key polyphony
-                // limit: every admitted note-on must sound, and
-                // `trim_key_voices` steals the quietest OLD group afterwards
-                // (XSynth semantics). The old per-`max_voices_per_key`
-                // budget dropped the NEWEST notes and broke dense passages.
-                let slot = &mut self.spawn_budget[ch * 128 + key as usize];
-                if !spawn_budget_allows(*slot) {
-                    return Ok(());
-                }
-                *slot += 1;
-                // Global pool gate: bound per-block spawn cost WITHOUT dropping
-                // audible notes. `upload_voices` trims the pool down to `pool`
-                // keeping the OLDEST voices, so a new note-on must still be
-                // spawned even when the pool is already full - it steals an
-                // older voice and sounds. We therefore only stop spawning once
-                // we are a full pool ABOVE the cap, which leaves enough
-                // headroom for the per-key loudest-pick and the global
-                // oldest-survives steal while capping event processing at
-                // ~2*pool spawns/block instead of the unbounded note-on burst
-                // that dominated `apply_events` (and starved the realtime
-                // queue). Notes past the `2*pool` bound would be trimmed away
-                // by the pool cap anyway, so nothing audible is lost.
-                // In unlimited mode (max_voices == 0) every note must sound, so
-                // the gate is disabled - but we still cap per-block spawns to
-                // a very large budget (200k) to avoid a pathological 10M note
-                // burst stalling the render thread for seconds.
-                if self.config.max_voices != 0 {
-                    let pool =
-                        self.config.max_voices + self.config.max_voices / FADE_SLOTS_FRACTION;
-                    if self.voices.len() >= pool + pool {
-                        return Ok(());
-                    }
-                } else if self.voices.len() >= 400_000 {
-                    // Unlimited but still bound the worst-case single-block burst
-                    // to keep the block time bounded; black MIDI peaks are far
-                    // below this, so nothing audible is lost.
-                    return Ok(());
-                }
-                self.spawn_voices(ch, key, vel, ev.sample as u64)
+                self.handle_note_on(ch, key, vel, ev.sample as u64)
             }
             crate::midi::kind::NOTE_OFF => {
                 let key = ev.payload() as u8;

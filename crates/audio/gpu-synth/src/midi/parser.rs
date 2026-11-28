@@ -69,105 +69,12 @@ impl MidiFile {
             return Err(SynthError::Midi("zero ticks per beat".into()));
         }
 
-        // ---- pass 1: tempo map --------------------------------------------
-        // Tempo events are few (even in automated files); collect them
-        // first so pass 2 can convert ticks -> samples directly without a
-        // second event list sitting in memory.
-        let mut tempos: Vec<(u64, u32)> = Vec::new();
-        let mut length_ticks: u64 = 0;
-        let mut track_ports: Vec<u8> = Vec::with_capacity(smf.tracks.len());
-        for track in &smf.tracks {
-            let mut tick: u64 = 0;
-            let mut port: Option<u8> = None;
-            for ev in track {
-                tick += ev.delta.as_int() as u64;
-                length_ticks = length_ticks.max(tick);
-                match &ev.kind {
-                    TrackEventKind::Meta(MetaMessage::Tempo(us_per_beat)) => {
-                        tempos.push((tick, u24_to_u32(*us_per_beat)));
-                    }
-                    // FF 21 MidiPort：取首个出现值（与 CPU 加载链路一致）。
-                    TrackEventKind::Meta(MetaMessage::MidiPort(p)) if port.is_none() => {
-                        port = Some(u8::from(*p));
-                    }
-                    _ => {}
-                }
-            }
-            track_ports.push(port.unwrap_or(0));
-        }
+        let (tempos, length_ticks, track_ports) = collect_tempo_map(&smf);
 
-        // DEBT-04 #121：tempo 段必须**全局按 tick 升序**。多轨文件合法地把 tempo
-        // 分布在不同轨道，pass 1 按"轨优先"顺序收集会破坏升序假设，导致
-        // `partition_point` 定位错误 → tick→sample 映射错（速度/时长错）。
-        // 稳定排序保持同 tick 的"后者生效"语义（与流式路径 stream/parse.rs 一致）。
-        tempos.sort_by_key(|&(tick, _)| tick);
+        let tempo_segs = build_tempo_segments(&tempos, ticks_per_beat);
 
-        // Cumulative seconds per tempo segment; tick -> seconds is a binary
-        // search (large automated files can contain hundreds of thousands of
-        // tempo events; a linear scan per event would be O(events x tempos)).
-        // Default tempo is 500_000 us/beat (120 BPM).
-        let mut tempo_segs: Vec<(u64, f64, f64)> = Vec::with_capacity(tempos.len() + 1);
-        let mut prev_tick = 0u64;
-        let mut prev_tempo = 500_000.0;
-        let mut cum_secs = 0.0f64;
-        for &(tick, us) in tempos.iter() {
-            tempo_segs.push((prev_tick, cum_secs, prev_tempo));
-            cum_secs +=
-                (tick - prev_tick) as f64 * prev_tempo / 1_000_000.0 / ticks_per_beat as f64;
-            prev_tick = tick;
-            prev_tempo = us as f64;
-        }
-        tempo_segs.push((prev_tick, cum_secs, prev_tempo));
-
-        let ticks_to_sample = |tick: u64| -> u32 {
-            let i = tempo_segs
-                .partition_point(|&(start_tick, _, _)| start_tick <= tick)
-                .saturating_sub(1);
-            let (start_tick, cum, us) = tempo_segs[i];
-            let sec = cum + (tick - start_tick) as f64 * us / 1_000_000.0 / ticks_per_beat as f64;
-            (sec * sample_rate as f64).round() as u32
-        };
-
-        // ---- pass 2: build the packed event stream directly --------------
-        // No intermediate `(tick, channel, MidiEvent)` list: black-MIDI
-        // files hold 100-200M events, and a second 16-byte-per-event list
-        // would double the peak memory (multi-GB on "Rekt Apple!!.mid").
-        // Events are appended to the final Vec as they are read, so the
-        // only big allocations are the final 8-byte-per-event array and
-        // midly's own parse tree (freed when `smf` drops below).
-        let mut events: Vec<TimedEvent> = Vec::new();
-        for (track_idx, track) in smf.tracks.iter().enumerate() {
-            let mut tick: u64 = 0;
-            for ev in track {
-                tick += ev.delta.as_int() as u64;
-                let TrackEventKind::Midi { channel, message } = &ev.kind else {
-                    continue;
-                };
-                // REND-002 #87：(port, ch) → 全局通道 port*16+ch（超限折叠到 15 块）。
-                let channel = port::global_channel(track_ports[track_idx], channel.as_int());
-                let (k, payload) = match *message {
-                    MidiMessage::NoteOn { key, vel } => {
-                        let vel = vel.as_int();
-                        if vel == 0 {
-                            (kind::NOTE_OFF, key as u32)
-                        } else {
-                            (kind::NOTE_ON, key as u32 | ((vel as u32) << 8))
-                        }
-                    }
-                    MidiMessage::NoteOff { key, .. } => (kind::NOTE_OFF, key as u32),
-                    MidiMessage::Controller { controller, value } => (
-                        kind::CONTROL_CHANGE,
-                        controller.as_int() as u32 | ((value.as_int() as u32) << 8),
-                    ),
-                    MidiMessage::ProgramChange { program } => {
-                        (kind::PROGRAM_CHANGE, program.as_int() as u32)
-                    }
-                    MidiMessage::PitchBend { bend } => (kind::PITCH_BEND, bend.0.as_int() as u32),
-                    _ => continue,
-                };
-                events.push(TimedEvent::new(ticks_to_sample(tick), channel, k, payload));
-            }
-        }
+        let mut events =
+            collect_events(&smf, &track_ports, &tempo_segs, ticks_per_beat, sample_rate);
 
         // Stable sort by sample only: events at the same tick keep the
         // original MIDI order (track order, then per-track order), exactly
@@ -176,7 +83,8 @@ impl MidiFile {
         // change note lifetimes relative to the reference.
         events.sort_by_key(|e| e.sample);
 
-        let end_sample = ticks_to_sample(length_ticks) as u64;
+        let end_sample =
+            tick_to_sample(&tempo_segs, ticks_per_beat, sample_rate, length_ticks) as u64;
 
         let max_port = track_ports.iter().copied().max().unwrap_or(0);
         Ok(Self {
@@ -206,6 +114,136 @@ impl MidiFile {
 
 fn u24_to_u32(v: u24) -> u32 {
     v.as_int()
+}
+
+/// pass 1：收集全局 tempo 表、总 tick 长度与每轨端口号。
+/// 返回的 tempo 表已按 tick 升序（DEBT-04 #121）。
+fn collect_tempo_map(smf: &Smf<'_>) -> (Vec<(u64, u32)>, u64, Vec<u8>) {
+    // ---- pass 1: tempo map --------------------------------------------
+    // Tempo events are few (even in automated files); collect them
+    // first so pass 2 can convert ticks -> samples directly without a
+    // second event list sitting in memory.
+    let mut tempos: Vec<(u64, u32)> = Vec::new();
+    let mut length_ticks: u64 = 0;
+    let mut track_ports: Vec<u8> = Vec::with_capacity(smf.tracks.len());
+    for track in &smf.tracks {
+        let mut tick: u64 = 0;
+        let mut port: Option<u8> = None;
+        for ev in track {
+            tick += ev.delta.as_int() as u64;
+            length_ticks = length_ticks.max(tick);
+            match &ev.kind {
+                TrackEventKind::Meta(MetaMessage::Tempo(us_per_beat)) => {
+                    tempos.push((tick, u24_to_u32(*us_per_beat)));
+                }
+                // FF 21 MidiPort：取首个出现值（与 CPU 加载链路一致）。
+                TrackEventKind::Meta(MetaMessage::MidiPort(p)) if port.is_none() => {
+                    port = Some(u8::from(*p));
+                }
+                _ => {}
+            }
+        }
+        track_ports.push(port.unwrap_or(0));
+    }
+
+    // DEBT-04 #121：tempo 段必须**全局按 tick 升序**。多轨文件合法地把 tempo
+    // 分布在不同轨道，pass 1 按"轨优先"顺序收集会破坏升序假设，导致
+    // `partition_point` 定位错误 → tick→sample 映射错（速度/时长错）。
+    // 稳定排序保持同 tick 的"后者生效"语义（与流式路径 stream/parse.rs 一致）。
+    tempos.sort_by_key(|&(tick, _)| tick);
+
+    (tempos, length_ticks, track_ports)
+}
+
+/// 把 tempo 表展开成 `(段起始 tick, 段前累计秒数, 该段 us/beat)` 查询表。
+fn build_tempo_segments(tempos: &[(u64, u32)], ticks_per_beat: u64) -> Vec<(u64, f64, f64)> {
+    // Cumulative seconds per tempo segment; tick -> seconds is a binary
+    // search (large automated files can contain hundreds of thousands of
+    // tempo events; a linear scan per event would be O(events x tempos)).
+    // Default tempo is 500_000 us/beat (120 BPM).
+    let mut tempo_segs: Vec<(u64, f64, f64)> = Vec::with_capacity(tempos.len() + 1);
+    let mut prev_tick = 0u64;
+    let mut prev_tempo = 500_000.0;
+    let mut cum_secs = 0.0f64;
+    for &(tick, us) in tempos.iter() {
+        tempo_segs.push((prev_tick, cum_secs, prev_tempo));
+        cum_secs += (tick - prev_tick) as f64 * prev_tempo / 1_000_000.0 / ticks_per_beat as f64;
+        prev_tick = tick;
+        prev_tempo = us as f64;
+    }
+    tempo_segs.push((prev_tick, cum_secs, prev_tempo));
+    tempo_segs
+}
+
+/// tick → 样本位置：在 `tempo_segs` 中二分定位所属段后线性外推。
+fn tick_to_sample(
+    tempo_segs: &[(u64, f64, f64)],
+    ticks_per_beat: u64,
+    sample_rate: u32,
+    tick: u64,
+) -> u32 {
+    let i = tempo_segs
+        .partition_point(|&(start_tick, _, _)| start_tick <= tick)
+        .saturating_sub(1);
+    let (start_tick, cum, us) = tempo_segs[i];
+    let sec = cum + (tick - start_tick) as f64 * us / 1_000_000.0 / ticks_per_beat as f64;
+    (sec * sample_rate as f64).round() as u32
+}
+
+/// pass 2：把 MIDI 事件直接追加成打包事件流，不建中间事件表。
+fn collect_events(
+    smf: &Smf<'_>,
+    track_ports: &[u8],
+    tempo_segs: &[(u64, f64, f64)],
+    ticks_per_beat: u64,
+    sample_rate: u32,
+) -> Vec<TimedEvent> {
+    // ---- pass 2: build the packed event stream directly --------------
+    // No intermediate `(tick, channel, MidiEvent)` list: black-MIDI
+    // files hold 100-200M events, and a second 16-byte-per-event list
+    // would double the peak memory (multi-GB on "Rekt Apple!!.mid").
+    // Events are appended to the final Vec as they are read, so the
+    // only big allocations are the final 8-byte-per-event array and
+    // midly's own parse tree (freed when `smf` drops below).
+    let mut events: Vec<TimedEvent> = Vec::new();
+    for (track_idx, track) in smf.tracks.iter().enumerate() {
+        let mut tick: u64 = 0;
+        for ev in track {
+            tick += ev.delta.as_int() as u64;
+            let TrackEventKind::Midi { channel, message } = &ev.kind else {
+                continue;
+            };
+            // REND-002 #87：(port, ch) → 全局通道 port*16+ch（超限折叠到 15 块）。
+            let channel = port::global_channel(track_ports[track_idx], channel.as_int());
+            let (k, payload) = match *message {
+                MidiMessage::NoteOn { key, vel } => {
+                    let vel = vel.as_int();
+                    if vel == 0 {
+                        (kind::NOTE_OFF, key as u32)
+                    } else {
+                        (kind::NOTE_ON, key as u32 | ((vel as u32) << 8))
+                    }
+                }
+                MidiMessage::NoteOff { key, .. } => (kind::NOTE_OFF, key as u32),
+                MidiMessage::Controller { controller, value } => (
+                    kind::CONTROL_CHANGE,
+                    controller.as_int() as u32 | ((value.as_int() as u32) << 8),
+                ),
+                MidiMessage::ProgramChange { program } => {
+                    (kind::PROGRAM_CHANGE, program.as_int() as u32)
+                }
+                MidiMessage::PitchBend { bend } => (kind::PITCH_BEND, bend.0.as_int() as u32),
+                _ => continue,
+            };
+            events.push(TimedEvent::new(
+                tick_to_sample(tempo_segs, ticks_per_beat, sample_rate, tick),
+                channel,
+                k,
+                payload,
+            ));
+        }
+    }
+    events
 }
 
 #[cfg(test)]

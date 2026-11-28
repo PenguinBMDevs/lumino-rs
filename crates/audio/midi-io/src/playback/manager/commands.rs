@@ -90,19 +90,7 @@ pub(crate) fn handle_command(
             engine.set_velocity_filter_threshold(threshold);
         }
         Command::SetTrackPlayStates(muted, soloed) => {
-            // PREF-006 A1：当前轨流式读取，静音/独奏在 `process_streaming_tracks`
-            // 每次 update 实时过滤，无需重建队列。
-            let was_current_playable = engine.track_should_play(engine.current_track as usize);
-            engine.set_track_play_states(muted, soloed);
-            let is_current_playable = engine.track_should_play(engine.current_track as usize);
-            if was_current_playable && !is_current_playable {
-                // 当前轨由"发声"转为"静音"：立即静音清理，避免悬挂音符。
-                if engine.is_playing()
-                    && let Some(out) = midi_output
-                {
-                    let _ = out.all_notes_off();
-                }
-            }
+            apply_track_play_states(engine, midi_output, muted, soloed);
         }
         Command::SetChannelGain(ch, gain) => {
             if let Some(out) = midi_output {
@@ -114,61 +102,116 @@ pub(crate) fn handle_command(
                 let _ = out.set_channel_pan(ch, pan);
             }
         }
-        Command::Play => {
-            // 新的播放会话（从停止态开始）：清零累计统计（欠载/丢弃），
-            // 使状态栏反映"本次播放"；暂停→恢复属同一会话，不清零。
-            if engine.state() == PlaybackState::Stopped
-                && let Some(out) = midi_output
-            {
-                let _ = out.reset_playback_stats();
-            }
-            engine.play();
-            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
-        }
-        Command::Pause => {
-            engine.pause();
-            if let Some(out) = midi_output {
-                // REND-002：释放全部全局通道的延音（XSynth AllChannels），
-                // 避免多端口下端口 >0 的踏板持音在暂停后残留。
-                let _ = out.release_all_dampers();
-                let _ = out.all_notes_off();
-            }
-            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
-        }
-        Command::Stop => {
-            engine.stop();
-            if let Some(out) = midi_output {
-                let _ = out.all_notes_off();
-                let _ = out.reset_control();
-            }
-            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
-        }
-        Command::Seek(tick) => {
-            // 仅播放中的 seek 可能存在「已 NoteOn 未收到 NoteOff」的悬挂音符，
-            // 需要静音清理；停止/暂停状态本就无声（Stop/Pause 路径已清理过），
-            // 无条件发送会在拖拽 scrub 等高频 seek 场景向输出设备灌冗余消息。
-            if engine.state() == PlaybackState::Playing
-                && let Some(out) = midi_output
-            {
-                let _ = out.all_notes_off();
-                let _ = out.reset_control();
-            }
-            engine.seek(tick);
-            // seek 后模态状态追齐：把 seek 点之前的最后 CC/PC/PB/RPN 状态
-            // 发给输出（含暂停中 seek），避免保留跳转前的旧值。
-            let chase = engine.take_pending_chase();
-            if !chase.is_empty() {
-                flush_midi_messages(&chase, midi_output);
-            }
-            // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
-            // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
-            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
-        }
+        Command::Play => sync_play(engine, midi_output, frame_tx, last_frame),
+        Command::Pause => sync_pause(engine, midi_output, frame_tx, last_frame),
+        Command::Stop => sync_stop(engine, midi_output, frame_tx, last_frame),
+        Command::Seek(tick) => sync_seek(tick, engine, midi_output, frame_tx, last_frame),
         Command::SetLooping(looping) => engine.set_looping(looping),
         Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
         Command::ClearLoopRange => engine.clear_loop_range(),
         Command::Quit => {}
     }
+}
+
+/// 应用音轨静音/独奏状态，并在当前轨由发声转为静音时清理悬挂音符。
+fn apply_track_play_states(
+    engine: &mut PlaybackEngine,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
+    muted: Vec<bool>,
+    soloed: Vec<bool>,
+) {
+    // PREF-006 A1：当前轨流式读取，静音/独奏在 `process_streaming_tracks`
+    // 每次 update 实时过滤，无需重建队列。
+    let was_current_playable = engine.track_should_play(engine.current_track as usize);
+    engine.set_track_play_states(muted, soloed);
+    let is_current_playable = engine.track_should_play(engine.current_track as usize);
+    if was_current_playable && !is_current_playable {
+        // 当前轨由"发声"转为"静音"：立即静音清理，避免悬挂音符。
+        if engine.is_playing()
+            && let Some(out) = midi_output
+        {
+            let _ = out.all_notes_off();
+        }
+    }
+}
+
+/// 开始播放：新的播放会话清零累计统计后推进引擎，并补推状态帧。
+fn sync_play(
+    engine: &mut PlaybackEngine,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
+    frame_tx: &Sender<PlaybackFrame>,
+    last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+) {
+    // 新的播放会话（从停止态开始）：清零累计统计（欠载/丢弃），
+    // 使状态栏反映"本次播放"；暂停→恢复属同一会话，不清零。
+    if engine.state() == PlaybackState::Stopped
+        && let Some(out) = midi_output
+    {
+        let _ = out.reset_playback_stats();
+    }
+    engine.play();
+    push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
+}
+
+/// 暂停播放：释放全部延音/音符后补推状态帧。
+fn sync_pause(
+    engine: &mut PlaybackEngine,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
+    frame_tx: &Sender<PlaybackFrame>,
+    last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+) {
+    engine.pause();
+    if let Some(out) = midi_output {
+        // REND-002：释放全部全局通道的延音（XSynth AllChannels），
+        // 避免多端口下端口 >0 的踏板持音在暂停后残留。
+        let _ = out.release_all_dampers();
+        let _ = out.all_notes_off();
+    }
+    push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
+}
+
+/// 停止播放：清理音符与控制器状态后补推状态帧。
+fn sync_stop(
+    engine: &mut PlaybackEngine,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
+    frame_tx: &Sender<PlaybackFrame>,
+    last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+) {
+    engine.stop();
+    if let Some(out) = midi_output {
+        let _ = out.all_notes_off();
+        let _ = out.reset_control();
+    }
+    push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
+}
+
+/// 跳转到指定 tick：按播放状态清理悬挂音符、追齐模态状态并补推状态帧。
+fn sync_seek(
+    tick: f32,
+    engine: &mut PlaybackEngine,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
+    frame_tx: &Sender<PlaybackFrame>,
+    last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+) {
+    // 仅播放中的 seek 可能存在「已 NoteOn 未收到 NoteOff」的悬挂音符，
+    // 需要静音清理；停止/暂停状态本就无声（Stop/Pause 路径已清理过），
+    // 无条件发送会在拖拽 scrub 等高频 seek 场景向输出设备灌冗余消息。
+    if engine.state() == PlaybackState::Playing
+        && let Some(out) = midi_output
+    {
+        let _ = out.all_notes_off();
+        let _ = out.reset_control();
+    }
+    engine.seek(tick);
+    // seek 后模态状态追齐：把 seek 点之前的最后 CC/PC/PB/RPN 状态
+    // 发给输出（含暂停中 seek），避免保留跳转前的旧值。
+    let chase = engine.take_pending_chase();
+    if !chase.is_empty() {
+        flush_midi_messages(&chase, midi_output);
+    }
+    // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
+    // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
+    push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
 }
 
 /// 主动推送一帧状态快照（用于 Play/Pause/Stop 等状态切换后）。
