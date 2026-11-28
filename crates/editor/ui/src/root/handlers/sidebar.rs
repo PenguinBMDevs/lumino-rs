@@ -80,60 +80,8 @@ impl Root {
     /// 返回是否需要重新渲染（仅供调用方决策；`Root::update` 始终将
     /// Sidebar 消息视为已处理，不会因无需重绘而把消息继续路由）
     pub(crate) fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
-        // 窗口最大化/还原期间阻止路由被意外切换
-        if self.window_resize_guard
-            && matches!(
-                &event,
-                sidebar::Event::RouteUpdated(_) | sidebar::Event::GroupToggled(_)
-            )
-        {
-            tracing::warn!("Root: 窗口最大化/还原期间忽略路由切换");
-            return false;
-        }
-
-        // CPU 洋葱皮后端：纵向卷帘 / 工程走带 / 全屏瀑布流 / 视频导出的入口一律拒绝。
-        // **必须早于** `self.sidebar.update`：那里会写 route / active_group /
-        // roll_bar_active / video_export_visible，先改一半再弹 Toast 会让界面停在
-        // 「按钮已点亮但功能不可用」的自相矛盾状态。CPU 判定与文案见 `cpu_guard`。
-        if self.cpu_block_sidebar_event(&event) {
-            return true;
-        }
-
-        // 自动化面板切换始终触发重绘
-        if matches!(&event, sidebar::Event::AutomationPanelToggled) {
-            self.sidebar.update(event);
-            return true;
-        }
-
-        // 钢琴卷帘切换始终触发重绘
-        if matches!(&event, sidebar::Event::PianoRollToggled) {
-            // 互斥：打开钢琴卷帘时退出瀑布流模式
-            if !self.sidebar.piano_roll_visible {
-                self.state.current_mode = AppMode::Editor;
-                self.state.toggle_animation.animate_to(0.0);
-            }
-            self.sidebar.update(event);
-            return true;
-        }
-
-        // 混音台独立窗口：主窗口只维护「是否请求打开」的镜像开关与主音量。
-        // 真正的窗口开关 / 通道条快照 / 本地滚动都在 Runner 与对话框 Host 里。
-        if matches!(
-            &event,
-            sidebar::Event::MixerPanelToggled | sidebar::Event::MixerPanelMasterVolumeChanged(_)
-        ) {
-            match event {
-                sidebar::Event::MixerPanelToggled => {
-                    self.mixer_panel.open = !self.mixer_panel.open;
-                }
-                // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
-                sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
-                    self.mixer_panel.master_volume = v.clamp(0, sidebar::MIXER_MAX_VOLUME);
-                    self.update_playback_track_mix();
-                }
-                _ => {}
-            }
-            return true;
+        if let Some(result) = self.sidebar_early_handled(&event) {
+            return result;
         }
 
         // 先检查是否是音轨切换
@@ -146,29 +94,103 @@ impl Root {
         // 更新 sidebar，获取是否需要重新渲染
         let needs_redraw = self.sidebar.update(event.clone());
 
+        self.sync_track_state_to_engine(&event);
+        self.sync_track_structure(&event);
+        self.sync_app_mode_and_export(&event);
+        self.sync_roll_orientation();
+        self.emit_pending_track_events(&event, track_selected_idx);
+
+        needs_redraw
+    }
+
+    /// 早期分派：返回 `Some(结果)` 表示已处理，`None` 表示继续走通用更新路径。
+    /// 关卡顺序与原实现一致；CPU 拦截必须早于 `sidebar.update`（见下方原注释）。
+    fn sidebar_early_handled(&mut self, event: &sidebar::Event) -> Option<bool> {
+        // 窗口最大化/还原期间阻止路由被意外切换
+        if self.window_resize_guard
+            && matches!(
+                event,
+                sidebar::Event::RouteUpdated(_) | sidebar::Event::GroupToggled(_)
+            )
+        {
+            tracing::warn!("Root: 窗口最大化/还原期间忽略路由切换");
+            return Some(false);
+        }
+
+        // CPU 洋葱皮后端：纵向卷帘 / 工程走带 / 全屏瀑布流 / 视频导出的入口一律拒绝。
+        // **必须早于** `self.sidebar.update`：那里会写 route / active_group /
+        // roll_bar_active / video_export_visible，先改一半再弹 Toast 会让界面停在
+        // 「按钮已点亮但功能不可用」的自相矛盾状态。CPU 判定与文案见 `cpu_guard`。
+        if self.cpu_block_sidebar_event(event) {
+            return Some(true);
+        }
+
+        // 自动化面板切换始终触发重绘
+        if matches!(event, sidebar::Event::AutomationPanelToggled) {
+            self.sidebar.update(event.clone());
+            return Some(true);
+        }
+
+        // 钢琴卷帘切换始终触发重绘
+        if matches!(event, sidebar::Event::PianoRollToggled) {
+            // 互斥：打开钢琴卷帘时退出瀑布流模式
+            if !self.sidebar.piano_roll_visible {
+                self.state.current_mode = AppMode::Editor;
+                self.state.toggle_animation.animate_to(0.0);
+            }
+            self.sidebar.update(event.clone());
+            return Some(true);
+        }
+
+        // 混音台独立窗口：主窗口只维护「是否请求打开」的镜像开关与主音量。
+        // 真正的窗口开关 / 通道条快照 / 本地滚动都在 Runner 与对话框 Host 里。
+        if matches!(
+            event,
+            sidebar::Event::MixerPanelToggled | sidebar::Event::MixerPanelMasterVolumeChanged(_)
+        ) {
+            match event {
+                sidebar::Event::MixerPanelToggled => {
+                    self.mixer_panel.open = !self.mixer_panel.open;
+                }
+                // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
+                sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
+                    self.mixer_panel.master_volume = (*v).clamp(0, sidebar::MIXER_MAX_VOLUME);
+                    self.update_playback_track_mix();
+                }
+                _ => {}
+            }
+            return Some(true);
+        }
+        None
+    }
+
+    /// 静音/独奏与增益/声像 → 即时同步播放引擎，并把可见性写回 document。
+    fn sync_track_state_to_engine(&mut self, event: &sidebar::Event) {
         // 静音/独奏切换 → 立即同步到播放引擎，使独奏/静音实时过滤播放。
         // 同时写回 document —— `.lmpj` 保存链路读的是 `doc.tracks` 的
         // visibility/solo，只改 sidebar 会让「静音/独奏」在保存重开后丢失。
-        if let sidebar::Event::TrackMuteToggled(id) | sidebar::Event::TrackSoloToggled(id) = &event
-        {
+        if let sidebar::Event::TrackMuteToggled(id) | sidebar::Event::TrackSoloToggled(id) = event {
             self.update_playback_track_states();
             self.apply_track_visibility_to_document(*id);
         }
 
         // 增益/声像变化 → 立即同步到播放引擎（音频域混音，与 MIDI CC 解耦）。
         if matches!(
-            &event,
+            event,
             sidebar::Event::TrackGainChanged(_, _) | sidebar::Event::TrackPanChanged(_, _)
         ) {
             self.update_playback_track_mix();
         }
+    }
 
+    /// 音轨结构变化 → 扩轨、视觉顺序、当前轨兜底与待处理队列转发。
+    fn sync_track_structure(&mut self, event: &sidebar::Event) {
         // 音轨新增类事件：同步扩展 document（单一权威源）。
         // 2026-08 修复：sidebar 新建音轨只更新 UI 列表，document 未扩轨，
         // 导致新音轨 insert_note 越界静默失败（音符无法放置）。
         // 必须在发射 TrackSelected 之前完成，保证切换后立即可编辑。
         if matches!(
-            &event,
+            event,
             sidebar::Event::AddTrack
                 | sidebar::Event::TrackAddAbove(_)
                 | sidebar::Event::TrackAddBelow(_)
@@ -181,7 +203,7 @@ impl Root {
         // 把视觉位置转换为 document 音轨索引的依据，不同步会导致排序后
         // 走带编辑（添加/框选/移动/擦除/切割）落在错误的音轨上。
         let track_structure_changed = matches!(
-            &event,
+            event,
             sidebar::Event::AddTrack
                 | sidebar::Event::TrackAddAbove(_)
                 | sidebar::Event::TrackAddBelow(_)
@@ -220,9 +242,12 @@ impl Root {
 
         // 消费 sidebar 中待应用的通道编辑，批量改写音符/控制事件/自动化 lane 通道
         self.forward_pending_track_channel_change();
+    }
 
+    /// 分组切换 → AppMode 同步；音频导出面板 → 音色库路径填充。
+    fn sync_app_mode_and_export(&mut self, event: &sidebar::Event) {
         // 分组切换 → 同步 AppMode（必须在 sidebar.update 之后，因为 active_group 在那里改变）
-        if matches!(&event, sidebar::Event::GroupToggled(_)) {
+        if matches!(event, sidebar::Event::GroupToggled(_)) {
             match self.sidebar.active_group {
                 Some(sidebar::GroupId::Waterfall) => {
                     self.state.current_mode = AppMode::Waterfall;
@@ -237,7 +262,7 @@ impl Root {
 
         // 音频导出面板打开时，从设置自动填充音色库路径（用户选择可覆盖）
         if matches!(
-            &event,
+            event,
             sidebar::Event::RouteUpdated(sidebar::Route::AudioExport)
         ) && self.sidebar.audio_export_visible
             && self.state.audio_export_dialog.soundfont_path.is_empty()
@@ -245,7 +270,10 @@ impl Root {
             self.state.audio_export_dialog.soundfont_path =
                 self.settings.synth.soundfont_path.clone();
         }
+    }
 
+    /// 卷帘方向镜像、纵向进入/退出的视图备份切换，最后更新画布偏移。
+    fn sync_roll_orientation(&mut self) {
         // 卷帘方向切换 → 镜像到右侧栏，驱动瀑布流预览入口按钮显隐
         // （纵向卷帘模式下该入口隐藏，因其内容已并入纵向卷帘编辑区）
         self.right_sidebar.roll_mode = self
@@ -289,7 +317,14 @@ impl Root {
             .editor_state
             .canvas
             .set_offset(sidebar_width, current_offset_y);
+    }
 
+    /// 音轨选择事件发射；添加音轨时按用户设置决定是否自动切到新轨。
+    fn emit_pending_track_events(
+        &mut self,
+        event: &sidebar::Event,
+        track_selected_idx: Option<usize>,
+    ) {
         // 如果是音轨切换，发送 Core 事件
         if let Some(track_idx) = track_selected_idx {
             tracing::debug!("Root: 发射音轨选择事件，音轨 {}", track_idx);
@@ -299,7 +334,7 @@ impl Root {
         }
 
         // 如果是添加音轨，根据用户设置决定是否切换到新音轨
-        if matches!(&event, sidebar::Event::AddTrack) {
+        if matches!(event, sidebar::Event::AddTrack) {
             if self.settings.editing.track_add_behavior == TrackAddBehavior::AutoSwitch {
                 let track_idx = self
                     .sidebar
@@ -319,7 +354,5 @@ impl Root {
                 );
             }
         }
-
-        needs_redraw
     }
 }
