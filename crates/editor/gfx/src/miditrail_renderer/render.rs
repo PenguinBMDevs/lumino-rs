@@ -74,16 +74,7 @@ impl MiditrailRenderer {
         }
 
         self.ensure_output_texture(device, width, height);
-        update_key_positions(
-            uniform.key_count,
-            &mut self.last_key_count,
-            &mut self.key_positions,
-            &mut self.key_widths,
-        );
-        let t_active = std::time::Instant::now();
-        let active_keys = compute_active_keys(uniform.tick, notes);
-        self.update_key_press_factors(&active_keys, uniform.fps);
-        let active_us = t_active.elapsed().as_micros() as u64;
+        let (active_keys, active_us) = self.prepare_key_state(uniform, notes);
 
         let is_top = uniform.view_mode.is_top();
         // Top 先做逐音时间量化对齐（永不合并；Normal 路径零改动，防污染）。
@@ -95,55 +86,10 @@ impl MiditrailRenderer {
             notes
         };
 
-        let mut note_instances = std::mem::take(&mut self.scratch_notes);
-        note_instances.clear();
-        let t_build_notes = std::time::Instant::now();
-        build_note_instances(
-            uniform,
-            notes,
-            &self.key_positions,
-            &self.key_widths,
-            &mut note_instances,
-            &mut self.scratch_build,
-        );
-        let build_notes_us = t_build_notes.elapsed().as_micros() as u64;
-        let mut key_instances = std::mem::take(&mut self.scratch_keys);
-        key_instances.clear();
-        // Top 键盘不要按下位移（俯视下位移丑且无意义），只保留颜色反馈：
-        // 传全零 press 数组，`update_key_press_factors` 照常更新内部状态，
-        // 切回 Normal 时按压动画无缝衔接。
-        let press_factors: &[f32] = if is_top {
-            &ZERO_PRESS_FACTORS
-        } else {
-            &self.key_press_factors
-        };
-        let t_build_keys = std::time::Instant::now();
-        build_key_instances(
-            uniform,
-            &active_keys,
-            &self.key_positions,
-            &self.key_widths,
-            press_factors,
-            &mut key_instances,
-        );
-        let build_keys_us = t_build_keys.elapsed().as_micros() as u64;
-
-        let total_instances = note_instances.len() + key_instances.len();
-        self.ensure_instance_buffer(device, total_instances);
-        let t_upload = std::time::Instant::now();
-        let note_bytes =
-            (note_instances.len() * std::mem::size_of::<MiditrailInstanceGpu>()) as u64;
-        if let Some(ref buf) = self.instance_buffer {
-            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&note_instances));
-            if !key_instances.is_empty() {
-                queue.write_buffer(
-                    buf.inner(),
-                    note_bytes,
-                    bytemuck::cast_slice(&key_instances),
-                );
-            }
-        }
-        let upload_notes_us = t_upload.elapsed().as_micros() as u64;
+        let (note_instances, key_instances, build_notes_us, build_keys_us) =
+            self.build_frame_instances(uniform, notes, &active_keys, is_top);
+        let upload_notes_us =
+            self.upload_instance_data(device, queue, &note_instances, &key_instances);
 
         let mut aura_instances = std::mem::take(&mut self.scratch_auras);
         aura_instances.clear();
@@ -169,16 +115,7 @@ impl MiditrailRenderer {
         self.ensure_aura_resources(device, queue);
 
         let t_submit = std::time::Instant::now();
-        let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
-        queue.write_buffer(
-            self.uniform_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&[camera]),
-        );
-
-        if self.bind_group.is_none() {
-            self.rebuild_bind_group(device);
-        }
+        self.upload_camera_uniform(device, queue, width, height, uniform);
 
         self.execute_render_pass(
             encoder,
@@ -201,5 +138,114 @@ impl MiditrailRenderer {
         self.scratch_notes = note_instances;
         self.scratch_keys = key_instances;
         self.scratch_auras = aura_instances;
+    }
+
+    /// 刷新键位布局与按下状态，返回当前激活键与该阶段耗时（微秒）。
+    fn prepare_key_state(
+        &mut self,
+        uniform: &MiditrailUniformGpu,
+        notes: &[MiditrailNoteGpu],
+    ) -> (ActiveKeys, u64) {
+        update_key_positions(
+            uniform.key_count,
+            &mut self.last_key_count,
+            &mut self.key_positions,
+            &mut self.key_widths,
+        );
+        let t_active = std::time::Instant::now();
+        let active_keys = compute_active_keys(uniform.tick, notes);
+        self.update_key_press_factors(&active_keys, uniform.fps);
+        let active_us = t_active.elapsed().as_micros() as u64;
+        (active_keys, active_us)
+    }
+
+    /// 构建本帧音符与琴键实例，返回实例集与两个构建阶段耗时（微秒）。
+    fn build_frame_instances(
+        &mut self,
+        uniform: &MiditrailUniformGpu,
+        notes: &[MiditrailNoteGpu],
+        active_keys: &ActiveKeys,
+        is_top: bool,
+    ) -> (
+        Vec<MiditrailInstanceGpu>,
+        Vec<MiditrailInstanceGpu>,
+        u64,
+        u64,
+    ) {
+        let mut note_instances = std::mem::take(&mut self.scratch_notes);
+        note_instances.clear();
+        let t_build_notes = std::time::Instant::now();
+        build_note_instances(
+            uniform,
+            notes,
+            &self.key_positions,
+            &self.key_widths,
+            &mut note_instances,
+            &mut self.scratch_build,
+        );
+        let build_notes_us = t_build_notes.elapsed().as_micros() as u64;
+        let mut key_instances = std::mem::take(&mut self.scratch_keys);
+        key_instances.clear();
+        // Top 键盘不要按下位移（俯视下位移丑且无意义），只保留颜色反馈：
+        // 传全零 press 数组，`update_key_press_factors` 照常更新内部状态，
+        // 切回 Normal 时按压动画无缝衔接。
+        let press_factors: &[f32] = if is_top {
+            &ZERO_PRESS_FACTORS
+        } else {
+            &self.key_press_factors
+        };
+        let t_build_keys = std::time::Instant::now();
+        build_key_instances(
+            uniform,
+            active_keys,
+            &self.key_positions,
+            &self.key_widths,
+            press_factors,
+            &mut key_instances,
+        );
+        let build_keys_us = t_build_keys.elapsed().as_micros() as u64;
+        (note_instances, key_instances, build_notes_us, build_keys_us)
+    }
+
+    /// 把音符与琴键实例写入实例缓冲，返回上传阶段耗时（微秒）。
+    fn upload_instance_data(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        note_instances: &[MiditrailInstanceGpu],
+        key_instances: &[MiditrailInstanceGpu],
+    ) -> u64 {
+        let total_instances = note_instances.len() + key_instances.len();
+        self.ensure_instance_buffer(device, total_instances);
+        let t_upload = std::time::Instant::now();
+        let note_bytes = std::mem::size_of_val(note_instances) as u64;
+        if let Some(ref buf) = self.instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(note_instances));
+            if !key_instances.is_empty() {
+                queue.write_buffer(buf.inner(), note_bytes, bytemuck::cast_slice(key_instances));
+            }
+        }
+        t_upload.elapsed().as_micros() as u64
+    }
+
+    /// 上传本帧相机参数，并在 bind group 缺失时重建。
+    fn upload_camera_uniform(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        uniform: &MiditrailUniformGpu,
+    ) {
+        let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
+
+        if self.bind_group.is_none() {
+            self.rebuild_bind_group(device);
+        }
     }
 }

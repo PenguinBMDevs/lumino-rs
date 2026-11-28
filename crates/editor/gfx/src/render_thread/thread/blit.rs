@@ -1,3 +1,5 @@
+use std::sync::{Mutex, OnceLock};
+
 use super::WgpuRenderThread;
 use crate::epoch::GpuEpoch;
 
@@ -78,122 +80,10 @@ impl WgpuRenderThread {
         dst_format: wgpu::TextureFormat,
         epoch: GpuEpoch,
     ) {
-        use std::sync::{Mutex, OnceLock};
-
-        const SHADER: &str = r#"
-@group(0) @binding(0) var tex: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-@vertex fn vs_main(@builtin(vertex_index) idx: u32) -> VOut {
-    var pos = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
-    var uv = array<vec2<f32>, 3>(vec2<f32>(0.0, 1.0), vec2<f32>(2.0, 1.0), vec2<f32>(0.0, -1.0));
-    var out: VOut; out.pos = vec4<f32>(pos[idx], 0.0, 1.0); out.uv = uv[idx]; return out;
-}
-@fragment fn fs_main(in: VOut) -> @location(0) vec4<f32> {
-    return textureSample(tex, samp, in.uv);
-}
-"#;
-
-        struct BlitCache {
-            pipeline: wgpu::RenderPipeline,
-            bind_group_layout: wgpu::BindGroupLayout,
-            sampler: wgpu::Sampler,
-            format: wgpu::TextureFormat,
-            /// 创建时所属 GPU 代次（REND-019 PR-B F6：双键之 epoch 键）
-            epoch: GpuEpoch,
-        }
-        static CACHE: OnceLock<Mutex<Option<BlitCache>>> = OnceLock::new();
         let cache_mutex = CACHE.get_or_init(|| Mutex::new(None));
 
         // 尝试复用缓存管线（(GpuEpoch, format) 双键：任一不一致即重建）
-        let needs_rebuild = {
-            let guard = cache_mutex.lock().ok();
-            let cached = guard
-                .as_ref()
-                .and_then(|opt| opt.as_ref())
-                .map(|c| (c.epoch, c.format));
-            blit_cache_needs_rebuild(cached, epoch, dst_format)
-        };
-
-        if needs_rebuild {
-            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-                label: Some("blit_sampler"),
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                ..Default::default()
-            });
-            let bind_group_layout =
-                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("blit_bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                });
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("blit_shader"),
-                source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-            });
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("blit_pipeline_layout"),
-                bind_group_layouts: &[&bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("blit_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: dst_format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
-            if let Ok(mut guard) = cache_mutex.lock() {
-                *guard = Some(BlitCache {
-                    pipeline,
-                    bind_group_layout,
-                    sampler,
-                    format: dst_format,
-                    epoch,
-                });
-            }
-        }
+        ensure_blit_cache(device, cache_mutex, epoch, dst_format);
 
         let cache_guard = match cache_mutex.lock() {
             Ok(g) => g,
@@ -245,6 +135,140 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
             rpass.draw(0..3, 0..1);
         }
         queue.submit(std::iter::once(encoder.finish()));
+    }
+}
+
+/// blit 采样着色器：全屏三角，仅采样源纹理（`uv` 越界由 ClampToEdge 处理）。
+const SHADER: &str = r#"
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex fn vs_main(@builtin(vertex_index) idx: u32) -> VOut {
+    var pos = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    var uv = array<vec2<f32>, 3>(vec2<f32>(0.0, 1.0), vec2<f32>(2.0, 1.0), vec2<f32>(0.0, -1.0));
+    var out: VOut; out.pos = vec4<f32>(pos[idx], 0.0, 1.0); out.uv = uv[idx]; return out;
+}
+@fragment fn fs_main(in: VOut) -> @location(0) vec4<f32> {
+    return textureSample(tex, samp, in.uv);
+}
+"#;
+
+/// blit 管线缓存（pipeline / bind group layout / sampler + 重建双键）。
+struct BlitCache {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    format: wgpu::TextureFormat,
+    /// 创建时所属 GPU 代次（REND-019 PR-B F6：双键之 epoch 键）
+    epoch: GpuEpoch,
+}
+
+/// 进程内唯一缓存槽（跨代次重建由 [`ensure_blit_cache`] 判定）。
+static CACHE: OnceLock<Mutex<Option<BlitCache>>> = OnceLock::new();
+
+/// 按 `(GpuEpoch, format)` 双键确保缓存就绪：缺失或失配即重建并写回。
+fn ensure_blit_cache(
+    device: &wgpu::Device,
+    cache_mutex: &Mutex<Option<BlitCache>>,
+    epoch: GpuEpoch,
+    dst_format: wgpu::TextureFormat,
+) {
+    let needs_rebuild = {
+        let guard = cache_mutex.lock().ok();
+        let cached = guard
+            .as_ref()
+            .and_then(|opt| opt.as_ref())
+            .map(|c| (c.epoch, c.format));
+        blit_cache_needs_rebuild(cached, epoch, dst_format)
+    };
+
+    if needs_rebuild {
+        let cache = create_blit_cache(device, epoch, dst_format);
+        if let Ok(mut guard) = cache_mutex.lock() {
+            *guard = Some(cache);
+        }
+    }
+}
+
+/// 创建 blit 全套 GPU 资源：sampler → bind group layout → shader → pipeline layout → pipeline。
+fn create_blit_cache(
+    device: &wgpu::Device,
+    epoch: GpuEpoch,
+    dst_format: wgpu::TextureFormat,
+) -> BlitCache {
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("blit_sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Nearest,
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        ..Default::default()
+    });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("blit_bind_group_layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("blit_shader"),
+        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("blit_pipeline_layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("blit_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: dst_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    });
+    BlitCache {
+        pipeline,
+        bind_group_layout,
+        sampler,
+        format: dst_format,
+        epoch,
     }
 }
 

@@ -21,6 +21,61 @@ impl MidiconsoleRenderer {
         });
 
         // —— 烘焙字形图集（CPU 侧 ab_glyph，仅一次）——
+        let (atlas_view, sampler) = Self::build_atlas(device, queue);
+
+        // —— 单元 / uniform 缓冲 ——
+        let cell_count = GRID_COLS * GRID_ROWS;
+        let cells_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("midiconsole_cells"),
+            size: (cell_count * std::mem::size_of::<CellGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let uniform_buffer = Self::create_uniform_buffer(device, cell_w, cell_h, width, height);
+
+        // —— 绑定组布局 ——
+        let (bind_group_layout, bind_group) = Self::build_bindings(
+            device,
+            &uniform_buffer,
+            &atlas_view,
+            &sampler,
+            &cells_buffer,
+        );
+
+        let pipeline = crate::pipeline::RenderPipelineBuilder::new(
+            device,
+            "midiconsole_pipeline",
+            &shader_module,
+        )
+        .bind_group(&bind_group_layout)
+        // 导出编码器按 "bgra" 消费：让 GPU 直接产出 BGRA，CPU 侧零 swizzle。
+        .opaque_target(wgpu::TextureFormat::Bgra8Unorm)
+        .build();
+
+        let (output_texture, output_texture_view) =
+            Self::create_output_texture(device, width, height);
+
+        Self {
+            pipeline,
+            bind_group,
+            uniform_buffer,
+            cells_buffer,
+            output_texture,
+            output_texture_view,
+            cell_w,
+            cell_h,
+            frame_w: width,
+            frame_h: height,
+            staging: None,
+        }
+    }
+
+    /// 烘焙字形图集并创建采样器。
+    fn build_atlas(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> (wgpu::TextureView, wgpu::Sampler) {
         let (atlas_data, atlas_w, atlas_h) =
             build_glyph_atlas().unwrap_or_else(|| (vec![0u8; 0], 1, 1));
         let atlas_tex = device.create_texture_with_data(
@@ -52,16 +107,17 @@ impl MidiconsoleRenderer {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..wgpu::SamplerDescriptor::default()
         });
+        (atlas_view, sampler)
+    }
 
-        // —— 单元 / uniform 缓冲 ——
-        let cell_count = GRID_COLS * GRID_ROWS;
-        let cells_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("midiconsole_cells"),
-            size: (cell_count * std::mem::size_of::<CellGpu>()) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
+    /// 创建 uniform 缓冲（内容为创建时的一次性参数）。
+    fn create_uniform_buffer(
+        device: &wgpu::Device,
+        cell_w: f32,
+        cell_h: f32,
+        width: u32,
+        height: u32,
+    ) -> wgpu::Buffer {
         let uniforms = Uniforms {
             grid_cols: GRID_COLS as u32,
             grid_rows: GRID_ROWS as u32,
@@ -80,13 +136,21 @@ impl MidiconsoleRenderer {
             _pad3: 0.0,
             _pad4: 0.0,
         };
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("midiconsole_uniform"),
             contents: bytemuck::bytes_of(&uniforms),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        })
+    }
 
-        // —— 绑定组布局 ——
+    /// 创建绑定组布局与绑定组。
+    fn build_bindings(
+        device: &wgpu::Device,
+        uniform_buffer: &wgpu::Buffer,
+        atlas_view: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
+        cells_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("midiconsole_bind_group_layout"),
             entries: &[
@@ -139,11 +203,11 @@ impl MidiconsoleRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
+                    resource: wgpu::BindingResource::TextureView(atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: wgpu::BindingResource::Sampler(sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -152,16 +216,15 @@ impl MidiconsoleRenderer {
             ],
         });
 
-        let pipeline = crate::pipeline::RenderPipelineBuilder::new(
-            device,
-            "midiconsole_pipeline",
-            &shader_module,
-        )
-        .bind_group(&bind_group_layout)
-        // 导出编码器按 "bgra" 消费：让 GPU 直接产出 BGRA，CPU 侧零 swizzle。
-        .opaque_target(wgpu::TextureFormat::Bgra8Unorm)
-        .build();
+        (bind_group_layout, bind_group)
+    }
 
+    /// 创建离屏输出纹理（BGRA，导出编码器直接消费）。
+    fn create_output_texture(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
         let output_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("midiconsole_output"),
             size: wgpu::Extent3d {
@@ -178,20 +241,7 @@ impl MidiconsoleRenderer {
         });
         let output_texture_view =
             output_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        Self {
-            pipeline,
-            bind_group,
-            uniform_buffer,
-            cells_buffer,
-            output_texture,
-            output_texture_view,
-            cell_w,
-            cell_h,
-            frame_w: width,
-            frame_h: height,
-            staging: None,
-        }
+        (output_texture, output_texture_view)
     }
 
     /// 渲染一帧并以 **RGBA** 字节返回（未做行对齐 padding）。
@@ -250,6 +300,19 @@ impl MidiconsoleRenderer {
         cells: &[CellGpu],
         tick: u32,
     ) -> Option<()> {
+        Self::check_cells(cells)?;
+
+        self.upload_frame_data(queue, cells, tick);
+
+        let mut encoder = self.begin_scene(device);
+
+        self.stage_readback(device, &mut encoder)?;
+        queue.submit(std::iter::once(encoder.finish()));
+        Some(())
+    }
+
+    /// 校验网格单元数量与 `GRID_COLS × GRID_ROWS` 一致。
+    fn check_cells(cells: &[CellGpu]) -> Option<()> {
         let cell_count = GRID_COLS * GRID_ROWS;
         if cells.len() != cell_count {
             tracing::warn!(
@@ -259,7 +322,11 @@ impl MidiconsoleRenderer {
             );
             return None;
         }
+        Some(())
+    }
 
+    /// 上传本帧 uniform 与网格单元。
+    fn upload_frame_data(&self, queue: &wgpu::Queue, cells: &[CellGpu], tick: u32) {
         // 更新 uniform（移动高亮带中心随 tick 推进）
         let band_center = (tick as f32 * BAND_SPEED) % self.frame_h as f32;
         let u = Uniforms {
@@ -282,7 +349,10 @@ impl MidiconsoleRenderer {
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));
         queue.write_buffer(&self.cells_buffer, 0, bytemuck::cast_slice(cells));
+    }
 
+    /// 录制清屏 + 全屏三角形绘制，返回待提交的命令编码器。
+    fn begin_scene(&self, device: &wgpu::Device) -> wgpu::CommandEncoder {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("midiconsole_encoder"),
         });
@@ -306,7 +376,15 @@ impl MidiconsoleRenderer {
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
+        encoder
+    }
 
+    /// 确保 staging 容量足够，并录制纹理 → 缓冲拷贝。
+    fn stage_readback(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Option<()> {
         // GPU → CPU 读回：staging 跨帧复用（旧实现每帧 create_buffer_init 8MB
         // 零值并上传，随后立刻被 copy 覆盖——纯浪费带宽/分配）。
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -344,7 +422,6 @@ impl MidiconsoleRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        queue.submit(std::iter::once(encoder.finish()));
         Some(())
     }
 

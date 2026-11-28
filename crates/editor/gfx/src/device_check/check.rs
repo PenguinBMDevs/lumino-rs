@@ -78,23 +78,7 @@ pub fn debug_force_fail_requested() -> bool {
 fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
     let started = Instant::now();
 
-    // 调试开关（仅 debug 构建）：模拟全量检测挂起，用于验证
-    // 「超时 / 子进程强杀 / 主进程 UI 不被拖死」。
-    // 与 `LUMINO_DEBUG_PROBE_HANG` 的分工：那个模拟启动廉价探测（枚举）挂起，
-    // 本开关模拟检测主体（建实例 / 建设备 / 提交流）挂起——两者挂起点不同，
-    // 前者只影响启动缓存校验，后者才会拖死主渲染。
-    #[cfg(debug_assertions)]
-    if std::env::var_os("LUMINO_DEBUG_CHECK_HANG").is_some() {
-        tracing::warn!("LUMINO_DEBUG_CHECK_HANG 已设置：模拟全量检测挂起 60 秒");
-        std::thread::sleep(std::time::Duration::from_secs(60));
-    }
-
-    if debug_force_fail_requested() {
-        tracing::warn!("LUMINO_FORCE_DEVICE_CHECK_FAIL 已设置，强制返回失败报告");
-        let mut report = GpuCheckReport::failed(GpuCheckFailure::RenderError(
-            tr!("调试开关 LUMINO_FORCE_DEVICE_CHECK_FAIL 强制失败").to_string(),
-        ));
-        report.duration_ms = started.elapsed().as_millis() as u64;
+    if let Some(report) = debug_short_circuit(started) {
         return report;
     }
 
@@ -130,22 +114,7 @@ fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
         adapters.sort_by_key(|a| a.fingerprint());
     }
 
-    let adapter_limits = adapter.limits();
-    let device_result =
-        futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("lumino-device-check"),
-            required_features: adapter.features() & wgpu::Features::default(),
-            required_limits: wgpu::Limits {
-                max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
-                max_buffer_size: adapter_limits.max_buffer_size,
-                ..wgpu::Limits::default()
-            },
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-            trace: wgpu::Trace::Off,
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        }));
-
-    let (device, queue) = match device_result {
+    let (device, queue) = match request_check_device(&adapter) {
         Ok(pair) => pair,
         Err(e) => {
             let mut report = GpuCheckReport::failed(GpuCheckFailure::DeviceRequest(e.to_string()));
@@ -157,20 +126,7 @@ fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
         }
     };
 
-    // 自定义未捕获错误处理，避免校验错误走 wgpu 默认 panic 路径
-    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    {
-        let errors = Arc::clone(&errors);
-        device.on_uncaptured_error(Arc::new(move |err| {
-            tracing::error!("GPU 检测期间 wgpu 未捕获错误: {err}");
-            if let Ok(mut list) = errors.lock() {
-                list.push(err.to_string());
-            }
-        }));
-    }
-    device.set_device_lost_callback(|reason, msg| {
-        tracing::error!("GPU 检测期间 device lost: {reason:?} — {msg}");
-    });
+    let errors = install_error_handlers(&device);
 
     let failure = match render_test(&device, &queue) {
         Ok(()) => captured_error(&errors).map(GpuCheckFailure::RenderError),
@@ -189,6 +145,69 @@ fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
     };
     report.adapters.sort_by_key(|a| a.fingerprint());
     report
+}
+
+/// 调试捷径：模拟检测主体挂起，或直接返回强制失败报告（仅 debug 构建生效）。
+fn debug_short_circuit(started: Instant) -> Option<GpuCheckReport> {
+    // 调试开关（仅 debug 构建）：模拟全量检测挂起，用于验证
+    // 「超时 / 子进程强杀 / 主进程 UI 不被拖死」。
+    // 与 `LUMINO_DEBUG_PROBE_HANG` 的分工：那个模拟启动廉价探测（枚举）挂起，
+    // 本开关模拟检测主体（建实例 / 建设备 / 提交流）挂起——两者挂起点不同，
+    // 前者只影响启动缓存校验，后者才会拖死主渲染。
+    #[cfg(debug_assertions)]
+    if std::env::var_os("LUMINO_DEBUG_CHECK_HANG").is_some() {
+        tracing::warn!("LUMINO_DEBUG_CHECK_HANG 已设置：模拟全量检测挂起 60 秒");
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+
+    if debug_force_fail_requested() {
+        tracing::warn!("LUMINO_FORCE_DEVICE_CHECK_FAIL 已设置，强制返回失败报告");
+        let mut report = GpuCheckReport::failed(GpuCheckFailure::RenderError(
+            tr!("调试开关 LUMINO_FORCE_DEVICE_CHECK_FAIL 强制失败").to_string(),
+        ));
+        report.duration_ms = started.elapsed().as_millis() as u64;
+        return Some(report);
+    }
+
+    None
+}
+
+/// 请求检测用设备：特性取交集、只抬高共享缓冲与缓冲上限。
+fn request_check_device(
+    adapter: &wgpu::Adapter,
+) -> std::result::Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError> {
+    let adapter_limits = adapter.limits();
+    futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("lumino-device-check"),
+        required_features: adapter.features() & wgpu::Features::default(),
+        required_limits: wgpu::Limits {
+            max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
+            max_buffer_size: adapter_limits.max_buffer_size,
+            ..wgpu::Limits::default()
+        },
+        memory_hints: wgpu::MemoryHints::MemoryUsage,
+        trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+    }))
+}
+
+/// 安装未捕获错误与 device lost 回调，返回用于收集错误的共享列表。
+fn install_error_handlers(device: &wgpu::Device) -> Arc<Mutex<Vec<String>>> {
+    // 自定义未捕获错误处理，避免校验错误走 wgpu 默认 panic 路径
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let errors = Arc::clone(&errors);
+        device.on_uncaptured_error(Arc::new(move |err| {
+            tracing::error!("GPU 检测期间 wgpu 未捕获错误: {err}");
+            if let Ok(mut list) = errors.lock() {
+                list.push(err.to_string());
+            }
+        }));
+    }
+    device.set_device_lost_callback(|reason, msg| {
+        tracing::error!("GPU 检测期间 device lost: {reason:?} — {msg}");
+    });
+    errors
 }
 
 /// 枚举指定后端的全部适配器摘要（廉价探测也走这里，故对兄弟模块可见）

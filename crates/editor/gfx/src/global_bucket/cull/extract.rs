@@ -80,44 +80,73 @@ impl ResidentCull {
         queue.write_buffer(params_buf.inner(), 0, bytemuck::cast_slice(&[params]));
         self.rebuild_bind_group(device, source.buffer)?;
         crate::profiling::tracy_zone!("gfx.cull.dispatch", {
-            let mut count_enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("bucket_cull_count"),
-            });
-            {
-                let mut pass = count_enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("bucket_cull_count_pass"),
-                    timestamp_writes: None,
-                });
-                let pipeline = self.pipeline.as_ref().ok_or(missing("cull 管线"))?;
-                pass.set_pipeline(pipeline);
-                let bg = self.bind_group.as_ref().ok_or(missing("cull 绑定组"))?;
-                pass.set_bind_group(0, bg, &[]);
-                pass.dispatch_workgroups(key_count.div_ceil(64) as u32, 1, 1);
-            }
-            let counts_inner = self
-                .counts_buffer
-                .as_ref()
-                .ok_or(missing("cull 计数缓冲"))?
-                .inner();
-            let staging_inner = self
-                .counts_staging
-                .as_ref()
-                .ok_or(missing("cull 回读暂存"))?
-                .inner();
-            count_enc.copy_buffer_to_buffer(counts_inner, 0, staging_inner, 0, 1024);
-            if compute_active == 1 {
-                let active_inner = self
-                    .active_buffer
-                    .as_ref()
-                    .ok_or(missing("cull 活跃键缓冲"))?
-                    .inner();
-                // 同一 staging 的后半段：一次 map 同时取回计数与活跃键
-                count_enc.copy_buffer_to_buffer(active_inner, 0, staging_inner, 1024, 1024);
-            }
-            queue.submit(Some(count_enc.finish()));
+            self.dispatch_count_pass(device, queue, key_count, compute_active)?;
         });
         // 单次同步回读：`[0,1KB)` 计数 +（可选）`[1KB,2KB)` 活跃键。
         // 旧实现每帧两次 map/poll（piano roll 实测 ~5.8ms），合并后减半。
+        let bytes = self.read_count_bytes(device, compute_active)?;
+        let counts = decode_counts(&bytes, key_count);
+        let total = sum_counts(&counts, key_count);
+        out.counts = counts;
+        out.total = total;
+        if compute_active == 1 {
+            out.active = Some(decode_active(&bytes));
+        }
+        Ok(out)
+    }
+
+    /// COUNT 阶段的 dispatch + 自有提交（回读须在提交后 poll，故不并入调用方 encoder）。
+    fn dispatch_count_pass(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key_count: usize,
+        compute_active: u32,
+    ) -> Result<(), GlobalBucketError> {
+        let mut count_enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("bucket_cull_count"),
+        });
+        {
+            let mut pass = count_enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("bucket_cull_count_pass"),
+                timestamp_writes: None,
+            });
+            let pipeline = self.pipeline.as_ref().ok_or(missing("cull 管线"))?;
+            pass.set_pipeline(pipeline);
+            let bg = self.bind_group.as_ref().ok_or(missing("cull 绑定组"))?;
+            pass.set_bind_group(0, bg, &[]);
+            pass.dispatch_workgroups(key_count.div_ceil(64) as u32, 1, 1);
+        }
+        let counts_inner = self
+            .counts_buffer
+            .as_ref()
+            .ok_or(missing("cull 计数缓冲"))?
+            .inner();
+        let staging_inner = self
+            .counts_staging
+            .as_ref()
+            .ok_or(missing("cull 回读暂存"))?
+            .inner();
+        count_enc.copy_buffer_to_buffer(counts_inner, 0, staging_inner, 0, 1024);
+        if compute_active == 1 {
+            let active_inner = self
+                .active_buffer
+                .as_ref()
+                .ok_or(missing("cull 活跃键缓冲"))?
+                .inner();
+            // 同一 staging 的后半段：一次 map 同时取回计数与活跃键
+            count_enc.copy_buffer_to_buffer(active_inner, 0, staging_inner, 1024, 1024);
+        }
+        queue.submit(Some(count_enc.finish()));
+        Ok(())
+    }
+
+    /// 回读 `[0,2KB)`：前半段计数，`compute_active == 1` 时后半段活跃键。
+    fn read_count_bytes(
+        &self,
+        device: &wgpu::Device,
+        compute_active: u32,
+    ) -> Result<Vec<u8>, GlobalBucketError> {
         let read_len = if compute_active == 1 {
             KEY_BUCKETS * 8
         } else {
@@ -133,33 +162,7 @@ impl ResidentCull {
                 read_len,
             )?
         });
-        let mut counts = [0u32; KEY_BUCKETS];
-        for (i, slot) in counts.iter_mut().enumerate() {
-            if let Some(c) = bytes.get(i * 4..i * 4 + 4) {
-                *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
-            }
-        }
-        // 尾部清零：COUNT 内核只写 `[0, key_count)`，旧帧残留不得泄漏。
-        for c in counts.iter_mut().skip(key_count) {
-            *c = 0;
-        }
-        let total = counts
-            .iter()
-            .take(key_count)
-            .fold(0usize, |acc, &c| acc.saturating_add(c as usize));
-        out.counts = counts;
-        out.total = total;
-        if compute_active == 1 {
-            let mut arr = [0u32; KEY_BUCKETS];
-            for (i, slot) in arr.iter_mut().enumerate() {
-                let base = KEY_BUCKETS * 4 + i * 4;
-                if let Some(c) = bytes.get(base..base + 4) {
-                    *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
-                }
-            }
-            out.active = Some(arr);
-        }
-        Ok(out)
+        Ok(bytes)
     }
 
     /// FILL：按调用方前缀和基址写 compact（追加到调用方 encoder，`submit` 后可见）。
@@ -226,4 +229,39 @@ impl ResidentCull {
         }
         Ok(())
     }
+}
+
+/// 解码 `[0,1KB)` 计数段，并把 `key_count` 之后的尾部清零。
+fn decode_counts(bytes: &[u8], key_count: usize) -> [u32; KEY_BUCKETS] {
+    let mut counts = [0u32; KEY_BUCKETS];
+    for (i, slot) in counts.iter_mut().enumerate() {
+        if let Some(c) = bytes.get(i * 4..i * 4 + 4) {
+            *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        }
+    }
+    // 尾部清零：COUNT 内核只写 `[0, key_count)`，旧帧残留不得泄漏。
+    for c in counts.iter_mut().skip(key_count) {
+        *c = 0;
+    }
+    counts
+}
+
+/// 窗口总数：`counts[..key_count]` 的饱和求和（COUNT 内核只写 `[0, key_count)`）。
+fn sum_counts(counts: &[u32; KEY_BUCKETS], key_count: usize) -> usize {
+    counts
+        .iter()
+        .take(key_count)
+        .fold(0usize, |acc, &c| acc.saturating_add(c as usize))
+}
+
+/// 解码 `[1KB,2KB)` 活跃键段（`[0,128)` 键色，`[128,256)` 光晕系数）。
+fn decode_active(bytes: &[u8]) -> [u32; KEY_BUCKETS] {
+    let mut arr = [0u32; KEY_BUCKETS];
+    for (i, slot) in arr.iter_mut().enumerate() {
+        let base = KEY_BUCKETS * 4 + i * 4;
+        if let Some(c) = bytes.get(base..base + 4) {
+            *slot = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        }
+    }
+    arr
 }

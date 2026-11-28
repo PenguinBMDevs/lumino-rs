@@ -207,109 +207,179 @@ impl NoteRenderer {
             .chunk_count(capacity_instances)
             .min(super::chunk::MAX_CHUNKS);
 
+        let buffers = CullBuffers {
+            instance: instance_buffer,
+            visible_instance: visible_instance_buffer,
+            indirect: indirect_buffer,
+            cull_uniform: cull_uniform_buffer,
+            view_state: view_state_buffer,
+            viewport: viewport_buffer,
+        };
+
         let mut bind_groups = Vec::with_capacity(chunk_count);
         for idx in 0..chunk_count {
-            let (chunk_start, chunk_len) = layout.chunk_range(capacity_instances, idx);
-            // 防御：空 chunk 不建组（否则 size=None 语义变为整 buffer，极易越界成 invalid）。
-            if chunk_len == 0 {
-                tracing::error!(
-                    "NoteRenderer: 跳过空 chunk idx={} capacity={}，防 invalid bind group",
-                    idx,
-                    capacity_instances
-                );
-                continue;
+            if let Some(slice) = resolve_cull_chunk(
+                idx,
+                capacity_instances,
+                layout,
+                &buffers,
+                cull_uniform_buffer_size,
+            ) {
+                bind_groups.push(build_cull_bind_group(
+                    device,
+                    bind_group_layout,
+                    &buffers,
+                    slice,
+                ));
             }
-            let chunk_bytes = (chunk_len as u64) * instance_size;
-            let chunk_offset = (chunk_start as u64) * instance_size;
-            // 可见索引 buffer 的切片：按 u32 偏移/长度
-            let visible_chunk_bytes = (chunk_len as u64) * VISIBLE_INDEX_SIZE as u64;
-            let visible_chunk_offset = (chunk_start as u64) * VISIBLE_INDEX_SIZE as u64;
-            let slot_offset = layout.chunk_offset_bytes(idx);
-
-            // 每 chunk 的 uniform 条目（chunk_start/chunk_count 在 dispatch 前写入）
-            // 16 为编译期常量，必非零 → NonZeroU64 必然构造成功
-            // 16 为编译期常量，必非零 → 使用 new_unchecked 避免运行时断言/崩溃
-            let uniform_size = unsafe { std::num::NonZeroU64::new_unchecked(16) };
-            // 发布构建切工程必守：offset+size 越界会直接产出 invalid bind group，
-            // 错误延迟到 Queue::submit 的 set_bind_group 才爆发（本 BUG 现象）。
-            // 此处提前拦截并跳过，prepare/draw 用 min(group_len) 降级显示，不断渲染。
-            let indirect_size = std::mem::size_of::<super::types::DrawIndirectArgs>() as u64;
-            if slot_offset + 16 > cull_uniform_buffer_size
-                || slot_offset + indirect_size > indirect_buffer.size()
-                || chunk_offset + chunk_bytes > instance_buffer.size()
-                || visible_chunk_offset + visible_chunk_bytes > visible_instance_buffer.size()
-            {
-                tracing::error!(
-                    "NoteRenderer: chunk{} 越界跳过 建组 slot={} chunk=({},{}) instance={}/{} visible={}/{} uniform={}/{} indirect={}/{}",
-                    idx,
-                    slot_offset,
-                    chunk_start,
-                    chunk_len,
-                    chunk_offset + chunk_bytes,
-                    instance_buffer.size(),
-                    visible_chunk_offset + visible_chunk_bytes,
-                    visible_instance_buffer.size(),
-                    slot_offset + 16,
-                    cull_uniform_buffer_size,
-                    slot_offset + indirect_size,
-                    indirect_buffer.size()
-                );
-                continue;
-            }
-            debug_assert!(slot_offset + 16 <= cull_uniform_buffer_size);
-
-            let instance_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: instance_buffer,
-                offset: chunk_offset,
-                size: std::num::NonZeroU64::new(chunk_bytes),
-            });
-            let visible_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: visible_instance_buffer,
-                offset: visible_chunk_offset,
-                size: std::num::NonZeroU64::new(visible_chunk_bytes),
-            });
-
-            bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("note_cull_bind_group"),
-                layout: bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: viewport_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: cull_uniform_buffer,
-                            offset: slot_offset,
-                            size: Some(uniform_size),
-                        }),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: instance_binding,
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: visible_binding,
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: indirect_buffer,
-                            offset: slot_offset,
-                            size: std::num::NonZeroU64::new(std::mem::size_of::<
-                                super::types::DrawIndirectArgs,
-                            >() as u64),
-                        }),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: view_state_buffer.as_entire_binding(),
-                    },
-                ],
-            }));
         }
         bind_groups
     }
+}
+
+/// cull 阶段各 chunk 分片共用的 buffer 引用（打包传递，控制助手参数数量）。
+struct CullBuffers<'a> {
+    instance: &'a wgpu::Buffer,
+    visible_instance: &'a wgpu::Buffer,
+    indirect: &'a wgpu::Buffer,
+    cull_uniform: &'a wgpu::Buffer,
+    view_state: &'a wgpu::Buffer,
+    viewport: &'a wgpu::Buffer,
+}
+
+/// 单个 chunk 在实例 / 可见索引 / uniform / indirect buffer 中的切片偏移。
+#[derive(Clone, Copy)]
+struct CullChunkSlice {
+    slot_offset: u64,
+    chunk_offset: u64,
+    chunk_bytes: u64,
+    visible_chunk_offset: u64,
+    visible_chunk_bytes: u64,
+}
+
+/// 计算单个 chunk 的切片偏移；空 chunk 或任一 buffer 切片越界时记录错误并返回 `None`。
+fn resolve_cull_chunk(
+    idx: usize,
+    capacity_instances: usize,
+    layout: &ChunkLayout,
+    buffers: &CullBuffers<'_>,
+    cull_uniform_buffer_size: u64,
+) -> Option<CullChunkSlice> {
+    let instance_size = std::mem::size_of::<NoteInstance>() as u64;
+    let (chunk_start, chunk_len) = layout.chunk_range(capacity_instances, idx);
+    // 防御：空 chunk 不建组（否则 size=None 语义变为整 buffer，极易越界成 invalid）。
+    if chunk_len == 0 {
+        tracing::error!(
+            "NoteRenderer: 跳过空 chunk idx={} capacity={}，防 invalid bind group",
+            idx,
+            capacity_instances
+        );
+        return None;
+    }
+    let chunk_bytes = (chunk_len as u64) * instance_size;
+    let chunk_offset = (chunk_start as u64) * instance_size;
+    // 可见索引 buffer 的切片：按 u32 偏移/长度
+    let visible_chunk_bytes = (chunk_len as u64) * VISIBLE_INDEX_SIZE as u64;
+    let visible_chunk_offset = (chunk_start as u64) * VISIBLE_INDEX_SIZE as u64;
+    let slot_offset = layout.chunk_offset_bytes(idx);
+
+    // 发布构建切工程必守：offset+size 越界会直接产出 invalid bind group，
+    // 错误延迟到 Queue::submit 的 set_bind_group 才爆发（本 BUG 现象）。
+    // 此处提前拦截并跳过，prepare/draw 用 min(group_len) 降级显示，不断渲染。
+    let indirect_size = std::mem::size_of::<super::types::DrawIndirectArgs>() as u64;
+    if slot_offset + 16 > cull_uniform_buffer_size
+        || slot_offset + indirect_size > buffers.indirect.size()
+        || chunk_offset + chunk_bytes > buffers.instance.size()
+        || visible_chunk_offset + visible_chunk_bytes > buffers.visible_instance.size()
+    {
+        tracing::error!(
+            "NoteRenderer: chunk{} 越界跳过 建组 slot={} chunk=({},{}) instance={}/{} visible={}/{} uniform={}/{} indirect={}/{}",
+            idx,
+            slot_offset,
+            chunk_start,
+            chunk_len,
+            chunk_offset + chunk_bytes,
+            buffers.instance.size(),
+            visible_chunk_offset + visible_chunk_bytes,
+            buffers.visible_instance.size(),
+            slot_offset + 16,
+            cull_uniform_buffer_size,
+            slot_offset + indirect_size,
+            buffers.indirect.size()
+        );
+        return None;
+    }
+    debug_assert!(slot_offset + 16 <= cull_uniform_buffer_size);
+
+    Some(CullChunkSlice {
+        slot_offset,
+        chunk_offset,
+        chunk_bytes,
+        visible_chunk_offset,
+        visible_chunk_bytes,
+    })
+}
+
+/// 为单个 chunk 构建 cull bind group（6 个 binding 的布局见 `create_cull_bind_groups`）。
+fn build_cull_bind_group(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    buffers: &CullBuffers<'_>,
+    slice: CullChunkSlice,
+) -> wgpu::BindGroup {
+    // 每 chunk 的 uniform 条目（chunk_start/chunk_count 在 dispatch 前写入）
+    // 16 为编译期常量，必非零 → NonZeroU64 必然构造成功
+    // 16 为编译期常量，必非零 → 使用 new_unchecked 避免运行时断言/崩溃
+    let uniform_size = unsafe { std::num::NonZeroU64::new_unchecked(16) };
+    let instance_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+        buffer: buffers.instance,
+        offset: slice.chunk_offset,
+        size: std::num::NonZeroU64::new(slice.chunk_bytes),
+    });
+    let visible_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+        buffer: buffers.visible_instance,
+        offset: slice.visible_chunk_offset,
+        size: std::num::NonZeroU64::new(slice.visible_chunk_bytes),
+    });
+
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("note_cull_bind_group"),
+        layout: bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffers.viewport.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buffers.cull_uniform,
+                    offset: slice.slot_offset,
+                    size: Some(uniform_size),
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: instance_binding,
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: visible_binding,
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buffers.indirect,
+                    offset: slice.slot_offset,
+                    size: std::num::NonZeroU64::new(std::mem::size_of::<
+                        super::types::DrawIndirectArgs,
+                    >() as u64),
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: buffers.view_state.as_entire_binding(),
+            },
+        ],
+    })
 }

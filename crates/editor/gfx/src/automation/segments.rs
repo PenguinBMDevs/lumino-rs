@@ -50,24 +50,8 @@ fn collect_segments(
     let grid_left_x = view.keyboard_width;
 
     if visible_events.is_empty() {
-        let idx = lane.events.partition_point(|event| event.tick < pad_start);
-        // 无前事件时使用目标默认值：PitchBend 默认 8192（弯音 0 = 居中）
-        let val = if idx > 0 {
-            lane.events[idx - 1].value
-        } else {
-            lane.target.default_value()
-        };
-        let screen_y = view.value_to_y(val as f32, max_val);
-        if width > grid_left_x {
-            segs.push(SegSpan {
-                x1: grid_left_x,
-                y1: screen_y,
-                shape: SegmentShape::Step,
-                x2: width,
-                y2: screen_y,
-                cp1: None,
-                cp2: None,
-            });
+        if let Some(span) = chase_span_when_empty(lane, view, max_val, width, pad_start) {
+            segs.push(span);
         }
         return segs;
     }
@@ -97,32 +81,34 @@ fn collect_segments(
         });
     }
 
-    let mut prev_x = first_x;
-    let mut prev_y = chase_y;
+    let (prev_x, prev_y) =
+        push_event_spans(&mut segs, visible_events, view, max_val, first_x, chase_y);
+
+    let last_visible_tick = visible_events.last().map_or(pad_end, |event| event.tick);
+    if let Some(span) = tail_span(lane, view, last_visible_tick, width, prev_x, prev_y) {
+        segs.push(span);
+    }
+
+    segs
+}
+
+/// 逐事件生成线段（形状取自前一个事件）；返回最后一个线段的终点。
+fn push_event_spans(
+    segs: &mut Vec<SegSpan>,
+    events: &[AutomationEvent],
+    view: &AutomationViewParams,
+    max_val: f32,
+    mut prev_x: f32,
+    mut prev_y: f32,
+) -> (f32, f32) {
     let mut prev_shape = SegmentShape::Step;
     let mut prev_evt: Option<AutomationEvent> = None;
 
-    for evt in visible_events {
+    for evt in events {
         let x2 = view.tick_to_x(evt.tick);
         let y2 = view.value_to_y(evt.value as f32, max_val);
         // 贝塞尔控制柄：两端事件任一为自定义柄 → 携带柄渲染（否则按 shape）
-        let (cp1, cp2) = match prev_evt {
-            Some(prev) if !prev.handles_auto || !evt.handles_auto => {
-                let p1 = prev.out_handle_abs();
-                let p2 = evt.in_handle_abs();
-                (
-                    Some((
-                        view.tick_to_x(p1.0.round() as u32),
-                        view.value_to_y(p1.1, max_val),
-                    )),
-                    Some((
-                        view.tick_to_x(p2.0.round() as u32),
-                        view.value_to_y(p2.1, max_val),
-                    )),
-                )
-            }
-            _ => (None, None),
-        };
+        let (cp1, cp2) = segment_handles(prev_evt.as_ref(), evt, view, max_val);
         segs.push(SegSpan {
             x1: prev_x,
             y1: prev_y,
@@ -137,8 +123,79 @@ fn collect_segments(
         prev_y = y2;
         prev_evt = Some(*evt);
     }
+    (prev_x, prev_y)
+}
 
-    let last_visible_tick = visible_events.last().map_or(pad_end, |event| event.tick);
+/// 无可见事件时：整段按 chase 值水平铺满视口（宽度不足时返回 `None`）。
+fn chase_span_when_empty(
+    lane: &AutomationLane,
+    view: &AutomationViewParams,
+    max_val: f32,
+    width: f32,
+    pad_start: u32,
+) -> Option<SegSpan> {
+    let idx = lane.events.partition_point(|event| event.tick < pad_start);
+    // 无前事件时使用目标默认值：PitchBend 默认 8192（弯音 0 = 居中）
+    let val = if idx > 0 {
+        lane.events[idx - 1].value
+    } else {
+        lane.target.default_value()
+    };
+    let screen_y = view.value_to_y(val as f32, max_val);
+    let grid_left_x = view.keyboard_width;
+    if width > grid_left_x {
+        Some(SegSpan {
+            x1: grid_left_x,
+            y1: screen_y,
+            shape: SegmentShape::Step,
+            x2: width,
+            y2: screen_y,
+            cp1: None,
+            cp2: None,
+        })
+    } else {
+        None
+    }
+}
+
+/// 一对贝塞尔控制柄的屏幕坐标。
+type ScreenHandles = (Option<(f32, f32)>, Option<(f32, f32)>);
+
+/// 贝塞尔控制柄：两端事件任一为自定义柄 → 返回屏幕坐标柄对（否则 `(None, None)`）。
+fn segment_handles(
+    prev: Option<&AutomationEvent>,
+    evt: &AutomationEvent,
+    view: &AutomationViewParams,
+    max_val: f32,
+) -> ScreenHandles {
+    match prev {
+        Some(prev) if !prev.handles_auto || !evt.handles_auto => {
+            let p1 = prev.out_handle_abs();
+            let p2 = evt.in_handle_abs();
+            (
+                Some((
+                    view.tick_to_x(p1.0.round() as u32),
+                    view.value_to_y(p1.1, max_val),
+                )),
+                Some((
+                    view.tick_to_x(p2.0.round() as u32),
+                    view.value_to_y(p2.1, max_val),
+                )),
+            )
+        }
+        _ => (None, None),
+    }
+}
+
+/// 末段：从最后一个可见事件延伸到右边界（下一个不可见事件或视口宽度）。
+fn tail_span(
+    lane: &AutomationLane,
+    view: &AutomationViewParams,
+    last_visible_tick: u32,
+    width: f32,
+    prev_x: f32,
+    prev_y: f32,
+) -> Option<SegSpan> {
     let next_idx = lane
         .events
         .partition_point(|event| event.tick <= last_visible_tick);
@@ -148,7 +205,7 @@ fn collect_segments(
         width
     };
     if right_bound > prev_x {
-        segs.push(SegSpan {
+        Some(SegSpan {
             x1: prev_x,
             y1: prev_y,
             shape: SegmentShape::Step,
@@ -156,10 +213,10 @@ fn collect_segments(
             y2: prev_y,
             cp1: None,
             cp2: None,
-        });
+        })
+    } else {
+        None
     }
-
-    segs
 }
 
 /// 将 lane 渲染为 CcBarInstance 列表。

@@ -85,64 +85,6 @@ pub fn process_main_track_events(
         // 每轮重新读取段元数据：段长可能被前序事件（删/插）改变
         let seg = segments[idx];
         match event {
-            NoteEvent::UpdateMany {
-                start_index,
-                instances,
-            } => {
-                // 等长原位写：不改变段长，无需段表联动
-                renderers
-                    .onion_skin
-                    .update_notes(seg.offset + start_index, &instances);
-                bytes_changed = true;
-            }
-            NoteEvent::Update { index, instance } => {
-                renderers
-                    .onion_skin
-                    .update_notes(seg.offset + index, &[instance]);
-                bytes_changed = true;
-            }
-            NoteEvent::RemoveAt { index, count } => {
-                let count = count.min(seg.len.saturating_sub(index));
-                if count == 0 {
-                    continue;
-                }
-                renderers.onion_skin.remove_at(seg.offset + index, count);
-                shift_segment_len(renderers, segments, idx, -(count as isize), device, queue);
-                bytes_changed = true;
-            }
-            NoteEvent::Remove(index) => {
-                if index >= seg.len {
-                    continue;
-                }
-                renderers.onion_skin.remove_at(seg.offset + index, 1);
-                shift_segment_len(renderers, segments, idx, -1, device, queue);
-                bytes_changed = true;
-            }
-            NoteEvent::Insert { index, instances } => {
-                let index = index.min(seg.len);
-                if instances.is_empty() {
-                    continue;
-                }
-                renderers
-                    .onion_skin
-                    .insert_at(seg.offset + index, &instances);
-                shift_segment_len(
-                    renderers,
-                    segments,
-                    idx,
-                    instances.len() as isize,
-                    device,
-                    queue,
-                );
-                bytes_changed = true;
-            }
-            NoteEvent::Add(instance) => {
-                renderers
-                    .onion_skin
-                    .insert_at(seg.offset + seg.len, &[instance]);
-                shift_segment_len(renderers, segments, idx, 1, device, queue);
-                bytes_changed = true;
-            }
             NoteEvent::Reset(instances) => {
                 // 防御性兜底：整段替换（正常路径 UI 不再发送 Reset）
                 // 换代由 `apply_onion_track_delta` 内部完成。
@@ -151,6 +93,17 @@ pub fn process_main_track_events(
             NoteEvent::Clear => {
                 apply_onion_track_delta(renderers, segments, track_id, &[], device, queue);
             }
+            event => {
+                let Some(change) = edit_main_track_segment(renderers, seg, event) else {
+                    // 越界 / 空插入：事件不改变段内容
+                    continue;
+                };
+                // 段长变化 → 段表长度/偏移联动并刷新 cull info
+                if let SegmentLenChange::Resized(len_delta) = change {
+                    shift_segment_len(renderers, segments, idx, len_delta, device, queue);
+                }
+                bytes_changed = true;
+            }
         }
     }
     // 段内增量（等长写/删/插）同样改写常驻字节与排序键 → 必须换代。
@@ -158,6 +111,77 @@ pub fn process_main_track_events(
         bump_onion_epoch(renderers);
     }
     updated
+}
+
+/// 段内编辑对段长的影响（调用方据此决定是否联动段表）
+enum SegmentLenChange {
+    /// 等长原位写：段长不变，无需段表联动
+    InPlace,
+    /// 段长变化：段表长度与后续段偏移需联动
+    Resized(isize),
+}
+
+/// 段内原位编辑：把单条主音轨事件应用到当前音轨段（段内位置 = `seg.offset + index`）
+///
+/// 返回 `Some(_)` 表示事件已消费（段长是否变化见 [`SegmentLenChange`]）；
+/// 返回 `None` 表示越界 / 空插入，事件不改变段内容。GPU 侧写与删/插在此完成，
+/// 段表联动（`shift_segment_len` / cull info 刷新）由调用方负责。
+fn edit_main_track_segment(
+    renderers: &mut Renderers,
+    seg: OnionSegment,
+    event: NoteEvent,
+) -> Option<SegmentLenChange> {
+    match event {
+        NoteEvent::UpdateMany {
+            start_index,
+            instances,
+        } => {
+            // 等长原位写：不改变段长，无需段表联动
+            renderers
+                .onion_skin
+                .update_notes(seg.offset + start_index, &instances);
+            Some(SegmentLenChange::InPlace)
+        }
+        NoteEvent::Update { index, instance } => {
+            renderers
+                .onion_skin
+                .update_notes(seg.offset + index, &[instance]);
+            Some(SegmentLenChange::InPlace)
+        }
+        NoteEvent::RemoveAt { index, count } => {
+            let count = count.min(seg.len.saturating_sub(index));
+            if count == 0 {
+                return None;
+            }
+            renderers.onion_skin.remove_at(seg.offset + index, count);
+            Some(SegmentLenChange::Resized(-(count as isize)))
+        }
+        NoteEvent::Remove(index) => {
+            if index >= seg.len {
+                return None;
+            }
+            renderers.onion_skin.remove_at(seg.offset + index, 1);
+            Some(SegmentLenChange::Resized(-1))
+        }
+        NoteEvent::Insert { index, instances } => {
+            let index = index.min(seg.len);
+            if instances.is_empty() {
+                return None;
+            }
+            renderers
+                .onion_skin
+                .insert_at(seg.offset + index, &instances);
+            Some(SegmentLenChange::Resized(instances.len() as isize))
+        }
+        NoteEvent::Add(instance) => {
+            renderers
+                .onion_skin
+                .insert_at(seg.offset + seg.len, &[instance]);
+            Some(SegmentLenChange::Resized(1))
+        }
+        // 整段替换 / 清空由调用方走 `apply_onion_track_delta`，不走段内编辑
+        NoteEvent::Reset(_) | NoteEvent::Clear => None,
+    }
 }
 
 /// 段表缺少目标轨时丢弃通道内残留事件（以 document 为权威源重建，防二次应用）
