@@ -1,6 +1,6 @@
 {
   "files_total": 2353,
-  "lines_total": 425680,
+  "lines_total": 425810,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -77,24 +77,10 @@
   "production_files_over_600": 1,
   "functions_over_100": [
     {
-      "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
-      "name": "dispatch",
-      "line": 16,
-      "lines": 303,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/trim.rs",
       "name": "trim_voice_pool_for_block",
       "line": 37,
       "lines": 213,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/pool.rs",
-      "name": "upload_voices",
-      "line": 4,
-      "lines": 201,
       "test": false
     },
     {
@@ -1444,24 +1430,10 @@
   ],
   "functions_over_200": [
     {
-      "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
-      "name": "dispatch",
-      "line": 16,
-      "lines": 303,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/trim.rs",
       "name": "trim_voice_pool_for_block",
       "line": 37,
       "lines": 213,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/pool.rs",
-      "name": "upload_voices",
-      "line": 4,
-      "lines": 201,
       "test": false
     }
   ],
@@ -1497,7 +1469,7 @@
     ],
     [
       "GpuSynth",
-      87
+      97
     ],
     [
       "Sidebar",
