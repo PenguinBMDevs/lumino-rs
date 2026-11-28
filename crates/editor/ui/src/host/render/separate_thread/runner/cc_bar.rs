@@ -3,6 +3,85 @@
 use crate::host::Host;
 use lumino_gfx::{CcBarColors, CcBarData, CcBarViewParams};
 
+/// 收集当前模式的数据点：力度点 / CC 点 / 弯音点（三者中至多一个非空）。
+fn collect_cc_bar_points(
+    editor: &crate::editor::Editor,
+    is_bend: bool,
+    is_velocity: bool,
+    cc_number: u8,
+) -> (
+    Vec<crate::editor::velocity::VelocityPoint>,
+    Vec<crate::editor::velocity::CcPoint>,
+    Vec<crate::editor::velocity::BendPoint>,
+) {
+    // Velocity 模式从 notes 获取力度点
+    // 2026-08 单一权威源：从 document 读取（track_notes 缓存已删除）
+    let velocity_points = if is_velocity {
+        crate::editor::velocity::VelocityPanel::build_velocity_points(
+            editor.editor_state.data.current_track_notes(),
+        )
+    } else {
+        Vec::new()
+    };
+
+    // CC/Bend 模式从 automation_lanes 获取控制点
+    let (cc_points, bend_points) = if is_bend {
+        let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
+        (Vec::new(), bend_pts)
+    } else if !is_velocity {
+        let cc_pts = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
+        (cc_pts, Vec::new())
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
+    (velocity_points, cc_points, bend_points)
+}
+
+/// 当前模式对应的自动化车道（Bend → PitchBend，CC → 对应控制器，Velocity/Tempo 无车道）。
+fn cc_bar_automation_lane(
+    editor: &crate::editor::Editor,
+    is_bend: bool,
+    is_velocity: bool,
+    cc_number: u8,
+) -> Option<&lumino_note_core::AutomationLane> {
+    let track_idx = editor.editor_state.data.current_track as u16;
+    if is_bend {
+        editor
+            .editor_state
+            .data
+            .find_automation_lane(track_idx, &lumino_note_core::AutomationTarget::PitchBend)
+            .and_then(|idx| {
+                editor
+                    .editor_state
+                    .data
+                    .automation_lanes
+                    .get(idx)
+                    .map(|a| &**a)
+            })
+    } else if !is_velocity {
+        editor
+            .editor_state
+            .data
+            .find_automation_lane(
+                track_idx,
+                &lumino_note_core::AutomationTarget::CC {
+                    controller: cc_number,
+                },
+            )
+            .and_then(|idx| {
+                editor
+                    .editor_state
+                    .data
+                    .automation_lanes
+                    .get(idx)
+                    .map(|a| &**a)
+            })
+    } else {
+        None
+    }
+}
+
 impl Host {
     /// 构建 CC 柱状条实例（背景/网格/中心线）
     pub(crate) fn build_cc_bar_instances(&self) -> Vec<lumino_gfx::CcBarInstance> {
@@ -20,62 +99,9 @@ impl Host {
             EditMode::Tempo => (false, false, 0u8),
         };
 
-        // Velocity 模式从 notes 获取力度点
-        // 2026-08 单一权威源：从 document 读取（track_notes 缓存已删除）
-        let velocity_points = if is_velocity {
-            crate::editor::velocity::VelocityPanel::build_velocity_points(
-                editor.editor_state.data.current_track_notes(),
-            )
-        } else {
-            Vec::new()
-        };
-
-        // CC/Bend 模式从 automation_lanes 获取控制点
-        let (cc_points, bend_points) = if is_bend {
-            let bend_pts = crate::editor::velocity::VelocityPanel::build_bend_points(editor);
-            (Vec::new(), bend_pts)
-        } else if !is_velocity {
-            let cc_pts = crate::editor::velocity::VelocityPanel::build_cc_points(editor, cc_number);
-            (cc_pts, Vec::new())
-        } else {
-            (Vec::new(), Vec::new())
-        };
-
-        let track_idx = editor.editor_state.data.current_track as u16;
-        let automation_lane = if is_bend {
-            editor
-                .editor_state
-                .data
-                .find_automation_lane(track_idx, &lumino_note_core::AutomationTarget::PitchBend)
-                .and_then(|idx| {
-                    editor
-                        .editor_state
-                        .data
-                        .automation_lanes
-                        .get(idx)
-                        .map(|a| &**a)
-                })
-        } else if !is_velocity {
-            editor
-                .editor_state
-                .data
-                .find_automation_lane(
-                    track_idx,
-                    &lumino_note_core::AutomationTarget::CC {
-                        controller: cc_number,
-                    },
-                )
-                .and_then(|idx| {
-                    editor
-                        .editor_state
-                        .data
-                        .automation_lanes
-                        .get(idx)
-                        .map(|a| &**a)
-                })
-        } else {
-            None
-        };
+        let (velocity_points, cc_points, bend_points) =
+            collect_cc_bar_points(editor, is_bend, is_velocity, cc_number);
+        let automation_lane = cc_bar_automation_lane(editor, is_bend, is_velocity, cc_number);
 
         let view = &editor.editor_state.view;
         let canvas = &editor.editor_state.canvas;

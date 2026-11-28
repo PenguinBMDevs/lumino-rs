@@ -120,102 +120,113 @@ impl Host {
         }
 
         match touch.phase {
-            winit::event::TouchPhase::Started => {
-                self.active_touches.insert(touch.id, logical);
-
-                if self.active_touches.len() >= 2 {
-                    // 第二指落下：本次触摸会话升级为手势。
-                    // 第一指已经合成过一次左键按下（无法预知后续会有第二指），
-                    // 该按下会在最后一指抬起时统一释放（见 Ended 分支）。
-                    self.touch_gesture_active = true;
-                    self.pinch_anchor_distance = None;
-                    self.prev_pan_center = None;
-                    // 双指不是长按（否则两指停 500ms 会弹右键菜单）
-                    self.cancel_long_press();
-                    // 立刻把光标锚到两指中点（`window_manager` 已按本指位置推过一次
-                    // 光标，直接用会让锚点贴到某一根手指上）
-                    self.apply_multi_touch_gesture();
-                    log::debug!(
-                        "[TOUCH] started 升手势 fingers={}",
-                        self.active_touches.len()
-                    );
-                    return TouchRouting::Consumed;
-                }
-
-                // 首指：同步全局鼠标按下（分割条/侧栏拖拽收尾、is_mouse_pressed）
-                self.sync_global_pointer(true);
-                self.begin_long_press(logical);
-                log::debug!(
-                    "[TOUCH] started 单指 pos=({:.0},{:.0}) -> Pointer",
-                    logical.x,
-                    logical.y
-                );
-                TouchRouting::Pointer
-            }
-            winit::event::TouchPhase::Moved => {
-                match self.active_touches.get_mut(&touch.id) {
-                    Some(p) => *p = logical,
-                    None => {
-                        // 兜底：漏了 Started（例如应用从后台恢复）也要能接上
-                        self.active_touches.insert(touch.id, logical);
-                    }
-                }
-
-                if self.active_touches.len() >= 2 {
-                    self.touch_gesture_active = true;
-                    self.cancel_long_press();
-                    self.apply_multi_touch_gesture();
-                    return TouchRouting::Consumed;
-                }
-
-                if self.touch_gesture_active {
-                    // 双指降为单指：继续按手势消费，否则剩余手指的移动会变成拖拽
-                    self.pinch_anchor_distance = None;
-                    self.prev_pan_center = None;
-                    return TouchRouting::Consumed;
-                }
-
-                // 单指移动超过抖动半径 = 拖动，取消长按
-                if let Some(origin) = self.touch_press_origin
-                    && squared_distance(origin, logical) > LONG_PRESS_SLOP * LONG_PRESS_SLOP
-                {
-                    self.cancel_long_press();
-                }
-
-                TouchRouting::Pointer
-            }
+            winit::event::TouchPhase::Started => self.touch_started(touch, logical),
+            winit::event::TouchPhase::Moved => self.touch_moved(touch, logical),
             winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                self.active_touches.remove(&touch.id);
-
-                // 手势态下的中间状态一律清零，避免用旧锚点算出跳变增量
-                self.pinch_anchor_distance = None;
-                self.prev_pan_center = None;
-
-                if !self.active_touches.is_empty() {
-                    // 还有手指按着：**不能**发左键释放，否则编辑/拖拽被中途收尾
-                    self.cancel_long_press();
-                    return TouchRouting::Consumed;
-                }
-
-                // 全部抬起：手势结束、释放左键、抑制 hover
-                self.touch_gesture_active = false;
-                let long_pressed = self.touch_long_press_fired;
-                self.touch_long_press_deadline = None;
-                self.touch_long_press_fired = false;
-                self.touch_press_origin = None;
-                self.sync_global_pointer(false);
-                // 纯触屏没有 CursorLeft，抬手后指针仍停在落点，
-                // 悬停高亮 / tooltip / 音符 hover 预览会一直挂着 —— 置位由
-                // `process_pending_events` 在下一帧以 Unavailable 重建一次。
-                self.suppress_hover_after_touch = true;
-
-                if long_pressed {
-                    // 长按触发时左键已经结束，这里只需要释放模拟的右键
-                    TouchRouting::RightRelease
-                } else {
-                    TouchRouting::Pointer
-                }
+                self.touch_finished(touch)
             }
+        }
+    }
+
+    /// 单指落下：首指合成左键按下并排队长按，第二指起把本次会话升级为手势。
+    fn touch_started(&mut self, touch: &winit::event::Touch, logical: Point) -> TouchRouting {
+        self.active_touches.insert(touch.id, logical);
+
+        if self.active_touches.len() >= 2 {
+            // 第二指落下：本次触摸会话升级为手势。
+            // 第一指已经合成过一次左键按下（无法预知后续会有第二指），
+            // 该按下会在最后一指抬起时统一释放（见 Ended 分支）。
+            self.touch_gesture_active = true;
+            self.pinch_anchor_distance = None;
+            self.prev_pan_center = None;
+            // 双指不是长按（否则两指停 500ms 会弹右键菜单）
+            self.cancel_long_press();
+            // 立刻把光标锚到两指中点（`window_manager` 已按本指位置推过一次
+            // 光标，直接用会让锚点贴到某一根手指上）
+            self.apply_multi_touch_gesture();
+            log::debug!(
+                "[TOUCH] started 升手势 fingers={}",
+                self.active_touches.len()
+            );
+            return TouchRouting::Consumed;
+        }
+
+        // 首指：同步全局鼠标按下（分割条/侧栏拖拽收尾、is_mouse_pressed）
+        self.sync_global_pointer(true);
+        self.begin_long_press(logical);
+        log::debug!(
+            "[TOUCH] started 单指 pos=({:.0},{:.0}) -> Pointer",
+            logical.x,
+            logical.y
+        );
+        TouchRouting::Pointer
+    }
+
+    /// 手指移动：双指及以上交给手势层，双指降单指仍按手势消费。
+    fn touch_moved(&mut self, touch: &winit::event::Touch, logical: Point) -> TouchRouting {
+        match self.active_touches.get_mut(&touch.id) {
+            Some(p) => *p = logical,
+            None => {
+                // 兜底：漏了 Started（例如应用从后台恢复）也要能接上
+                self.active_touches.insert(touch.id, logical);
+            }
+        }
+
+        if self.active_touches.len() >= 2 {
+            self.touch_gesture_active = true;
+            self.cancel_long_press();
+            self.apply_multi_touch_gesture();
+            return TouchRouting::Consumed;
+        }
+
+        if self.touch_gesture_active {
+            // 双指降为单指：继续按手势消费，否则剩余手指的移动会变成拖拽
+            self.pinch_anchor_distance = None;
+            self.prev_pan_center = None;
+            return TouchRouting::Consumed;
+        }
+
+        // 单指移动超过抖动半径 = 拖动，取消长按
+        if let Some(origin) = self.touch_press_origin
+            && squared_distance(origin, logical) > LONG_PRESS_SLOP * LONG_PRESS_SLOP
+        {
+            self.cancel_long_press();
+        }
+
+        TouchRouting::Pointer
+    }
+
+    /// 最后一指抬起：手势收尾、释放左键、抑制 hover。
+    fn touch_finished(&mut self, touch: &winit::event::Touch) -> TouchRouting {
+        self.active_touches.remove(&touch.id);
+
+        // 手势态下的中间状态一律清零，避免用旧锚点算出跳变增量
+        self.pinch_anchor_distance = None;
+        self.prev_pan_center = None;
+
+        if !self.active_touches.is_empty() {
+            // 还有手指按着：**不能**发左键释放，否则编辑/拖拽被中途收尾
+            self.cancel_long_press();
+            return TouchRouting::Consumed;
+        }
+
+        // 全部抬起：手势结束、释放左键、抑制 hover
+        self.touch_gesture_active = false;
+        let long_pressed = self.touch_long_press_fired;
+        self.touch_long_press_deadline = None;
+        self.touch_long_press_fired = false;
+        self.touch_press_origin = None;
+        self.sync_global_pointer(false);
+        // 纯触屏没有 CursorLeft，抬手后指针仍停在落点，
+        // 悬停高亮 / tooltip / 音符 hover 预览会一直挂着 —— 置位由
+        // `process_pending_events` 在下一帧以 Unavailable 重建一次。
+        self.suppress_hover_after_touch = true;
+
+        if long_pressed {
+            // 长按触发时左键已经结束，这里只需要释放模拟的右键
+            TouchRouting::RightRelease
+        } else {
+            TouchRouting::Pointer
         }
     }
 

@@ -203,133 +203,157 @@ impl Draft {
     /// 草稿预览/提交用的 stroke；拖拽距离过小返回 None
     pub fn to_stroke(&self) -> Option<Stroke> {
         match self {
-            Self::Freehand { points } => {
-                if points.len() < 2 {
-                    return None;
-                }
-                Some(Stroke {
-                    kind: StrokeKind::Freehand,
-                    anchors: points.iter().map(|&p| ShapeAnchor::new(p)).collect(),
-                    rect: None,
-                })
-            }
-            Self::TwoPoint { start, current } => {
-                if distance(*start, *current) < 1e-3 {
-                    return None;
-                }
-                Some(Stroke {
-                    kind: StrokeKind::Line,
-                    anchors: vec![ShapeAnchor::new(*start), ShapeAnchor::new(*current)],
-                    rect: None,
-                })
-            }
+            Self::Freehand { points } => freehand_stroke(points),
+            Self::TwoPoint { start, current } => two_point_stroke(*start, *current),
             Self::Curve {
                 start,
                 end,
                 control,
                 stage,
-            } => {
-                if distance(*start, *end) < 1e-3 {
-                    return None;
-                }
-                match stage {
-                    // 第二段：还没落终点，先用直线做引导预览。
-                    DraftStage::Second => Some(Stroke {
-                        kind: StrokeKind::Line,
-                        anchors: vec![ShapeAnchor::new(*start), ShapeAnchor::new(*end)],
-                        rect: None,
-                    }),
-                    // 第三段：二次贝塞尔转三次；控制点由用户第三击确定。
-                    DraftStage::Third => {
-                        let control_out = (
-                            (control.0 - start.0) * 2.0 / 3.0,
-                            (control.1 - start.1) * 2.0 / 3.0,
-                        );
-                        let control_in = (
-                            (control.0 - end.0) * 2.0 / 3.0,
-                            (control.1 - end.1) * 2.0 / 3.0,
-                        );
-                        let mut a = ShapeAnchor::new(*start);
-                        a.out_handle = control_out;
-                        a.handles_auto = false;
-                        let mut b = ShapeAnchor::new(*end);
-                        b.in_handle = control_in;
-                        b.handles_auto = false;
-                        Some(Stroke {
-                            kind: StrokeKind::Curve,
-                            anchors: vec![a, b],
-                            rect: None,
-                        })
-                    }
-                }
-            }
+            } => curve_stroke(*start, *end, *control, *stage),
             Self::Arc {
                 start,
                 through,
                 end,
                 stage,
-            } => {
-                if distance(*start, *end) < 1e-3 {
-                    return None;
-                }
-                match stage {
-                    DraftStage::Second => Some(Stroke {
-                        kind: StrokeKind::Line,
-                        anchors: vec![ShapeAnchor::new(*start), ShapeAnchor::new(*end)],
-                        rect: None,
-                    }),
-                    DraftStage::Third => Some(Stroke {
-                        kind: StrokeKind::Arc,
-                        anchors: vec![
-                            ShapeAnchor::new(*start),
-                            ShapeAnchor::new(*through),
-                            ShapeAnchor::new(*end),
-                        ],
-                        rect: None,
-                    }),
-                }
-            }
+            } => arc_stroke(*start, *through, *end, *stage),
             Self::Box {
                 tool,
                 start,
                 current,
-            } => {
-                let rect = rect_from_drag(*start, *current)?;
-                if rect.size().0 < 1e-3 || rect.size().1 < 1e-3 {
-                    return None;
-                }
-                if *tool == DrawerTool::Rect {
-                    let corners = [
-                        (rect.tick_lo, rect.key_lo),
-                        (rect.tick_hi, rect.key_lo),
-                        (rect.tick_hi, rect.key_hi),
-                        (rect.tick_lo, rect.key_hi),
-                        (rect.tick_lo, rect.key_lo),
-                    ];
-                    Some(Stroke {
-                        kind: StrokeKind::Polyline,
-                        anchors: corners.into_iter().map(ShapeAnchor::new).collect(),
-                        rect: Some(rect),
-                    })
-                } else {
-                    let mut points = Vec::with_capacity(65);
-                    for index in 0..=64 {
-                        let angle = std::f32::consts::TAU * index as f32 / 64.0;
-                        points.push((
-                            (rect.tick_lo + rect.tick_hi) * 0.5
-                                + (rect.tick_hi - rect.tick_lo) * 0.5 * angle.cos(),
-                            (rect.key_lo + rect.key_hi) * 0.5
-                                + (rect.key_hi - rect.key_lo) * 0.5 * angle.sin(),
-                        ));
-                    }
-                    Some(Stroke {
-                        kind: StrokeKind::Polyline,
-                        anchors: points.into_iter().map(ShapeAnchor::new).collect(),
-                        rect: Some(rect),
-                    })
-                }
-            }
+            } => box_stroke(*tool, *start, *current),
         }
+    }
+}
+
+/// 自由笔：少于两个采样点不构成笔画
+fn freehand_stroke(points: &[(f32, f32)]) -> Option<Stroke> {
+    if points.len() < 2 {
+        return None;
+    }
+    Some(Stroke {
+        kind: StrokeKind::Freehand,
+        anchors: points.iter().map(|&p| ShapeAnchor::new(p)).collect(),
+        rect: None,
+    })
+}
+
+/// 两点直线：拖拽距离过小视为误触
+fn two_point_stroke(start: (f32, f32), current: (f32, f32)) -> Option<Stroke> {
+    if distance(start, current) < 1e-3 {
+        return None;
+    }
+    Some(Stroke {
+        kind: StrokeKind::Line,
+        anchors: vec![ShapeAnchor::new(start), ShapeAnchor::new(current)],
+        rect: None,
+    })
+}
+
+/// 曲线：第二段用直线做引导预览，第三段把二次贝塞尔转三次
+fn curve_stroke(
+    start: (f32, f32),
+    end: (f32, f32),
+    control: (f32, f32),
+    stage: DraftStage,
+) -> Option<Stroke> {
+    if distance(start, end) < 1e-3 {
+        return None;
+    }
+    match stage {
+        // 第二段：还没落终点，先用直线做引导预览。
+        DraftStage::Second => Some(Stroke {
+            kind: StrokeKind::Line,
+            anchors: vec![ShapeAnchor::new(start), ShapeAnchor::new(end)],
+            rect: None,
+        }),
+        // 第三段：二次贝塞尔转三次；控制点由用户第三击确定。
+        DraftStage::Third => {
+            let control_out = (
+                (control.0 - start.0) * 2.0 / 3.0,
+                (control.1 - start.1) * 2.0 / 3.0,
+            );
+            let control_in = (
+                (control.0 - end.0) * 2.0 / 3.0,
+                (control.1 - end.1) * 2.0 / 3.0,
+            );
+            let mut a = ShapeAnchor::new(start);
+            a.out_handle = control_out;
+            a.handles_auto = false;
+            let mut b = ShapeAnchor::new(end);
+            b.in_handle = control_in;
+            b.handles_auto = false;
+            Some(Stroke {
+                kind: StrokeKind::Curve,
+                anchors: vec![a, b],
+                rect: None,
+            })
+        }
+    }
+}
+
+/// 三点弧：第二段用直线预览，第三段按起点 / 经过点 / 终点成弧
+fn arc_stroke(
+    start: (f32, f32),
+    through: (f32, f32),
+    end: (f32, f32),
+    stage: DraftStage,
+) -> Option<Stroke> {
+    if distance(start, end) < 1e-3 {
+        return None;
+    }
+    match stage {
+        DraftStage::Second => Some(Stroke {
+            kind: StrokeKind::Line,
+            anchors: vec![ShapeAnchor::new(start), ShapeAnchor::new(end)],
+            rect: None,
+        }),
+        DraftStage::Third => Some(Stroke {
+            kind: StrokeKind::Arc,
+            anchors: vec![
+                ShapeAnchor::new(start),
+                ShapeAnchor::new(through),
+                ShapeAnchor::new(end),
+            ],
+            rect: None,
+        }),
+    }
+}
+
+/// 矩形 / 圆：拖成零面积时不提交
+fn box_stroke(tool: DrawerTool, start: (f32, f32), current: (f32, f32)) -> Option<Stroke> {
+    let rect = rect_from_drag(start, current)?;
+    if rect.size().0 < 1e-3 || rect.size().1 < 1e-3 {
+        return None;
+    }
+    if tool == DrawerTool::Rect {
+        let corners = [
+            (rect.tick_lo, rect.key_lo),
+            (rect.tick_hi, rect.key_lo),
+            (rect.tick_hi, rect.key_hi),
+            (rect.tick_lo, rect.key_hi),
+            (rect.tick_lo, rect.key_lo),
+        ];
+        Some(Stroke {
+            kind: StrokeKind::Polyline,
+            anchors: corners.into_iter().map(ShapeAnchor::new).collect(),
+            rect: Some(rect),
+        })
+    } else {
+        let mut points = Vec::with_capacity(65);
+        for index in 0..=64 {
+            let angle = std::f32::consts::TAU * index as f32 / 64.0;
+            points.push((
+                (rect.tick_lo + rect.tick_hi) * 0.5
+                    + (rect.tick_hi - rect.tick_lo) * 0.5 * angle.cos(),
+                (rect.key_lo + rect.key_hi) * 0.5 + (rect.key_hi - rect.key_lo) * 0.5 * angle.sin(),
+            ));
+        }
+        Some(Stroke {
+            kind: StrokeKind::Polyline,
+            anchors: points.into_iter().map(ShapeAnchor::new).collect(),
+            rect: Some(rect),
+        })
     }
 }
 

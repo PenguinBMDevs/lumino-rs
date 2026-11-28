@@ -110,72 +110,9 @@ pub(crate) fn plan_update(input: PlanInput<'_>) -> CpuOnionPlan {
     let dirty_full = input.dirty.is_some_and(|dirty| dirty.full);
     let has_changes = input.dirty.is_some_and(CpuOnionDirty::has_changes);
 
-    // ① 索引缺失：唯一无条件整建路径
-    if !input.index_ready {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Full),
-            index: CpuOnionIndex::Rebuild,
-        };
-    }
-
-    // ② 帧缺失（停用后重启 / 相机退化后恢复）：必须整帧；索引沿用既有证据
-    if !input.frame_ready {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Full),
-            index: index_action(&input, dirty_full, has_changes),
-        };
-    }
-
-    // ③ 纯水平滚动：平移已有帧 + 只重画新露出的窄条。
-    //
-    // 必须排在 `layout_changed` 之前：滚动会改相机，但也只是相机。
-    // 有文档变更 / 脏区 / 代次变化时保守走整帧（密度统计覆盖全部音轨，
-    // 当前轨编辑也会改热力图，不能只靠滚动的窄条）。
-    if let Some(dx) = input.scroll_dx
-        && dx != 0
-        && !dirty_full
-        && !has_changes
-        && !input.gen_changed
-        && !input.stale_needs_repair
-    {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Scroll(dx)),
-            index: CpuOnionIndex::Keep,
-        };
-    }
-
-    // ④ 布局键变化：必须整帧；索引按文档侧证据决定（切轨不等于重建索引）
-    if input.layout_changed {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Full),
-            index: index_action(&input, dirty_full, has_changes),
-        };
-    }
-
-    // ④ 整帧兜底：显式 full，或**连变化来源都不知道**（无脏区 + 无受影响轨）
-    //
-    // ⚠️ 这里必须是 `source_unknown`，不能只看 `dirty.is_none()`：
-    // 当前轨拖动/批量/连奏直接改 `track_notes_mut`，不经记录点 → `dirty == None`，
-    // 但 `onion_dirty_tracks` 仍然是 `Some(empty | {current})`。那是**已知来源**
-    // （当前轨，CPU 不画），必须走「只更新快照/索引、不重绘」；否则每一帧拖动都会
-    // 整帧重绘 + 整索引重建，Step 5a 对当前轨的收益直接归零。
-    if dirty_full || (input.gen_changed && source_unknown(&input)) {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Full),
-            index: CpuOnionIndex::Rebuild,
-        };
-    }
-
-    // 只有脏 tick 区间（历史大变更/回放）：帧必须整画，但索引/密度只做增量，
-    // 绝不能因为「没有逐音符 changes」升级为整建。
-    if input
-        .dirty
-        .is_some_and(|dirty| !dirty.ranges.is_empty() && !dirty.full)
-    {
-        return CpuOnionPlan {
-            redraw: Some(CpuOnionRedraw::Full),
-            index: CpuOnionIndex::Incremental,
-        };
+    // ①②③④ 与整帧兜底：结论不依赖视觉脏区，先判先返回
+    if let Some(plan) = forced_redraw_plan(&input, dirty_full, has_changes) {
+        return plan;
     }
 
     // ⑤ 什么都没变：复用（最高频路径，零分配）
@@ -212,6 +149,86 @@ pub(crate) fn plan_update(input: PlanInput<'_>) -> CpuOnionPlan {
         redraw: Some(redraw),
         index,
     }
+}
+
+/// 结论不依赖视觉脏区的强制重绘分支（判定优先级 ①②③④ 及整帧兜底）。
+///
+/// 返回 `Some` 表示本帧已定性、无需再做逐音符的增量判定；`None` 表示交给
+/// [`plan_update`] 继续走复用 / 增量 / 区域重绘的路径。
+fn forced_redraw_plan(
+    input: &PlanInput<'_>,
+    dirty_full: bool,
+    has_changes: bool,
+) -> Option<CpuOnionPlan> {
+    // ① 索引缺失：唯一无条件整建路径
+    if !input.index_ready {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: CpuOnionIndex::Rebuild,
+        });
+    }
+
+    // ② 帧缺失（停用后重启 / 相机退化后恢复）：必须整帧；索引沿用既有证据
+    if !input.frame_ready {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: index_action(input, dirty_full, has_changes),
+        });
+    }
+
+    // ③ 纯水平滚动：平移已有帧 + 只重画新露出的窄条。
+    //
+    // 必须排在 `layout_changed` 之前：滚动会改相机，但也只是相机。
+    // 有文档变更 / 脏区 / 代次变化时保守走整帧（密度统计覆盖全部音轨，
+    // 当前轨编辑也会改热力图，不能只靠滚动的窄条）。
+    if let Some(dx) = input.scroll_dx
+        && dx != 0
+        && !dirty_full
+        && !has_changes
+        && !input.gen_changed
+        && !input.stale_needs_repair
+    {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Scroll(dx)),
+            index: CpuOnionIndex::Keep,
+        });
+    }
+
+    // ④ 布局键变化：必须整帧；索引按文档侧证据决定（切轨不等于重建索引）
+    if input.layout_changed {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: index_action(input, dirty_full, has_changes),
+        });
+    }
+
+    // ④ 整帧兜底：显式 full，或**连变化来源都不知道**（无脏区 + 无受影响轨）
+    //
+    // ⚠️ 这里必须是 `source_unknown`，不能只看 `dirty.is_none()`：
+    // 当前轨拖动/批量/连奏直接改 `track_notes_mut`，不经记录点 → `dirty == None`，
+    // 但 `onion_dirty_tracks` 仍然是 `Some(empty | {current})`。那是**已知来源**
+    // （当前轨，CPU 不画），必须走「只更新快照/索引、不重绘」；否则每一帧拖动都会
+    // 整帧重绘 + 整索引重建，Step 5a 对当前轨的收益直接归零。
+    if dirty_full || (input.gen_changed && source_unknown(input)) {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: CpuOnionIndex::Rebuild,
+        });
+    }
+
+    // 只有脏 tick 区间（历史大变更/回放）：帧必须整画，但索引/密度只做增量，
+    // 绝不能因为「没有逐音符 changes」升级为整建。
+    if input
+        .dirty
+        .is_some_and(|dirty| !dirty.ranges.is_empty() && !dirty.full)
+    {
+        return Some(CpuOnionPlan {
+            redraw: Some(CpuOnionRedraw::Full),
+            index: CpuOnionIndex::Incremental,
+        });
+    }
+
+    None
 }
 
 /// 是否**连变化来源都不知道**（既没有脏区，也没有受影响轨集合）。

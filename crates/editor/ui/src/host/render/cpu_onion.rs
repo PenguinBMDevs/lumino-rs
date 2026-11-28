@@ -158,31 +158,10 @@ impl Host {
         // 消费掉这段时间的编辑，否则脏区被静默丢弃 → CPU 帧永久停在旧内容。
         if self.root.is_arrangement_mode() || self.root.editor.editor_state.is_vertical_roll {
             self.cpu_onion_state.clear_frame();
-            return CpuOnionOutput {
-                frame: None,
-                rebuilt: false,
-                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
-                dirty: None,
-            };
+            return empty_cpu_onion_output();
         }
 
-        let input = {
-            let es = &self.root.editor.editor_state;
-            CpuOnionCameraInput {
-                scale_factor: self.render_ctx.viewport.scale_factor(),
-                canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
-                canvas_size: (es.canvas.size_x, es.canvas.size_y),
-                // canvas 是**整块**（含键盘栏/标尺）：内容区原点必须再内缩这两项，
-                // 否则 CPU 音符相对 GPU 网格整体左移 keyboard_width、上移 ruler_height
-                keyboard_width: es.view.keyboard_width,
-                ruler_height: es.view.ruler_height,
-                // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
-                // 横向滚动已吸附物理像素，纵向仍用实时值（本步不做纵向增量）
-                scroll: (render_scroll_x, es.view.scroll_y),
-                zoom: (es.view.zoom_x, es.view.zoom_y),
-                key_count: es.view.visible_key_count,
-            }
-        };
+        let input = self.cpu_onion_camera_input(render_scroll_x);
         let track_count = self
             .root
             .editor
@@ -193,12 +172,7 @@ impl Host {
             .map_or(0, MidiDocument::track_count);
         let Some(mut geometry) = input.to_physical() else {
             self.cpu_onion_state.clear_frame();
-            return CpuOnionOutput {
-                frame: None,
-                rebuilt: false,
-                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
-                dirty: None,
-            };
+            return empty_cpu_onion_output();
         };
         // 横向滚动已由 Host 吸附到物理像素；这里再 round 一次，消除
         // `logical × scale` 的 f32 尾差（125%/150% DPI 下 10.000001 → 10），
@@ -207,12 +181,7 @@ impl Host {
         if track_count == 0 {
             // 无文档：本帧不绘制；脏区保留（下次加载必然走整帧兜底）
             self.cpu_onion_state.clear_frame();
-            return CpuOnionOutput {
-                frame: None,
-                rebuilt: false,
-                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
-                dirty: None,
-            };
+            return empty_cpu_onion_output();
         }
 
         let (muted, mut muted_ids) = collect_muted_tracks(&self.root.sidebar.tracks, track_count);
@@ -232,12 +201,7 @@ impl Host {
         let es = &self.root.editor.editor_state;
         let Some(document) = es.data.document.as_ref() else {
             self.cpu_onion_state.clear_frame();
-            return CpuOnionOutput {
-                frame: None,
-                rebuilt: false,
-                // 不绘制：没有帧，也就没有「相对上一帧的脏区」
-                dirty: None,
-            };
+            return empty_cpu_onion_output();
         };
         let dirty = self.cpu_onion_state.merge_direct_edits(
             document,
@@ -255,6 +219,38 @@ impl Host {
         };
         self.cpu_onion_state
             .update(key, document, &muted, dirty, dirty_tracks.as_ref())
+    }
+
+    /// 收集相机输入（逻辑像素；横向滚动沿用调用方已吸附物理像素的值）。
+    fn cpu_onion_camera_input(&self, render_scroll_x: f32) -> CpuOnionCameraInput {
+        let es = &self.root.editor.editor_state;
+        CpuOnionCameraInput {
+            scale_factor: self.render_ctx.viewport.scale_factor(),
+            canvas_offset: (es.canvas.offset_x, es.canvas.offset_y),
+            canvas_size: (es.canvas.size_x, es.canvas.size_y),
+            // canvas 是**整块**（含键盘栏/标尺）：内容区原点必须再内缩这两项，
+            // 否则 CPU 音符相对 GPU 网格整体左移 keyboard_width、上移 ruler_height
+            keyboard_width: es.view.keyboard_width,
+            ruler_height: es.view.ruler_height,
+            // 与 GPU 主轨同一数据源：钢琴卷帘的 scroll/zoom（逻辑像素）
+            // 横向滚动已吸附物理像素，纵向仍用实时值（本步不做纵向增量）
+            scroll: (render_scroll_x, es.view.scroll_y),
+            zoom: (es.view.zoom_x, es.view.zoom_y),
+            key_count: es.view.visible_key_count,
+        }
+    }
+}
+
+/// 本帧不绘制时的空输出（只负责构造返回值）。
+///
+/// 帧缓存由调用方按各分支语义清理：`clear_frame` 与脏区的保留/丢弃在各分支
+/// 并不相同，因此不在这里一并处理。
+fn empty_cpu_onion_output() -> CpuOnionOutput {
+    CpuOnionOutput {
+        frame: None,
+        rebuilt: false,
+        // 不绘制：没有帧，也就没有「相对上一帧的脏区」
+        dirty: None,
     }
 }
 

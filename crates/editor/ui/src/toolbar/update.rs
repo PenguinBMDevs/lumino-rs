@@ -1,8 +1,9 @@
 //! 工具栏事件分发：互斥浮层收起守卫 + 按事件族分派。
 //!
 //! 具体处理拆到 `update_*` 子模块；本文件只保留 `new`、守卫、穷尽式分派表、
-//! 尺寸拖拽与仅日志事件。新增事件必须先在分派表里归类——分派表不写 `_` 兜底，
-//! 编译器会强制穷尽，避免新事件被静默吞掉。
+//! 尺寸拖拽与仅日志事件。分派表分两级：`classify_event`（事件 → 事件族）与
+//! `dispatch_event`（事件族 → 处理函数）；两级都不写 `_` 兜底，编译器会强制穷尽，
+//! 新增事件漏归类会编译失败，避免被静默吞掉。
 
 use super::*;
 
@@ -13,6 +14,36 @@ enum PopoverKeep {
     All,
     Only(Popover),
     None,
+}
+
+/// 事件族：分派表的第一级，把「事件 → 处理函数」一次映射拆成
+/// 「事件 → 事件族」（`classify_event`）与「事件族 → 处理函数」（`dispatch_event`）。
+///
+/// 两级都是穷尽匹配，都不写 `_` 兜底：新增事件漏归类会在 `classify_event` 处编译失败。
+enum EventFamily {
+    /// 走带与录制
+    Transport,
+    /// 工具选择与绘制工具条
+    Tools,
+    /// 绘制工具条拖拽
+    ToolPanelDrag,
+    /// 吸附规格与吸附选择器
+    Snap,
+    /// 工具栏下拉（溢出 / 画刷 / 形状）
+    Dropdowns,
+    /// 粗细面板
+    Thickness,
+    /// 自定义精度对话框
+    CustomPrecision,
+    /// 仪表盘编辑（BPM / PPQ）与自动滚动
+    Dashboard,
+    /// 工具栏高度拖拽
+    Resize,
+    /// 仅写日志 / 无状态可改的事件
+    LogOnly,
+    /// 洋葱皮事件（`update` 已提前返回）与悬停（由 Root 写入状态栏）：
+    /// 工具栏都不改状态，只留空族让分派表穷尽。
+    Ignored,
 }
 
 impl Toolbar {
@@ -68,6 +99,33 @@ impl Toolbar {
             return;
         }
 
+        self.dispatch_event(event);
+    }
+
+    /// 按事件族分派到具体处理函数；`EventFamily` 上没有 `_` 兜底，漏接新族会编译失败。
+    fn dispatch_event(&mut self, event: Event) {
+        match Self::classify_event(&event) {
+            EventFamily::Transport => self.update_transport(event),
+            EventFamily::Tools => self.update_tools(event),
+            EventFamily::ToolPanelDrag => self.update_tool_panel_drag(event),
+            EventFamily::Snap => self.update_snap(event),
+            EventFamily::Dropdowns => self.update_dropdowns(event),
+            EventFamily::Thickness => self.update_thickness(event),
+            EventFamily::CustomPrecision => self.update_custom_precision(event),
+            EventFamily::Dashboard => self.update_dashboard(event),
+            EventFamily::Resize => self.update_resize(event),
+            EventFamily::LogOnly => self.log_unhandled(event),
+            // 洋葱皮事件已由 `update` 前面的 `update_onion_skin_event` 提前返回，
+            // 悬停描述由 Root 写入状态栏：两者都只留空臂。
+            EventFamily::Ignored => {}
+        }
+    }
+
+    /// 把事件归入所属事件族；穷尽匹配，不写 `_` 兜底。
+    ///
+    /// 与 `dispatch_event` 是同一张分派表的两级，故放在同一个 `impl` 内并排阅读。
+    fn classify_event(event: &Event) -> EventFamily {
+        use EventFamily::*;
         match event {
             // 走带与录制
             Event::Play
@@ -79,7 +137,7 @@ impl Toolbar {
             | Event::SkipForwardToEnd
             | Event::ToggleLoop
             | Event::Record
-            | Event::RecordStop => self.update_transport(event),
+            | Event::RecordStop => Transport,
 
             // 工具选择与绘制工具条
             Event::ToolSelected(_)
@@ -88,20 +146,18 @@ impl Toolbar {
             | Event::CloseToolPanel
             | Event::ToolPanelItemSelected(_)
             | Event::ToolPanelItemSettingsRequested(_)
-            | Event::CloseTextParamsPanel => self.update_tools(event),
+            | Event::CloseTextParamsPanel => Tools,
 
             // 绘制工具条拖拽
             Event::ToolPanelDragStarted
             | Event::ToolPanelDragEnded
-            | Event::ToolPanelDragged(_, _) => {
-                self.update_tool_panel_drag(event);
-            }
+            | Event::ToolPanelDragged(_, _) => ToolPanelDrag,
 
             // 吸附规格与吸附选择器
             Event::SnapSpecChanged(_)
             | Event::PrecisionChanged(_)
             | Event::ToggleSnapPicker
-            | Event::CloseSnapPicker => self.update_snap(event),
+            | Event::CloseSnapPicker => Snap,
 
             // 工具栏下拉（溢出 / 画刷 / 形状）
             Event::ToggleOverflowMenu
@@ -110,12 +166,12 @@ impl Toolbar {
             | Event::CloseBrushDropdown
             | Event::ToggleShapeDropdown
             | Event::CloseShapeDropdown
-            | Event::ShapeTypeSelected(_) => self.update_dropdowns(event),
+            | Event::ShapeTypeSelected(_) => Dropdowns,
 
             // 粗细面板
             Event::ToggleThicknessPanel
             | Event::CloseThicknessPanel
-            | Event::DrawThicknessChanged(_) => self.update_thickness(event),
+            | Event::DrawThicknessChanged(_) => Thickness,
 
             // 自定义精度对话框
             Event::OpenCustomPrecisionDialog
@@ -125,7 +181,7 @@ impl Toolbar {
             | Event::CustomPrecisionTupletTypeChanged(_)
             | Event::CustomPrecisionDotTypeChanged(_)
             | Event::CustomPrecisionNoteValueChanged(_)
-            | Event::CustomPrecisionDivisorChanged(_) => self.update_custom_precision(event),
+            | Event::CustomPrecisionDivisorChanged(_) => CustomPrecision,
 
             // 仪表盘编辑（BPM / PPQ）与自动滚动
             Event::BpmEditToggled(_)
@@ -134,13 +190,12 @@ impl Toolbar {
             | Event::PpqEditToggled(_)
             | Event::PpqEditChanged(_)
             | Event::PpqEditConfirmed
-            | Event::AutoScrollModeChanged => self.update_dashboard(event),
+            | Event::AutoScrollModeChanged => Dashboard,
 
             // 工具栏高度拖拽
             Event::ResizeDragStarted(_) | Event::ResizeDragged(_) | Event::ResizeDragEnded => {
-                self.update_resize(event);
+                Resize
             }
-
             // 仅写日志 / 无状态可改的事件
             Event::Undo
             | Event::Redo
@@ -158,18 +213,15 @@ impl Toolbar {
             | Event::Glue
             | Event::Tie
             | Event::OpenHistoryDialog
-            | Event::OpenDrawSettingsDialog => self.log_unhandled(event),
+            | Event::OpenDrawSettingsDialog => LogOnly,
             #[cfg(lumino_shape_drawer_entry)]
-            Event::OpenShapeDrawerDialog => self.log_unhandled(event),
-
-            // 洋葱皮事件已在上面提前返回；保留空臂只为让分派表穷尽。
+            Event::OpenShapeDrawerDialog => LogOnly,
+            // 洋葱皮已由 `update` 提前返回、悬停由 Root 写入状态栏——两者都不改工具栏状态。
             Event::ToggleOnionSkin
             | Event::ToggleOnionSkinMenu
             | Event::CloseOnionSkinMenu
-            | Event::OnionSkinModeSelected(_) => {}
-
-            // 悬停描述由 Root 写入状态栏，工具栏不处理。
-            Event::ButtonHovered(_) => {}
+            | Event::OnionSkinModeSelected(_)
+            | Event::ButtonHovered(_) => Ignored,
         }
     }
 

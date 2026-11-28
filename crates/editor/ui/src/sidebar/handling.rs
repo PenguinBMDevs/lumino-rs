@@ -18,7 +18,6 @@ use crate::sidebar::core::{Route, Sidebar};
 impl Sidebar {
     /// 处理一条侧边栏事件，返回面板可见性是否发生变化
     pub fn update(&mut self, event: Event) -> bool {
-        use Event::*;
         let prev_visible = self.panel_visible;
         let prev_route = self.route;
         let prev_group = self.active_group;
@@ -30,6 +29,32 @@ impl Sidebar {
         let prev_panel_context_menu_open = self.panel_context_menu.is_open;
         let prev_reorder_hover = self.track_reorder.as_ref().and_then(|r| r.hover_index);
         let prev_roll_bar_active = self.roll_bar_active;
+
+        self.dispatch_event(event);
+
+        // 最终保护
+        if self.route == Route::Arrangement {
+            self.panel_visible = false;
+        }
+
+        self.panel_visible != prev_visible
+            || self.route != prev_route
+            || self.active_group != prev_group
+            || self.track_context_menu.target_track_id != prev_context_menu_target
+            || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
+            || self.color_picking_track != prev_color_picking
+            || self.port_picking_track != prev_port_picking
+            || self.channel_picking_track != prev_channel_picking
+            || self.panel_context_menu.is_open != prev_panel_context_menu_open
+            // 拖拽排序状态变化（开始/移动/激活/结束）需要重绘
+            || self.track_reorder.as_ref().and_then(|r| r.hover_index) != prev_reorder_hover
+            // 卷帘底部按钮亮灯状态变化需要重绘
+            || self.roll_bar_active != prev_roll_bar_active
+    }
+
+    /// 按 `Event` 变体把处理委派给对应的 `handle_*` 入口
+    fn dispatch_event(&mut self, event: Event) {
+        use Event::*;
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => {
@@ -118,23 +143,5 @@ impl Sidebar {
                 self.handle_roll_bar_toggled(button);
             }
         }
-        // 最终保护
-        if self.route == Route::Arrangement {
-            self.panel_visible = false;
-        }
-
-        self.panel_visible != prev_visible
-            || self.route != prev_route
-            || self.active_group != prev_group
-            || self.track_context_menu.target_track_id != prev_context_menu_target
-            || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
-            || self.color_picking_track != prev_color_picking
-            || self.port_picking_track != prev_port_picking
-            || self.channel_picking_track != prev_channel_picking
-            || self.panel_context_menu.is_open != prev_panel_context_menu_open
-            // 拖拽排序状态变化（开始/移动/激活/结束）需要重绘
-            || self.track_reorder.as_ref().and_then(|r| r.hover_index) != prev_reorder_hover
-            // 卷帘底部按钮亮灯状态变化需要重绘
-            || self.roll_bar_active != prev_roll_bar_active
     }
 }

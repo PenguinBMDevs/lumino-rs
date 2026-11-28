@@ -25,110 +25,13 @@ impl Host {
         // 工具栏折叠（溢出菜单）依赖实际可用宽度：与生产 `responsive` 同口径。
         let logical_width = size.width as f32 / pixels_per_point;
         let logical_height = size.height as f32 / pixels_per_point;
-        let model = self.root.egui_chrome_model_for(logical_width);
-        // 主内容区（标题栏下、状态栏上）：渲染器入口面板 / 时间轴 / 预览共用一份几何。
-        let window_area = egui::Rect::from_min_size(
-            egui::pos2(0.0, 0.0),
-            egui::vec2(logical_width, logical_height),
-        );
-        // 画布几何：egui 是唯一布局来源（上一代 不再参与，取代 `Grid` program
-        // 的 `CanvasBoundsChanged`）。
-        self.sync_canvas_bounds(&model, window_area);
-        let content_area = {
-            let left = model
-                .sidebar
-                .as_ref()
-                .map(|sidebar| sidebar.total_width())
-                .unwrap_or(48.0);
-            let top = if model.titlebar.is_some() {
-                lumino_ui_egui::layout::TITLEBAR_H
-            } else {
-                0.0
-            };
-            egui::Rect::from_min_max(
-                egui::pos2(left, top),
-                egui::pos2(
-                    logical_width,
-                    (logical_height - lumino_ui_egui::layout::STATUSBAR_H).max(top),
-                ),
-            )
-        };
-        // 形状抽屉：面板 + 画布都由 egui 绘制（上一代 只保留标题栏）。
-        let shape_panel_rect = (self.root.state.dialog_type
-            == crate::state::root_state::DialogType::ShapeDrawer)
-            .then(|| {
-                let width = self.root.state.shape_drawer.panel_width;
-                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 egui 仍画 30px
-                // 自制标题栏（`chrome::popup_titlebar`），因此这里按 `use_native_titlebar`
-                // 判断（与画布动作端的 rect 同源）。
-                let top = if self.root.settings.synth.use_native_titlebar {
-                    0.0
-                } else {
-                    lumino_ui_egui::layout::TITLEBAR_H
-                };
-                egui::Rect::from_min_max(egui::pos2(0.0, top), egui::pos2(width, logical_height))
-            });
-        let shape_drawer = shape_panel_rect.map(|rect| self.root.shape_drawer_model(rect));
-        let shape_canvas = shape_panel_rect.map(|panel_rect| {
-            let rect = egui::Rect::from_min_max(
-                egui::pos2(panel_rect.right() + SPLITTER_W, panel_rect.top()),
-                egui::pos2(logical_width, panel_rect.bottom()),
-            );
-            self.root
-                .shape_canvas_model(rect, &self.root.egui_palette())
-        });
-        // 视频导出面板：整块替换右侧内容区（与音频导出同形态）。
-        let video_export = (self.root.sidebar.video_export_visible
-            && !self.root.is_arrangement_mode())
-        .then(|| {
-            let left = model
-                .sidebar
-                .as_ref()
-                .map(|sidebar| sidebar.total_width())
-                .unwrap_or(48.0);
-            let top = if self.root.settings.synth.use_native_titlebar {
-                0.0
-            } else {
-                lumino_ui_egui::layout::TITLEBAR_H
-            };
-            self.root.video_export_panel_model(egui::Rect::from_min_max(
-                egui::pos2(left, top),
-                egui::pos2(logical_width, logical_height),
-            ))
-        });
-        // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
-        let audio_export = (self.root.sidebar.audio_export_visible
-            && !self.root.is_arrangement_mode())
-        .then(|| {
-            let left = model
-                .sidebar
-                .as_ref()
-                .map(|sidebar| sidebar.total_width())
-                .unwrap_or(48.0);
-            let top = if model.titlebar.is_some() {
-                lumino_ui_egui::layout::TITLEBAR_H
-            } else {
-                0.0
-            };
-            lumino_ui_egui::chrome::AudioExportPanelModel {
-                rect: egui::Rect::from_min_max(
-                    egui::pos2(left, top),
-                    egui::pos2(logical_width, logical_height),
-                ),
-                content: self.root.audio_export_model(),
-            }
-        });
+        let (model, content_area, window_area) =
+            self.overlay_geometry(logical_width, logical_height);
+        let (shape_drawer, shape_canvas) = self.shape_overlay_panels(logical_width, logical_height);
+        let (video_export, audio_export) =
+            self.export_overlay_panels(&model, logical_width, logical_height);
         let palette = self.root.egui_palette();
-        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（上一代 侧同位置
-        // 只保留占位，不会二次采样同一张纹理）。
-        let waterfall = {
-            let sidebar = &self.root.right_sidebar;
-            (sidebar.panel_visible
-                && sidebar.active_panel == crate::right_sidebar::RightSidebarPanel::PianoWaterfall
-                && self.root.right_sidebar_visible())
-            .then(|| sidebar.piano_waterfall.waterfall_view.clone())
-            .flatten()
-        };
+        let waterfall = self.waterfall_overlay_texture();
         // 取走本帧累积的指针 / 滚轮 / 修饰键 / 焦点事件。
         let events = egui_events;
         let focused = egui_focused;
@@ -136,11 +39,7 @@ impl Host {
         let device = self.render_ctx.device.clone();
         let queue = self.render_ctx.queue.clone();
 
-        let overlay = self
-            .render_ctx
-            .egui_overlay
-            .get_or_insert_with(|| EguiOverlay::new(&device, format));
-        let overlay_output = overlay.draw(OverlayFrame {
+        let overlay_frame = OverlayFrame {
             device: &device,
             queue: &queue,
             view,
@@ -186,7 +85,21 @@ impl Host {
             events,
             focused,
             clear,
-        });
+        };
+        self.present_overlay_frame(overlay_frame, logical_width);
+    }
+
+    /// 绘制本帧叠加层，并落地宿主侧副作用（重绘请求 / 光标 / IME / 动作）。
+    ///
+    /// 占用区与绘制顺序归 `EguiOverlay` 所有：这里只取走本帧结果再分发。
+    fn present_overlay_frame(&mut self, frame: OverlayFrame<'_>, logical_width: f32) {
+        // 动作按逻辑点换算命中区域，IME 锚点按物理像素换算，二者共用本帧 DPI。
+        let pixels_per_point = frame.pixels_per_point;
+        let overlay = self
+            .render_ctx
+            .egui_overlay
+            .get_or_insert_with(|| EguiOverlay::new(frame.device, frame.format));
+        let overlay_output = overlay.draw(frame);
         // 各通道动作统一取走并分发（`actions.rs`）。
         let actions = actions::OverlayActions::take(&overlay.ctx);
         // egui 的弹层（ComboBox / Tooltip）首帧是「测量 pass」，不产生绘制图元：
@@ -199,6 +112,147 @@ impl Host {
         self.apply_egui_cursor(overlay_output.cursor);
         self.apply_egui_ime(overlay_output.ime, pixels_per_point);
         self.apply_overlay_actions(actions, logical_width);
+    }
+
+    /// 计算本帧外壳模型、主内容区与画布窗口区。
+    ///
+    /// 顺序不可调整：先由外壳模型定位画布窗口区，再按模型推导主内容区。
+    fn overlay_geometry(
+        &mut self,
+        logical_width: f32,
+        logical_height: f32,
+    ) -> (ChromeModel, egui::Rect, egui::Rect) {
+        let model = self.root.egui_chrome_model_for(logical_width);
+        // 主内容区（标题栏下、状态栏上）：渲染器入口面板 / 时间轴 / 预览共用一份几何。
+        let window_area = egui::Rect::from_min_size(
+            egui::pos2(0.0, 0.0),
+            egui::vec2(logical_width, logical_height),
+        );
+        // 画布几何：egui 是唯一布局来源（上一代 不再参与，取代 `Grid` program
+        // 的 `CanvasBoundsChanged`）。
+        self.sync_canvas_bounds(&model, window_area);
+        let content_area = {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if model.titlebar.is_some() {
+                lumino_ui_egui::layout::TITLEBAR_H
+            } else {
+                0.0
+            };
+            egui::Rect::from_min_max(
+                egui::pos2(left, top),
+                egui::pos2(
+                    logical_width,
+                    (logical_height - lumino_ui_egui::layout::STATUSBAR_H).max(top),
+                ),
+            )
+        };
+        (model, content_area, window_area)
+    }
+
+    /// 形状抽屉的左侧面板与右侧画布模型（对话框内按自制标题栏高度让位）。
+    fn shape_overlay_panels(
+        &self,
+        logical_width: f32,
+        logical_height: f32,
+    ) -> (
+        Option<lumino_ui_egui::chrome::ShapeDrawerModel>,
+        Option<lumino_ui_egui::shape_canvas::ShapeCanvasModel>,
+    ) {
+        // 形状抽屉：面板 + 画布都由 egui 绘制（上一代 只保留标题栏）。
+        let shape_panel_rect = (self.root.state.dialog_type
+            == crate::state::root_state::DialogType::ShapeDrawer)
+            .then(|| {
+                let width = self.root.state.shape_drawer.panel_width;
+                // 对话框窗口：`ChromeModel.titlebar` 为 None，但 egui 仍画 30px
+                // 自制标题栏（`chrome::popup_titlebar`），因此这里按 `use_native_titlebar`
+                // 判断（与画布动作端的 rect 同源）。
+                let top = if self.root.settings.synth.use_native_titlebar {
+                    0.0
+                } else {
+                    lumino_ui_egui::layout::TITLEBAR_H
+                };
+                egui::Rect::from_min_max(egui::pos2(0.0, top), egui::pos2(width, logical_height))
+            });
+        let shape_drawer = shape_panel_rect.map(|rect| self.root.shape_drawer_model(rect));
+        let shape_canvas = shape_panel_rect.map(|panel_rect| {
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(panel_rect.right() + SPLITTER_W, panel_rect.top()),
+                egui::pos2(logical_width, panel_rect.bottom()),
+            );
+            self.root
+                .shape_canvas_model(rect, &self.root.egui_palette())
+        });
+        (shape_drawer, shape_canvas)
+    }
+
+    /// 视频 / 音频导出面板模型：两者都整块接管右侧内容区。
+    fn export_overlay_panels(
+        &self,
+        model: &ChromeModel,
+        logical_width: f32,
+        logical_height: f32,
+    ) -> (
+        Option<lumino_ui_egui::chrome::VideoExportPanelModel>,
+        Option<lumino_ui_egui::chrome::AudioExportPanelModel>,
+    ) {
+        // 视频导出面板：整块替换右侧内容区（与音频导出同形态）。
+        let video_export = (self.root.sidebar.video_export_visible
+            && !self.root.is_arrangement_mode())
+        .then(|| {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if self.root.settings.synth.use_native_titlebar {
+                0.0
+            } else {
+                lumino_ui_egui::layout::TITLEBAR_H
+            };
+            self.root.video_export_panel_model(egui::Rect::from_min_max(
+                egui::pos2(left, top),
+                egui::pos2(logical_width, logical_height),
+            ))
+        });
+        // 音频导出面板：整块替换右侧内容区（工具栏 / 画布 / 状态栏）。
+        let audio_export = (self.root.sidebar.audio_export_visible
+            && !self.root.is_arrangement_mode())
+        .then(|| {
+            let left = model
+                .sidebar
+                .as_ref()
+                .map(|sidebar| sidebar.total_width())
+                .unwrap_or(48.0);
+            let top = if model.titlebar.is_some() {
+                lumino_ui_egui::layout::TITLEBAR_H
+            } else {
+                0.0
+            };
+            lumino_ui_egui::chrome::AudioExportPanelModel {
+                rect: egui::Rect::from_min_max(
+                    egui::pos2(left, top),
+                    egui::pos2(logical_width, logical_height),
+                ),
+                content: self.root.audio_export_model(),
+            }
+        });
+        (video_export, audio_export)
+    }
+
+    /// 瀑布流面板的离屏纹理（面板不可见或未渲染时为 `None`）。
+    fn waterfall_overlay_texture(&self) -> Option<std::sync::Arc<wgpu::TextureView>> {
+        // 瀑布流面板可见且纹理已渲染时，把视图交给 egui 采样（上一代 侧同位置
+        // 只保留占位，不会二次采样同一张纹理）。
+        let sidebar = &self.root.right_sidebar;
+        (sidebar.panel_visible
+            && sidebar.active_panel == crate::right_sidebar::RightSidebarPanel::PianoWaterfall
+            && self.root.right_sidebar_visible())
+        .then(|| sidebar.piano_waterfall.waterfall_view.clone())
+        .flatten()
     }
 
     /// 当前指针是否落在 egui 占用区（菜单 / 弹层 / 面板 / 模态）。

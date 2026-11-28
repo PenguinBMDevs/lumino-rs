@@ -45,6 +45,57 @@ fn split_update_chunks(
         .collect()
 }
 
+/// 正在绘制的音符（Drawing 状态）几何：`(tick, key, length)`；非 Drawing 返回 `None`。
+fn drawing_preview_geometry(
+    edit_state: &crate::editor::EditState,
+    preview_default_length: f32,
+) -> Option<(f32, u16, f32)> {
+    if let crate::editor::EditState::Drawing {
+        start_tick,
+        key,
+        current_tick,
+    } = edit_state
+    {
+        let (tick, length) = if *current_tick > *start_tick {
+            (*start_tick, *current_tick - *start_tick)
+        } else if *current_tick < *start_tick {
+            (*current_tick, *start_tick - *current_tick)
+        } else {
+            (*start_tick, preview_default_length)
+        };
+        return Some((tick, *key, length));
+    }
+    None
+}
+
+/// 图片转 MIDI 预览实例：主轨实色 + 其他轨洋葱皮颜色（非哨兵，与旧渲染一致）。
+fn i2m_preview_instances(editor: &crate::editor::Editor) -> Vec<NoteInstance> {
+    let (main_preview, onion_preview) = note_worker::collect_i2m_preview_notes(editor);
+    if main_preview.is_empty() && onion_preview.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(main_preview.len() + onion_preview.len());
+    for (tick, key, length) in main_preview {
+        out.push(NoteInstance::new(
+            tick,
+            key,
+            length,
+            note_worker::MAIN_TRACK_NOTE_COLOR,
+            MAIN_TRACK_BORDER_WIDTH,
+        ));
+    }
+    for (tick, key, length, onion_color) in onion_preview {
+        out.push(NoteInstance::new(
+            tick,
+            key,
+            length,
+            onion_color,
+            MAIN_TRACK_BORDER_WIDTH,
+        ));
+    }
+    out
+}
+
 impl Host {
     /// 更新 WGPU 渲染线程的音符数据（统一全量渲染，2026-08-06）
     ///
@@ -68,6 +119,28 @@ impl Host {
 
         // ── 1. 未知变化兜底：undo/redo/加载/散改等无事件可对账的变化
         // → 强制全量会话重建（洋葱皮分块流式；段表重建后主音轨段 = 最新 document）
+        self.force_full_rebuild_on_note_data_dirty();
+
+        // ── 2. 主音轨事件级增量（段内）：index = notes 索引（保序，
+        // GPU 段内位置 = 段 offset + index，由渲染线程按当前音轨段应用）
+        self.apply_main_track_note_delta();
+
+        // ── 3. ghost 拖动 / 复制副本（拖动中 document 未变，只更新被拖音符）──
+        let mut preview_instances = self.ghost_drag_preview_instances();
+
+        // ── 4. 预览音符（Drawing / hover / i2m）→ 合并到同一预览列表
+        preview_instances.extend(self.build_preview_instances());
+        preview_instances.extend(crate::host::render::mask_preview::instances(
+            &self.root.editor,
+        ));
+        self.flush_preview_instances(preview_instances);
+
+        // 更新光标位置缓存
+        self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
+    }
+
+    /// 未知变化兜底：清空增量事件并请求下一帧全量会话重建（undo/加载/散改）。
+    fn force_full_rebuild_on_note_data_dirty(&mut self) {
         if self.root.editor.editor_state.data.note_delta_dirty {
             let data = &mut self.root.editor.editor_state.data;
             data.note_delta_events.clear();
@@ -76,9 +149,10 @@ impl Host {
             // 内容脏：全量重建必须在本帧 present 前可见（走等待路径）
             self.render_ctx.mark_render_content_dirty();
         }
+    }
 
-        // ── 2. 主音轨事件级增量（段内）：index = notes 索引（保序，
-        // GPU 段内位置 = 段 offset + index，由渲染线程按当前音轨段应用）
+    /// 主音轨事件级增量：UpdateRange 合并为段内 UpdateMany，Insert/Remove 直发。
+    fn apply_main_track_note_delta(&mut self) {
         let events = self.root.editor.editor_state.data.take_note_delta_events();
         if !events.is_empty() {
             // 内容脏：音符 Insert/Update/Remove 必须立即显示
@@ -89,23 +163,6 @@ impl Host {
             let border_width = main_track_border_width(current_track);
             // 合并连续 UpdateRange；遇到 Insert/Remove 时先 flush 当前 UpdateRange
             let mut update_segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
-            let flush_update = |segments: &mut Vec<(usize, Vec<NoteInstance>)>| {
-                for (next, instances) in segments.drain(..) {
-                    if instances.is_empty() {
-                        continue;
-                    }
-                    let start = next - instances.len();
-                    // 大区间分块发送：单条消息 ≤ MAX_UPDATE_SEGMENT（防超大消息/瞬时峰值）
-                    for (chunk_start, chunk) in
-                        split_update_chunks(start, instances, MAX_UPDATE_SEGMENT)
-                    {
-                        self.send_note_event_to_render_thread(NoteEvent::UpdateMany {
-                            start_index: chunk_start,
-                            instances: chunk,
-                        });
-                    }
-                }
-            };
             for event in &events {
                 match event {
                     lumino_editor_state::NoteDeltaEvent::UpdateRange { start_index, notes } => {
@@ -128,7 +185,7 @@ impl Host {
                         }
                     }
                     lumino_editor_state::NoteDeltaEvent::InsertAt { index, note } => {
-                        flush_update(&mut update_segments);
+                        self.flush_note_update_segments(&mut update_segments);
                         let instance = NoteInstance::new(
                             note.tick,
                             note.key as u8,
@@ -142,7 +199,7 @@ impl Host {
                         });
                     }
                     lumino_editor_state::NoteDeltaEvent::RemoveAt { index, count } => {
-                        flush_update(&mut update_segments);
+                        self.flush_note_update_segments(&mut update_segments);
                         self.send_note_event_to_render_thread(NoteEvent::RemoveAt {
                             index: *index,
                             count: *count,
@@ -150,14 +207,33 @@ impl Host {
                     }
                 }
             }
-            flush_update(&mut update_segments);
+            self.flush_note_update_segments(&mut update_segments);
             tracing::trace!(
                 "[note-delta] 段内增量：{} 事件（GPU 布局 = 全量轨段）",
                 events.len()
             );
         }
+    }
 
-        // ── 3. ghost 拖动 / 复制副本（拖动中 document 未变，只更新被拖音符）──
+    /// 把累积的连续段按 `MAX_UPDATE_SEGMENT` 分块下发为 `UpdateMany`。
+    fn flush_note_update_segments(&self, segments: &mut Vec<(usize, Vec<NoteInstance>)>) {
+        for (next, instances) in segments.drain(..) {
+            if instances.is_empty() {
+                continue;
+            }
+            let start = next - instances.len();
+            // 大区间分块发送：单条消息 ≤ MAX_UPDATE_SEGMENT（防超大消息/瞬时峰值）
+            for (chunk_start, chunk) in split_update_chunks(start, instances, MAX_UPDATE_SEGMENT) {
+                self.send_note_event_to_render_thread(NoteEvent::UpdateMany {
+                    start_index: chunk_start,
+                    instances: chunk,
+                });
+            }
+        }
+    }
+
+    /// ghost 拖动 / 复制副本：段内 UpdateMany 或合并进预览列表（document 未变）。
+    fn ghost_drag_preview_instances(&mut self) -> Vec<NoteInstance> {
         let mut preview_instances = Vec::new();
         if self.root.editor.has_active_ghost_delta_state() {
             let editor = &self.root.editor;
@@ -220,12 +296,11 @@ impl Host {
                 }
             }
         }
+        preview_instances
+    }
 
-        // ── 4. 预览音符（Drawing / hover / i2m）→ 合并到同一预览列表
-        preview_instances.extend(self.build_preview_instances());
-        preview_instances.extend(crate::host::render::mask_preview::instances(
-            &self.root.editor,
-        ));
+    /// 预览实例内容变化时下发并置内容脏标记（含缓存更新）。
+    fn flush_preview_instances(&mut self, preview_instances: Vec<NoteInstance>) {
         // 仅在预览内容**真的变化**时下发并置内容脏标记：
         // - 内容不变的 hover 预览若每帧置脏，滚动/缩放时会永远走等待路径，
         //   「在途帧闸门 + 纯视口帧免等待」完全失效；
@@ -243,9 +318,6 @@ impl Host {
                 tracing::debug!("预览实例未送达（渲染线程忙或已退出；预览将在后续变化时重发）");
             }
         }
-
-        // 更新光标位置缓存
-        self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
     }
 
     /// 构建预览音符实例（Drawing / hover / i2m 预览，统一全量渲染用）
@@ -285,22 +357,12 @@ impl Host {
         }
 
         // 正在绘制的音符（Drawing 状态）— 预览音符用 new_preview（哨兵）
-        if let crate::editor::EditState::Drawing {
-            start_tick,
-            key,
-            current_tick,
-        } = edit_state
+        if let Some((tick, key, length)) =
+            drawing_preview_geometry(edit_state, preview_default_length)
         {
-            let (tick, length) = if *current_tick > *start_tick {
-                (*start_tick, *current_tick - *start_tick)
-            } else if *current_tick < *start_tick {
-                (*current_tick, *start_tick - *current_tick)
-            } else {
-                (*start_tick, preview_default_length)
-            };
             return vec![NoteInstance::new_preview(
                 tick,
-                *key as u8,
+                key as u8,
                 length.max(snap_precision),
                 color,
             )];
@@ -309,33 +371,26 @@ impl Host {
         // 图片转 MIDI 预览：主轨实色 + 其他轨洋葱皮颜色（非哨兵，与旧渲染一致）
         let i2m = &editor.editor_state.image_to_midi;
         if i2m.is_active() {
-            let (main_preview, onion_preview) = note_worker::collect_i2m_preview_notes(editor);
-            if main_preview.is_empty() && onion_preview.is_empty() {
-                return Vec::new();
-            }
-            let mut out = Vec::with_capacity(main_preview.len() + onion_preview.len());
-            for (tick, key, length) in main_preview {
-                out.push(NoteInstance::new(
-                    tick,
-                    key,
-                    length,
-                    color,
-                    MAIN_TRACK_BORDER_WIDTH,
-                ));
-            }
-            for (tick, key, length, onion_color) in onion_preview {
-                out.push(NoteInstance::new(
-                    tick,
-                    key,
-                    length,
-                    onion_color,
-                    MAIN_TRACK_BORDER_WIDTH,
-                ));
-            }
-            return out;
+            return i2m_preview_instances(editor);
         }
 
         // hover 预览（铅笔工具 + Idle 状态，跟随鼠标指针，转置支持）
+        if let Some((tick, key)) = self.hover_preview_geometry() {
+            return vec![NoteInstance::new_preview(
+                tick,
+                key as u8,
+                preview_default_length.max(snap_precision),
+                color,
+            )];
+        }
+
+        Vec::new()
+    }
+
+    /// hover 预览几何：`(tick, key)`（铅笔工具 + Idle 状态，跟随鼠标指针，转置支持）。
+    fn hover_preview_geometry(&self) -> Option<(f32, u16)> {
+        let editor = &self.root.editor;
+        let edit_state = &editor.editor_state.interaction.edit_state;
         if matches!(edit_state, crate::editor::EditState::Idle)
             && editor.editor_state.current_tool() == crate::message::Tool::Pencil
             && self.root.should_render_preview_note()
@@ -373,16 +428,10 @@ impl Host {
                     let k = view.y_to_key(local_y);
                     (t, k)
                 };
-                return vec![NoteInstance::new_preview(
-                    tick,
-                    key as u8,
-                    preview_default_length.max(snap_precision),
-                    color,
-                )];
+                return Some((tick, key));
             }
         }
-
-        Vec::new()
+        None
     }
 }
 

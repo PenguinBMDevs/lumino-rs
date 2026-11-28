@@ -42,6 +42,12 @@ impl Host {
             .map(|t| t.stats().last_frame_time_ms as f32)
             .unwrap_or(0.0);
 
+        self.update_frame_stats();
+        self.drive_frame_animation();
+    }
+
+    /// 计算 FPS，并按监控刷新间隔上报 CPU / 内存 / GPU 性能数据。
+    fn update_frame_stats(&mut self) {
         // 计算 FPS 并收集性能数据
         self.frame_count += 1;
         let now = std::time::Instant::now();
@@ -71,7 +77,10 @@ impl Host {
         }
 
         self.last_frame_time = now;
+    }
 
+    /// 逐帧动画与重绘驱动：彩蛋 / 平滑滚动 / 框选 / 传输 / 异步提交 / 拖拽排序。
+    fn drive_frame_animation(&mut self) {
         // 关于页 logo 彩蛋（UI-007）：把视口尺寸注入彩蛋状态。
         // `window::Window` 没有尺寸字段、视图层拿不到 viewport，而彩蛋的飞行/落地
         // 坐标全部以窗口逻辑像素表达，故由 Host 每帧（在构建视图之前）注入。
