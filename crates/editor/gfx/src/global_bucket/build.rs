@@ -58,6 +58,41 @@ impl GlobalBucketIndex {
             });
         }
 
+        let resources = BuildResources::new(device, note_count, count_u32, notes)?;
+        resources.run_sort_passes(device, queue, count_u32);
+        let sort_index = resources.reduce_keys(device, queue, count_u32, &offsets)?;
+        Ok(Self {
+            sort_index,
+            key_offsets: offsets,
+            note_count,
+        })
+    }
+}
+
+/// 构建期一次性 GPU 资源集合：排序 pass 与尾声归约共用，避免主函数参数爆炸。
+struct BuildResources {
+    idx_a: TrackedBuffer,
+    idx_b: TrackedBuffer,
+    tile_buf: TrackedBuffer,
+    key_hist: TrackedBuffer,
+    params_buf: TrackedBuffer,
+    staging: wgpu::Buffer,
+    tile_count: u32,
+    tile_hist_pipe: wgpu::ComputePipeline,
+    prefix_pipe: wgpu::ComputePipeline,
+    scatter_pipe: wgpu::ComputePipeline,
+    reduce_pipe: wgpu::ComputePipeline,
+    bg_a2b: wgpu::BindGroup,
+    bg_b2a: wgpu::BindGroup,
+}
+
+impl BuildResources {
+    fn new(
+        device: &wgpu::Device,
+        note_count: usize,
+        count_u32: u32,
+        notes: &wgpu::Buffer,
+    ) -> Result<Self, GlobalBucketError> {
         let index_bytes = (note_count as u64) * (std::mem::size_of::<u32>() as u64);
         let idx_a = new_storage_buffer(device, "global_bucket_index_a", index_bytes);
         let idx_b = new_storage_buffer(device, "global_bucket_index_b", index_bytes);
@@ -102,92 +137,47 @@ impl GlobalBucketIndex {
             mapped_at_creation: false,
         });
 
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("bucket_sort"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-        });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("global_bucket_sort_bgl"),
-            entries: &[
-                storage_entry(0, true),
-                storage_entry(1, true),
-                storage_entry(2, false),
-                storage_entry(3, false),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                storage_entry(5, false),
-            ],
-        });
-        let pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("global_bucket_sort_layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
-        let entry_pipes = [
-            "tile_hist",
-            "prefix_tiles",
-            "scatter_stable",
-            "reduce_tiles",
-        ]
-        .into_iter()
-        .map(|entry| {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("global_bucket_pipe"),
-                layout: Some(&pipe_layout),
-                module: &module,
-                entry_point: Some(entry),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            })
+        let pipes = create_pipelines(device)?;
+        let (bg_a2b, bg_b2a) = make_bind_groups(
+            device,
+            &pipes,
+            BindGroupArgs {
+                notes,
+                idx_a: idx_a.inner(),
+                idx_b: idx_b.inner(),
+                tile_buf: tile_buf.inner(),
+                params_buf: params_buf.inner(),
+                key_hist: key_hist.inner(),
+            },
+        );
+        Ok(Self {
+            idx_a,
+            idx_b,
+            tile_buf,
+            key_hist,
+            params_buf,
+            staging,
+            tile_count,
+            tile_hist_pipe: pipes.tile_hist,
+            prefix_pipe: pipes.prefix,
+            scatter_pipe: pipes.scatter,
+            reduce_pipe: pipes.reduce,
+            bg_a2b,
+            bg_b2a,
         })
-        .collect::<Vec<_>>();
-        let (tile_hist_pipe, prefix_pipe, scatter_pipe, reduce_pipe) = match entry_pipes.as_slice()
-        {
-            [a, b, c, d] => (a, b, c, d),
-            _ => {
-                return Err(GlobalBucketError::BadLength {
-                    expected: 4,
-                    got: entry_pipes.len(),
-                });
-            }
-        };
+    }
 
-        // 两个方向的绑定组（in/out 乒乓；key_hist 在排序 pass 中绑定但不使用）。
-        let bg_a2b = make_bind_group(
-            device,
-            &layout,
-            notes,
-            idx_a.inner(),
-            idx_b.inner(),
-            tile_buf.inner(),
-            params_buf.inner(),
-            key_hist.inner(),
-        );
-        let bg_b2a = make_bind_group(
-            device,
-            &layout,
-            notes,
-            idx_b.inner(),
-            idx_a.inner(),
-            tile_buf.inner(),
-            params_buf.inner(),
-            key_hist.inner(),
-        );
-
+    fn run_sort_passes(&self, device: &wgpu::Device, queue: &wgpu::Queue, count_u32: u32) {
         for (p, (shift, use_key)) in sort_passes().iter().enumerate() {
             let first_pass = u32::from(p == 0);
-            let bg = if p % 2 == 0 { &bg_a2b } else { &bg_b2a };
+            let bg = if p % 2 == 0 {
+                &self.bg_a2b
+            } else {
+                &self.bg_b2a
+            };
             set_params(
                 queue,
-                params_buf.inner(),
+                self.params_buf.inner(),
                 count_u32,
                 *shift,
                 *use_key,
@@ -202,11 +192,11 @@ impl GlobalBucketIndex {
                     label: Some("global_bucket_tile_hist"),
                     timestamp_writes: None,
                 });
-                cpass.set_pipeline(tile_hist_pipe);
+                cpass.set_pipeline(&self.tile_hist_pipe);
                 cpass.set_bind_group(0, bg, &[]);
                 cpass.dispatch_workgroups(
-                    tile_count.min(MAX_DISPATCH_X),
-                    tile_count.div_ceil(MAX_DISPATCH_X).max(1),
+                    self.tile_count.min(MAX_DISPATCH_X),
+                    self.tile_count.div_ceil(MAX_DISPATCH_X).max(1),
                     1,
                 );
             }
@@ -215,7 +205,7 @@ impl GlobalBucketIndex {
                     label: Some("global_bucket_prefix_tiles"),
                     timestamp_writes: None,
                 });
-                cpass.set_pipeline(prefix_pipe);
+                cpass.set_pipeline(&self.prefix_pipe);
                 cpass.set_bind_group(0, bg, &[]);
                 cpass.dispatch_workgroups(1, 1, 1);
             }
@@ -224,11 +214,11 @@ impl GlobalBucketIndex {
                     label: Some("global_bucket_scatter"),
                     timestamp_writes: None,
                 });
-                cpass.set_pipeline(scatter_pipe);
+                cpass.set_pipeline(&self.scatter_pipe);
                 cpass.set_bind_group(0, bg, &[]);
                 cpass.dispatch_workgroups(
-                    tile_count.min(MAX_DISPATCH_X),
-                    tile_count.div_ceil(MAX_DISPATCH_X).max(1),
+                    self.tile_count.min(MAX_DISPATCH_X),
+                    self.tile_count.div_ceil(MAX_DISPATCH_X).max(1),
                     1,
                 );
             }
@@ -240,15 +230,24 @@ impl GlobalBucketIndex {
                 timeout: Some(std::time::Duration::from_secs(30)),
             });
         }
+    }
+
+    fn reduce_keys(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        count_u32: u32,
+        offsets: &TrackedBuffer,
+    ) -> Result<TrackedBuffer, GlobalBucketError> {
         // 5 个 pass（奇数）→ 结果落在 idx_b。
-        let sort_index = idx_b;
+        let sort_index = self.idx_b;
 
         // 尾声：对有序结果按 key 做 tile 直方图 + 归约 → 1KB 回读 → 全局桶边界。
         // 5 个 pass 后最后一次绑定方向为 bg_a2b（p=4 偶数，in=A out=B），
         // 此处复用它读取有序结果（binding 1 = idx_a？不——有序结果在 idx_b，
         // 故用 bg_b2a：binding 1 = idx_b）。
-        set_params(queue, params_buf.inner(), count_u32, 0, true, 0);
-        queue.write_buffer(key_hist.inner(), 0, &ZEROS_1K);
+        set_params(queue, self.params_buf.inner(), count_u32, 0, true, 0);
+        queue.write_buffer(self.key_hist.inner(), 0, &ZEROS_1K);
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("global_bucket_key_reduce"),
         });
@@ -257,11 +256,11 @@ impl GlobalBucketIndex {
                 label: Some("global_bucket_key_tile_hist"),
                 timestamp_writes: None,
             });
-            cpass.set_pipeline(tile_hist_pipe);
-            cpass.set_bind_group(0, &bg_b2a, &[]);
+            cpass.set_pipeline(&self.tile_hist_pipe);
+            cpass.set_bind_group(0, &self.bg_b2a, &[]);
             cpass.dispatch_workgroups(
-                tile_count.min(MAX_DISPATCH_X),
-                tile_count.div_ceil(MAX_DISPATCH_X).max(1),
+                self.tile_count.min(MAX_DISPATCH_X),
+                self.tile_count.div_ceil(MAX_DISPATCH_X).max(1),
                 1,
             );
         }
@@ -270,13 +269,13 @@ impl GlobalBucketIndex {
                 label: Some("global_bucket_reduce_tiles"),
                 timestamp_writes: None,
             });
-            cpass.set_pipeline(reduce_pipe);
-            cpass.set_bind_group(0, &bg_b2a, &[]);
+            cpass.set_pipeline(&self.reduce_pipe);
+            cpass.set_bind_group(0, &self.bg_b2a, &[]);
             cpass.dispatch_workgroups(1, 1, 1);
         }
-        enc.copy_buffer_to_buffer(key_hist.inner(), 0, &staging, 0, HIST_BYTES);
+        enc.copy_buffer_to_buffer(self.key_hist.inner(), 0, &self.staging, 0, HIST_BYTES);
         queue.submit(Some(enc.finish()));
-        let key_counts = readback_u256(device, &staging)?;
+        let key_counts = readback_u256(device, &self.staging)?;
         // 全局桶边界 = key 计数的互斥前缀和（复用纯函数单测覆盖的逻辑）。
         let pfx = exclusive_prefix(&key_counts);
         let mut key_offsets = [0u32; OFFSETS_LEN];
@@ -285,18 +284,128 @@ impl GlobalBucketIndex {
         queue.write_buffer(offsets.inner(), 0, bytemuck::cast_slice(&key_offsets));
 
         // 过程暂存释放（idx_a / tile_buf / key_hist / params / staging 均为一次性资源）。
-        drop(idx_a);
-        drop(tile_buf);
-        drop(key_hist);
-        drop(params_buf);
-        drop(staging);
+        drop(self.idx_a);
+        drop(self.tile_buf);
+        drop(self.key_hist);
+        drop(self.params_buf);
+        drop(self.staging);
 
-        Ok(Self {
-            sort_index,
-            key_offsets: offsets,
-            note_count,
-        })
+        Ok(sort_index)
     }
+}
+
+/// 计算管线集合 + 绑定组布局（绑定组构造需复用布局）。
+struct PipelineSet {
+    tile_hist: wgpu::ComputePipeline,
+    prefix: wgpu::ComputePipeline,
+    scatter: wgpu::ComputePipeline,
+    reduce: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
+/// 绑定组构造参数（避免函数签名超过参数上限）。
+struct BindGroupArgs<'a> {
+    notes: &'a wgpu::Buffer,
+    idx_a: &'a wgpu::Buffer,
+    idx_b: &'a wgpu::Buffer,
+    tile_buf: &'a wgpu::Buffer,
+    params_buf: &'a wgpu::Buffer,
+    key_hist: &'a wgpu::Buffer,
+}
+
+fn create_pipelines(device: &wgpu::Device) -> Result<PipelineSet, GlobalBucketError> {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("bucket_sort"),
+        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+    });
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("global_bucket_sort_bgl"),
+        entries: &[
+            storage_entry(0, true),
+            storage_entry(1, true),
+            storage_entry(2, false),
+            storage_entry(3, false),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            storage_entry(5, false),
+        ],
+    });
+    let pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("global_bucket_sort_layout"),
+        bind_group_layouts: &[&layout],
+        push_constant_ranges: &[],
+    });
+    let entry_pipes = [
+        "tile_hist",
+        "prefix_tiles",
+        "scatter_stable",
+        "reduce_tiles",
+    ]
+    .into_iter()
+    .map(|entry| {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("global_bucket_pipe"),
+            layout: Some(&pipe_layout),
+            module: &module,
+            entry_point: Some(entry),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        })
+    })
+    .collect::<Vec<_>>();
+    let (tile_hist, prefix, scatter, reduce) = match entry_pipes.as_slice() {
+        [a, b, c, d] => (a.clone(), b.clone(), c.clone(), d.clone()),
+        _ => {
+            return Err(GlobalBucketError::BadLength {
+                expected: 4,
+                got: entry_pipes.len(),
+            });
+        }
+    };
+    Ok(PipelineSet {
+        tile_hist,
+        prefix,
+        scatter,
+        reduce,
+        layout,
+    })
+}
+
+fn make_bind_groups(
+    device: &wgpu::Device,
+    set: &PipelineSet,
+    args: BindGroupArgs<'_>,
+) -> (wgpu::BindGroup, wgpu::BindGroup) {
+    // 两个方向的绑定组（in/out 乒乓；key_hist 在排序 pass 中绑定但不使用）。
+    let bg_a2b = make_bind_group(
+        device,
+        &set.layout,
+        args.notes,
+        args.idx_a,
+        args.idx_b,
+        args.tile_buf,
+        args.params_buf,
+        args.key_hist,
+    );
+    let bg_b2a = make_bind_group(
+        device,
+        &set.layout,
+        args.notes,
+        args.idx_b,
+        args.idx_a,
+        args.tile_buf,
+        args.params_buf,
+        args.key_hist,
+    );
+    (bg_a2b, bg_b2a)
 }
 
 fn set_params(
