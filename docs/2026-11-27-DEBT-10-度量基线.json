@@ -1,6 +1,6 @@
 {
   "files_total": 2353,
-  "lines_total": 424208,
+  "lines_total": 425680,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -84,136 +84,10 @@
       "test": false
     },
     {
-      "path": "crates/audio/gpu-synth/examples/hash_render.rs",
-      "name": "main",
-      "line": 92,
-      "lines": 299,
-      "test": false
-    },
-    {
-      "path": "examples/miditrail_export_bench.rs",
-      "name": "main",
-      "line": 134,
-      "lines": 285,
-      "test": false
-    },
-    {
-      "path": "examples/cpu-onionskin/src/app/frame.rs",
-      "name": "redraw",
-      "line": 18,
-      "lines": 284,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/init.rs",
-      "name": "with_resources",
-      "line": 42,
-      "lines": 270,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/benches/ui_boxselect_copy_bench.rs",
-      "name": "main",
-      "line": 77,
-      "lines": 260,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/dialog/audio_export.rs",
-      "name": "handle_audio_export",
-      "line": 58,
-      "lines": 253,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
-      "name": "compose_pending_with",
-      "line": 137,
-      "lines": 252,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/offline.rs",
-      "name": "render_midi_parsed",
-      "line": 59,
-      "lines": 236,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/separate_thread/runner/params.rs",
-      "name": "build_render_params",
-      "line": 62,
-      "lines": 226,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/chrome/tool_panel/text_panel.rs",
-      "name": "show",
-      "line": 41,
-      "lines": 219,
-      "test": false
-    },
-    {
-      "path": "crates/editor/arrangement-core/src/interaction/pointer.rs",
-      "name": "handle_pointer_event",
-      "line": 17,
-      "lines": 217,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/video_export.rs",
-      "name": "handle_video_frame_inner",
-      "line": 58,
-      "lines": 216,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/chrome/tool_panel.rs",
-      "name": "show_overlay",
-      "line": 56,
-      "lines": 215,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/trim.rs",
       "name": "trim_voice_pool_for_block",
       "line": 37,
       "lines": 213,
-      "test": false
-    },
-    {
-      "path": "crates/audio/midi-model/src/document_build.rs",
-      "name": "from_notes_bytes_with_timing",
-      "line": 143,
-      "lines": 212,
-      "test": false
-    },
-    {
-      "path": "crates/audio/midi-loader/src/loader/parsed_midi.rs",
-      "name": "load_parsed_midi",
-      "line": 32,
-      "lines": 210,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/note_renderer/init.rs",
-      "name": "new_with_shader",
-      "line": 109,
-      "lines": 206,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/video_export/miditrail.rs",
-      "name": "handle_miditrail_frame",
-      "line": 22,
-      "lines": 205,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/egui_overlay/draw.rs",
-      "name": "draw",
-      "line": 31,
-      "lines": 202,
       "test": false
     },
     {
@@ -1577,136 +1451,10 @@
       "test": false
     },
     {
-      "path": "crates/audio/gpu-synth/examples/hash_render.rs",
-      "name": "main",
-      "line": 92,
-      "lines": 299,
-      "test": false
-    },
-    {
-      "path": "examples/miditrail_export_bench.rs",
-      "name": "main",
-      "line": 134,
-      "lines": 285,
-      "test": false
-    },
-    {
-      "path": "examples/cpu-onionskin/src/app/frame.rs",
-      "name": "redraw",
-      "line": 18,
-      "lines": 284,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/init.rs",
-      "name": "with_resources",
-      "line": 42,
-      "lines": 270,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/benches/ui_boxselect_copy_bench.rs",
-      "name": "main",
-      "line": 77,
-      "lines": 260,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/dialog/audio_export.rs",
-      "name": "handle_audio_export",
-      "line": 58,
-      "lines": 253,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-editor/src/interaction/pending_compose.rs",
-      "name": "compose_pending_with",
-      "line": 137,
-      "lines": 252,
-      "test": false
-    },
-    {
-      "path": "crates/audio/gpu-synth/src/synth/engine/offline.rs",
-      "name": "render_midi_parsed",
-      "line": 59,
-      "lines": 236,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/separate_thread/runner/params.rs",
-      "name": "build_render_params",
-      "line": 62,
-      "lines": 226,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/chrome/tool_panel/text_panel.rs",
-      "name": "show",
-      "line": 41,
-      "lines": 219,
-      "test": false
-    },
-    {
-      "path": "crates/editor/arrangement-core/src/interaction/pointer.rs",
-      "name": "handle_pointer_event",
-      "line": 17,
-      "lines": 217,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/video_export.rs",
-      "name": "handle_video_frame_inner",
-      "line": 58,
-      "lines": 216,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui-egui/src/chrome/tool_panel.rs",
-      "name": "show_overlay",
-      "line": 56,
-      "lines": 215,
-      "test": false
-    },
-    {
       "path": "crates/audio/gpu-synth/src/synth/engine/trim.rs",
       "name": "trim_voice_pool_for_block",
       "line": 37,
       "lines": 213,
-      "test": false
-    },
-    {
-      "path": "crates/audio/midi-model/src/document_build.rs",
-      "name": "from_notes_bytes_with_timing",
-      "line": 143,
-      "lines": 212,
-      "test": false
-    },
-    {
-      "path": "crates/audio/midi-loader/src/loader/parsed_midi.rs",
-      "name": "load_parsed_midi",
-      "line": 32,
-      "lines": 210,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/note_renderer/init.rs",
-      "name": "new_with_shader",
-      "line": 109,
-      "lines": 206,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/video_export/miditrail.rs",
-      "name": "handle_miditrail_frame",
-      "line": 22,
-      "lines": 205,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/host/render/egui_overlay/draw.rs",
-      "name": "draw",
-      "line": 31,
-      "lines": 202,
       "test": false
     },
     {
@@ -1729,7 +1477,7 @@
     ],
     [
       "Host",
-      280
+      286
     ],
     [
       "Event",
@@ -1748,16 +1496,16 @@
       132
     ],
     [
+      "GpuSynth",
+      87
+    ],
+    [
       "Sidebar",
       82
     ],
     [
-      "GpuSynth",
-      77
-    ],
-    [
       "NoteRenderer",
-      59
+      65
     ],
     [
       "MidiManager",
