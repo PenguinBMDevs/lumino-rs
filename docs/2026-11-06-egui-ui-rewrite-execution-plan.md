@@ -38,6 +38,13 @@ iced 侧停留在 27 时，gfx 无法单独升到 30。这确认了「先做 27 
 最小 painter——顶点/索引缓冲、字体图集纹理、scissor、sRGB 混合；不移植 egui-wgpu 的
 callback / 多视口 / 截图能力。
 
+### 执行发现（2026-11-28）
+
+`Cargo.lock` 已无任何 `iced*` 包，主程序现为 egui（`lumino-egui-bridge`）+ `lumino-gfx`
+共用同一 `wgpu::Device`。上文「iced_wgpu 与 gfx 硬绑定、必须先做 27 桥接」的前提已失效，
+桥接 crate 不再需要长期维护。wgpu 30 的统一迁移方案、破坏性变更清单与验收门禁见
+[`2026-11-28-wgpu30-统一迁移调研与规划.md`](./2026-11-28-wgpu30-统一迁移调研与规划.md)。
+
 ## 三、验收工具链
 
 ### 3.1 iced 基线
