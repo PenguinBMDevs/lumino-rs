@@ -1,6 +1,6 @@
 {
   "files_total": 2353,
-  "lines_total": 423690,
+  "lines_total": 423982,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -112,24 +112,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/editor-state/src/editor_state/editor_data/history/apply.rs",
-      "name": "apply_history_entry",
-      "line": 114,
-      "lines": 261,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/benches/ui_boxselect_copy_bench.rs",
       "name": "main",
       "line": 77,
       "lines": 260,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/global_bucket/build.rs",
-      "name": "build",
-      "line": 41,
-      "lines": 259,
       "test": false
     },
     {
@@ -144,13 +130,6 @@
       "name": "compose_pending_with",
       "line": 137,
       "lines": 252,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/run.rs",
-      "name": "run_render_thread_inner",
-      "line": 52,
-      "lines": 244,
       "test": false
     },
     {
@@ -1654,24 +1633,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/editor-state/src/editor_state/editor_data/history/apply.rs",
-      "name": "apply_history_entry",
-      "line": 114,
-      "lines": 261,
-      "test": false
-    },
-    {
       "path": "crates/editor/ui-editor/benches/ui_boxselect_copy_bench.rs",
       "name": "main",
       "line": 77,
       "lines": 260,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/global_bucket/build.rs",
-      "name": "build",
-      "line": 41,
-      "lines": 259,
       "test": false
     },
     {
@@ -1686,13 +1651,6 @@
       "name": "compose_pending_with",
       "line": 137,
       "lines": 252,
-      "test": false
-    },
-    {
-      "path": "crates/editor/gfx/src/render_thread/render_loop/runner/run.rs",
-      "name": "run_render_thread_inner",
-      "line": 52,
-      "lines": 244,
       "test": false
     },
     {
@@ -1843,7 +1801,7 @@
     ],
     [
       "EditorData",
-      127
+      132
     ],
     [
       "Sidebar",
