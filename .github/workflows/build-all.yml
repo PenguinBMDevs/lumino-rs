@@ -152,7 +152,7 @@ jobs:
 
           ls -lh dist
 
-      - uses: actions/upload-artifact@v6.0.0
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: Lumino-v${{ github.event.inputs.version }}-Linux-${{ matrix.arch }}
           path: dist/*
@@ -231,7 +231,7 @@ jobs:
           $dest = "dist/${{ steps.filename.outputs.filename }}"
           Copy-Item -LiteralPath $source -Destination $dest
 
-      - uses: actions/upload-artifact@v6.0.0
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: dist/*
@@ -386,7 +386,7 @@ jobs:
 
           ls -lh dist
 
-      - uses: actions/upload-artifact@v6.0.0
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}
           path: dist/*

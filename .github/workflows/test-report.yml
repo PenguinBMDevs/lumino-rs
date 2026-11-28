@@ -44,7 +44,7 @@ jobs:
       # 仍然部署一个空报告页，避免报告站点长期停留在上一次成功的结果上。
       - name: Download JUnit artifacts from CI run
         continue-on-error: true
-        uses: actions/download-artifact@v6.0.0
+        uses: actions/download-artifact@v8.0.2
         with:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -42,7 +42,7 @@ jobs:
           hf-token: ${{ secrets.HF_TOKEN }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: lumino-windows-${{ github.event.inputs.branch }}
           path: |
