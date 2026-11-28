@@ -5,6 +5,23 @@
 
 use super::*;
 use crate::editor_state::editor_data::cpu_onion_dirty::{CpuOnionChange, MAX_CPU_ONION_CHANGES};
+use lumino_note_core::history::{CreateEntry, OperationEntry};
+
+/// 历史条目应用期间的共享回放状态。
+///
+/// 分支方法只操作本结构，避免参数列表过长；字段排列与主函数的序言/收尾一致。
+struct ApplyReplayCtx {
+    /// 撤销方向：undo 置位，redo 清零。
+    inverse: bool,
+    /// 协作开关：关闭时跳过全部 `pending_collab_*` 广播构建。
+    collab_sync: bool,
+    /// 受影响的脏 tick 区间（累积并集）。
+    ranges: Vec<(u32, u32)>,
+    /// CPU 洋葱皮按值变更。
+    replay: Vec<CpuOnionChange>,
+    /// 批量结构变化无法用逐音符表达时置位。
+    replay_full: bool,
+}
 
 impl EditorData {
     // ── 快照构造 ─────────────────────────────────────────────
@@ -116,7 +133,7 @@ impl EditorData {
         entry: HistoryEntry,
         inverse: bool,
         snapshot_changes: Vec<lumino_note_core::history::SnapshotNoteChange>,
-        mut ranges: Vec<(u32, u32)>,
+        ranges: Vec<(u32, u32)>,
         snapshot_full: bool,
     ) {
         // `apply_move_ops` / `apply_create_ops` 内部会调用
@@ -126,8 +143,8 @@ impl EditorData {
         let previous_main_struct = self.main_track_struct_dirty;
 
         self.history_replay = true;
-        let mut replay = Vec::new();
-        let mut replay_full = false;
+        let replay = Vec::new();
+        let replay_full = false;
         // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
         // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
         self.note_delta_events.clear();
@@ -135,234 +152,34 @@ impl EditorData {
         // （快照分支的整轨对账/移动分支的逐音符记录均为 O(N)/O(K)，
         // 未连接协作时被消费端短路丢弃，纯浪费）。
         let collab_sync = self.collab_sync_enabled;
+        let mut ctx = ApplyReplayCtx {
+            inverse,
+            collab_sync,
+            ranges,
+            replay,
+            replay_full,
+        };
         match entry {
             HistoryEntry::Snapshot(s) => {
-                let track = s.current_track;
-                if snapshot_full && ranges.is_empty() {
-                    let lo = s.notes.first().map_or(0, |note| note.start_tick);
-                    let hi = s
-                        .notes
-                        .iter()
-                        .map(|note| note.end_tick.max(note.start_tick.saturating_add(1)))
-                        .max()
-                        .unwrap_or(lo);
-                    ranges.push((lo, hi.max(lo.saturating_add(1))));
-                }
-                if collab_sync {
-                    // 协作对账（按值多重集差分，无 ID）：
-                    // Snapshot 仅用于自动化/拍号等非音符高频路径（音符移动/创建已走
-                    // Move/Create 删加日志，O(K log N) 无全扫）。此处整轨值差分 O(N)
-                    // 仅在“协作开启 + 快照回放”时触发，属快照语义固有成本，非查询全扫。
-                    // 值键用整数（start,end,key,vel,chan）满足 Eq+Hash，无浮点哈希问题。
-                    type SyncKey = (u32, u8, u32, u8, u8);
-                    type SyncTuple = (f32, u16, f32, u8, u8);
-                    fn to_key(n: &lumino_midi_model::NoteEvent) -> SyncKey {
-                        (n.start_tick, n.key, n.end_tick, n.velocity, n.channel)
-                    }
-                    fn to_tuple(n: &lumino_midi_model::NoteEvent) -> SyncTuple {
-                        (
-                            n.start_tick as f32,
-                            n.key as u16,
-                            n.length() as f32,
-                            n.velocity,
-                            n.channel,
-                        )
-                    }
-                    let mut before_counts: HashMap<SyncKey, (usize, SyncTuple)> = HashMap::new();
-                    // 功效说明：此处的整轨迭代为快照差分所必需（快照即整轨语义），
-                    // 非“定位查询全扫”；音符高频路径（Move/Create）已无任何全扫。
-                    for n in self.track_notes(track).iter() {
-                        let k = to_key(n);
-                        let t = to_tuple(n);
-                        before_counts
-                            .entry(k)
-                            .and_modify(|e| e.0 += 1)
-                            .or_insert((1, t));
-                    }
-                    let after_notes = s.notes.clone(); // Arc 浅拷，O(块)
-                    self.apply_snapshot(*s); // 恢复 pre-op
-                    let mut after_counts: HashMap<SyncKey, (usize, SyncTuple)> = HashMap::new();
-                    for n in after_notes.iter() {
-                        let k = to_key(n);
-                        let t = to_tuple(n);
-                        after_counts
-                            .entry(k)
-                            .and_modify(|e| e.0 += 1)
-                            .or_insert((1, t));
-                    }
-                    let mut sync = Vec::new();
-                    // 差分：after 多出 → 加，before 多出 → 删（按份数）。
-                    for (k, (c_after, t)) in &after_counts {
-                        let c_before = before_counts.get(k).map(|e| e.0).unwrap_or(0);
-                        for _ in c_before..*c_after {
-                            sync.push(collab_transform_entry(true, t.0, t.1, t.2, t.3, t.4, track));
-                        }
-                    }
-                    for (k, (c_before, t)) in &before_counts {
-                        let c_after = after_counts.get(k).map(|e| e.0).unwrap_or(0);
-                        for _ in c_after..*c_before {
-                            sync.push(collab_transform_entry(
-                                false, t.0, t.1, t.2, t.3, t.4, track,
-                            ));
-                        }
-                    }
-                    // 累积而非覆盖：多步跳转时批处理会连续回放多步，
-                    // 队列必须保留每一步的变更，批次结束时一次性广播（DRAW-035B）。
-                    self.pending_collab_transform_sync.extend(sync);
-                } else {
-                    self.apply_snapshot(*s);
-                }
-                self.mark_tracks_changed_after_history(HashSet::from([track]));
-                replay_full = snapshot_full;
-                replay.extend(snapshot_changes.into_iter().map(|change| CpuOnionChange {
-                    track: change.track,
-                    old: if inverse { change.new } else { change.old },
-                    new: if inverse { change.old } else { change.new },
-                }));
+                self.apply_snapshot_entry(*s, snapshot_changes, snapshot_full, &mut ctx);
             }
-            HistoryEntry::Operation(op) => {
-                // 对 OperationEntry：undo 时传入 inverse=true 删 moved 加回 originals；
-                // redo 时 inverse=false 删 originals 加 moved（删加语义，按值）。
-                let affected: HashSet<usize> = op.ops.iter().map(|o| o.track_id as usize).collect();
-                let _ = self.apply_move_ops(&op.ops, inverse, self.max_key_for_move_op());
-                if collab_sync {
-                    // 构造协作广播（按值 + 偏移，操作者标识由信封承载）：
-                    // op 恒为前向（originals + delta），方向由 inverse 标志决定。
-                    // undo：ref = moved（O+D），off = -D；redo：ref = O，off = +D。
-                    // 对端按“删 ref + 加 ref+off”执行，与本地删加一致。
-                    let mut sync = Vec::new();
-                    for m in &op.ops {
-                        let track = m.track_id as usize;
-                        let moved = m.moved_notes(self.max_key_for_move_op());
-                        if inverse {
-                            for n in &moved {
-                                sync.push((
-                                    n.start_tick as f32,
-                                    n.key as u16,
-                                    -(m.delta_tick as f32),
-                                    -m.delta_key,
-                                    track,
-                                ));
-                            }
-                        } else {
-                            for n in &m.originals {
-                                sync.push((
-                                    n.start_tick as f32,
-                                    n.key as u16,
-                                    m.delta_tick as f32,
-                                    m.delta_key,
-                                    track,
-                                ));
-                            }
-                        }
-                    }
-                    // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
-                    self.pending_collab_move_sync.extend(sync);
-                }
-                // Move/Create 历史统一走累积 helper（见 `c7d05a88`：内部写路径的
-                // 覆盖语义会让多步跳转丢掉上一步的脏集合）；CPU 洋葱皮的
-                // replay 变更与区间另由 `record_cpu_onion_replay_changes` 承担。
-                self.mark_tracks_changed_after_history(affected);
-                let max_key = self.max_key_for_move_op();
-                for op in &op.ops {
-                    let moved = op.moved_notes(max_key);
-                    if moved.len() != op.originals.len() {
-                        for note in op.originals.iter().chain(moved.iter()) {
-                            super::ranges::push_union(
-                                &mut ranges,
-                                note.start_tick,
-                                note.end_tick.max(note.start_tick.saturating_add(1)),
-                            );
-                        }
-                        replay_full = true;
-                        continue;
-                    }
-                    for (original, moved) in op.originals.iter().zip(moved) {
-                        if *original == moved {
-                            continue;
-                        }
-                        super::ranges::push_union(
-                            &mut ranges,
-                            original.start_tick,
-                            original.end_tick.max(original.start_tick.saturating_add(1)),
-                        );
-                        super::ranges::push_union(
-                            &mut ranges,
-                            moved.start_tick,
-                            moved.end_tick.max(moved.start_tick.saturating_add(1)),
-                        );
-                        if replay.len() < MAX_CPU_ONION_CHANGES {
-                            replay.push(CpuOnionChange {
-                                track: op.track_id as usize,
-                                old: if inverse {
-                                    Some(moved)
-                                } else {
-                                    Some(*original)
-                                },
-                                new: if inverse {
-                                    Some(*original)
-                                } else {
-                                    Some(moved)
-                                },
-                            });
-                        }
-                    }
-                }
-            }
-            HistoryEntry::Create(entry) => {
-                let affected: HashSet<usize> =
-                    entry.ops.iter().map(|o| o.track_id as usize).collect();
-                let _ = self.apply_create_ops(&entry.ops, inverse);
-                if collab_sync {
-                    // 构造协作广播（按值）：undo→删除(false)，redo→添加(true)。
-                    let is_added = !inverse;
-                    let mut sync = Vec::new();
-                    for op in &entry.ops {
-                        let note = op.note;
-                        sync.push((
-                            note.start_tick as f32,
-                            note.key as u16,
-                            note.length() as f32,
-                            note.velocity,
-                            note.channel,
-                            op.track_id as usize,
-                            is_added,
-                        ));
-                    }
-                    // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
-                    self.pending_collab_create_sync.extend(sync);
-                }
-                self.mark_tracks_changed_after_history(affected);
-                for op in &entry.ops {
-                    super::ranges::push_union(
-                        &mut ranges,
-                        op.note.start_tick,
-                        op.note.end_tick.max(op.note.start_tick.saturating_add(1)),
-                    );
-                    if replay.len() < MAX_CPU_ONION_CHANGES {
-                        replay.push(CpuOnionChange {
-                            track: op.track_id as usize,
-                            old: inverse.then_some(op.note),
-                            new: (!inverse).then_some(op.note),
-                        });
-                    }
-                }
-            }
+            HistoryEntry::Operation(op) => self.apply_operation_entry(op, &mut ctx),
+            HistoryEntry::Create(entry) => self.apply_create_entry(entry, &mut ctx),
         }
         self.history_replay = false;
-        if ranges.is_empty() {
-            for change in &replay {
+        if ctx.ranges.is_empty() {
+            for change in &ctx.replay {
                 if let Some((lo, hi)) =
                     super::super::cpu_onion_dirty::note_change_range(change.old, change.new)
                 {
-                    ranges.push((lo, hi));
+                    ctx.ranges.push((lo, hi));
                 }
             }
         }
-        if !ranges.is_empty() {
-            replay_full = false;
+        if !ctx.ranges.is_empty() {
+            ctx.replay_full = false;
         }
-        self.record_cpu_onion_replay_changes(&replay, &ranges, replay_full);
+        self.record_cpu_onion_replay_changes(&ctx.replay, &ctx.ranges, ctx.replay_full);
 
         if let Some(previous) = previous_onion {
             self.onion_dirty_tracks = Some(match self.onion_dirty_tracks.take() {
@@ -371,6 +188,240 @@ impl EditorData {
             });
         }
         self.main_track_struct_dirty |= previous_main_struct;
+    }
+
+    /// 应用 Snapshot 条目：补齐快照范围、协作整轨对账、脏轨标记与变更回放。
+    fn apply_snapshot_entry(
+        &mut self,
+        s: EditorSnapshot,
+        snapshot_changes: Vec<SnapshotNoteChange>,
+        snapshot_full: bool,
+        ctx: &mut ApplyReplayCtx,
+    ) {
+        let track = s.current_track;
+        if snapshot_full && ctx.ranges.is_empty() {
+            let lo = s.notes.first().map_or(0, |note| note.start_tick);
+            let hi = s
+                .notes
+                .iter()
+                .map(|note| note.end_tick.max(note.start_tick.saturating_add(1)))
+                .max()
+                .unwrap_or(lo);
+            ctx.ranges.push((lo, hi.max(lo.saturating_add(1))));
+        }
+        if ctx.collab_sync {
+            self.sync_snapshot_collab(s, track);
+        } else {
+            self.apply_snapshot(s);
+        }
+        self.mark_tracks_changed_after_history(HashSet::from([track]));
+        ctx.replay_full = snapshot_full;
+        ctx.replay
+            .extend(snapshot_changes.into_iter().map(|change| CpuOnionChange {
+                track: change.track,
+                old: if ctx.inverse { change.new } else { change.old },
+                new: if ctx.inverse { change.old } else { change.new },
+            }));
+    }
+
+    /// 快照回放且协作开启时，按值多重集差分构造整轨协作对账数据。
+    fn sync_snapshot_collab(&mut self, s: EditorSnapshot, track: usize) {
+        // 协作对账（按值多重集差分，无 ID）：
+        // Snapshot 仅用于自动化/拍号等非音符高频路径（音符移动/创建已走
+        // Move/Create 删加日志，O(K log N) 无全扫）。此处整轨值差分 O(N)
+        // 仅在“协作开启 + 快照回放”时触发，属快照语义固有成本，非查询全扫。
+        // 值键用整数（start,end,key,vel,chan）满足 Eq+Hash，无浮点哈希问题。
+        type SyncKey = (u32, u8, u32, u8, u8);
+        type SyncTuple = (f32, u16, f32, u8, u8);
+        fn to_key(n: &lumino_midi_model::NoteEvent) -> SyncKey {
+            (n.start_tick, n.key, n.end_tick, n.velocity, n.channel)
+        }
+        fn to_tuple(n: &lumino_midi_model::NoteEvent) -> SyncTuple {
+            (
+                n.start_tick as f32,
+                n.key as u16,
+                n.length() as f32,
+                n.velocity,
+                n.channel,
+            )
+        }
+        let mut before_counts: HashMap<SyncKey, (usize, SyncTuple)> = HashMap::new();
+        // 功效说明：此处的整轨迭代为快照差分所必需（快照即整轨语义），
+        // 非“定位查询全扫”；音符高频路径（Move/Create）已无任何全扫。
+        for n in self.track_notes(track).iter() {
+            let k = to_key(n);
+            let t = to_tuple(n);
+            before_counts
+                .entry(k)
+                .and_modify(|e| e.0 += 1)
+                .or_insert((1, t));
+        }
+        let after_notes = s.notes.clone(); // Arc 浅拷，O(块)
+        self.apply_snapshot(s); // 恢复 pre-op
+        let mut after_counts: HashMap<SyncKey, (usize, SyncTuple)> = HashMap::new();
+        for n in after_notes.iter() {
+            let k = to_key(n);
+            let t = to_tuple(n);
+            after_counts
+                .entry(k)
+                .and_modify(|e| e.0 += 1)
+                .or_insert((1, t));
+        }
+        let mut sync = Vec::new();
+        // 差分：after 多出 → 加，before 多出 → 删（按份数）。
+        for (k, (c_after, t)) in &after_counts {
+            let c_before = before_counts.get(k).map(|e| e.0).unwrap_or(0);
+            for _ in c_before..*c_after {
+                sync.push(collab_transform_entry(true, t.0, t.1, t.2, t.3, t.4, track));
+            }
+        }
+        for (k, (c_before, t)) in &before_counts {
+            let c_after = after_counts.get(k).map(|e| e.0).unwrap_or(0);
+            for _ in c_after..*c_before {
+                sync.push(collab_transform_entry(
+                    false, t.0, t.1, t.2, t.3, t.4, track,
+                ));
+            }
+        }
+        // 累积而非覆盖：多步跳转时批处理会连续回放多步，
+        // 队列必须保留每一步的变更，批次结束时一次性广播（DRAW-035B）。
+        self.pending_collab_transform_sync.extend(sync);
+    }
+
+    /// 应用 Operation 条目：移动删加、协作偏移广播、脏轨标记与变更回放。
+    fn apply_operation_entry(&mut self, op: OperationEntry, ctx: &mut ApplyReplayCtx) {
+        // 对 OperationEntry：undo 时传入 inverse=true 删 moved 加回 originals；
+        // redo 时 inverse=false 删 originals 加 moved（删加语义，按值）。
+        let affected: HashSet<usize> = op.ops.iter().map(|o| o.track_id as usize).collect();
+        let _ = self.apply_move_ops(&op.ops, ctx.inverse, self.max_key_for_move_op());
+        if ctx.collab_sync {
+            // 构造协作广播（按值 + 偏移，操作者标识由信封承载）：
+            // op 恒为前向（originals + delta），方向由 inverse 标志决定。
+            // undo：ref = moved（O+D），off = -D；redo：ref = O，off = +D。
+            // 对端按“删 ref + 加 ref+off”执行，与本地删加一致。
+            let mut sync = Vec::new();
+            for m in &op.ops {
+                let track = m.track_id as usize;
+                let moved = m.moved_notes(self.max_key_for_move_op());
+                if ctx.inverse {
+                    for n in &moved {
+                        sync.push((
+                            n.start_tick as f32,
+                            n.key as u16,
+                            -(m.delta_tick as f32),
+                            -m.delta_key,
+                            track,
+                        ));
+                    }
+                } else {
+                    for n in &m.originals {
+                        sync.push((
+                            n.start_tick as f32,
+                            n.key as u16,
+                            m.delta_tick as f32,
+                            m.delta_key,
+                            track,
+                        ));
+                    }
+                }
+            }
+            // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
+            self.pending_collab_move_sync.extend(sync);
+        }
+        // Move/Create 历史统一走累积 helper（见 `c7d05a88`：内部写路径的
+        // 覆盖语义会让多步跳转丢掉上一步的脏集合）；CPU 洋葱皮的
+        // replay 变更与区间另由 `record_cpu_onion_replay_changes` 承担。
+        self.mark_tracks_changed_after_history(affected);
+        self.record_operation_replay(&op, ctx);
+    }
+
+    /// 逐 op 计算 Operation 条目的脏区间与 CPU 洋葱皮 replay 变更。
+    fn record_operation_replay(&mut self, op: &OperationEntry, ctx: &mut ApplyReplayCtx) {
+        let max_key = self.max_key_for_move_op();
+        for op in &op.ops {
+            let moved = op.moved_notes(max_key);
+            if moved.len() != op.originals.len() {
+                for note in op.originals.iter().chain(moved.iter()) {
+                    super::ranges::push_union(
+                        &mut ctx.ranges,
+                        note.start_tick,
+                        note.end_tick.max(note.start_tick.saturating_add(1)),
+                    );
+                }
+                ctx.replay_full = true;
+                continue;
+            }
+            for (original, moved) in op.originals.iter().zip(moved) {
+                if *original == moved {
+                    continue;
+                }
+                super::ranges::push_union(
+                    &mut ctx.ranges,
+                    original.start_tick,
+                    original.end_tick.max(original.start_tick.saturating_add(1)),
+                );
+                super::ranges::push_union(
+                    &mut ctx.ranges,
+                    moved.start_tick,
+                    moved.end_tick.max(moved.start_tick.saturating_add(1)),
+                );
+                if ctx.replay.len() < MAX_CPU_ONION_CHANGES {
+                    ctx.replay.push(CpuOnionChange {
+                        track: op.track_id as usize,
+                        old: if ctx.inverse {
+                            Some(moved)
+                        } else {
+                            Some(*original)
+                        },
+                        new: if ctx.inverse {
+                            Some(*original)
+                        } else {
+                            Some(moved)
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    /// 应用 Create 条目：增量删加、协作广播、脏轨标记与变更回放。
+    fn apply_create_entry(&mut self, entry: CreateEntry, ctx: &mut ApplyReplayCtx) {
+        let affected: HashSet<usize> = entry.ops.iter().map(|o| o.track_id as usize).collect();
+        let _ = self.apply_create_ops(&entry.ops, ctx.inverse);
+        if ctx.collab_sync {
+            // 构造协作广播（按值）：undo→删除(false)，redo→添加(true)。
+            let is_added = !ctx.inverse;
+            let mut sync = Vec::new();
+            for op in &entry.ops {
+                let note = op.note;
+                sync.push((
+                    note.start_tick as f32,
+                    note.key as u16,
+                    note.length() as f32,
+                    note.velocity,
+                    note.channel,
+                    op.track_id as usize,
+                    is_added,
+                ));
+            }
+            // 累积而非覆盖：多步跳转批处理期间连续回放多步，不能丢前几步（DRAW-035B）
+            self.pending_collab_create_sync.extend(sync);
+        }
+        self.mark_tracks_changed_after_history(affected);
+        for op in &entry.ops {
+            super::ranges::push_union(
+                &mut ctx.ranges,
+                op.note.start_tick,
+                op.note.end_tick.max(op.note.start_tick.saturating_add(1)),
+            );
+            if ctx.replay.len() < MAX_CPU_ONION_CHANGES {
+                ctx.replay.push(CpuOnionChange {
+                    track: op.track_id as usize,
+                    old: ctx.inverse.then_some(op.note),
+                    new: (!ctx.inverse).then_some(op.note),
+                });
+            }
+        }
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。
