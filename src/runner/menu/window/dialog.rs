@@ -4,7 +4,11 @@ use crate::runner::midi_manager::PortSoundfontsUnsupportedNotice;
 use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use lumino_core::storage::config::SynthBackend;
 use lumino_core::tr;
-use std::sync::atomic::Ordering;
+
+mod apply;
+mod close;
+mod input;
+mod open;
 
 impl RunnerInner {
     /// 打开「端口音色库未生效」提示窗（REND-005）。
@@ -44,131 +48,32 @@ fn backend_label(backend: SynthBackend) -> String {
 }
 
 impl RunnerInner {
+    /// 按对话框类别分发事件；各分支顺序与公开行为保持不变。
     pub(crate) fn handle_dialog_events(
         &mut self,
         window_event: lumino_ui::event::window::dialog::Event,
     ) {
         use lumino_ui::event::window::dialog::Event::*;
         match window_event {
-            OpenCustomPrecisionDialog => {
-                self.open_dialog_traced(DialogType::CustomPrecision, "自定义精度")
-            }
-            OpenBrushSettingsDialog(config) => {
-                self.window_state.dialog_manager.open_brush_settings(config);
-            }
-            OpenDrawSettingsDialog => {
-                // 齿轮是"开合"语义，但独立窗口不能靠再点一次关闭（主窗可能不在前台），
-                // 故同一时间只允许一个：已存在/正在初始化则把焦点交回它，不叠开第二个窗口。
-                if !self.focus_dialog_if_open(
-                    DialogType::DrawSettings,
-                    "音符画设置对话框已打开或在初始化中，忽略重复打开请求",
-                ) {
-                    self.open_dialog_traced(DialogType::DrawSettings, "音符画设置");
-                }
-            }
-            CloseDrawSettingsDialog => {
-                self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
-            }
-            OpenShapeDrawerDialog => {
-                if !self.focus_dialog_if_open(
-                    DialogType::ShapeDrawer,
-                    "形状抽屉已打开或在初始化中，忽略重复打开请求",
-                ) {
-                    let shapes_dir = crate::storage::config_dir().join("shapes");
-                    tracing::info!("打开形状抽屉: {}", shapes_dir.display());
-                    self.window_state
-                        .dialog_manager
-                        .open_shape_drawer(shapes_dir);
-                }
-            }
-            CloseShapeDrawerDialog => self.close_dialog_traced(DialogType::ShapeDrawer, "形状抽屉"),
-            OpenHistoryDialog => {
-                if !self.focus_dialog_if_open(
-                    DialogType::History,
-                    "撤销历史窗口已打开或在初始化中，忽略重复打开请求",
-                ) {
-                    // 历史窗口打开前先落盘 pending 批量移动/复制，避免用户
-                    // 刚松开拖动时面板看不到这一步。
-                    self.window_state.window.ui_mut().flush_history_pending();
-                    self.open_dialog_traced(DialogType::History, "撤销历史");
-                }
-            }
-            CloseHistoryDialog => self.close_dialog_traced(DialogType::History, "撤销历史"),
-            ToggleHelpDialog => {
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::Help)
-                {
-                    self.close_dialog_traced(DialogType::Help, "帮助");
-                } else {
-                    self.open_dialog_traced(DialogType::Help, "帮助");
-                }
-            }
-            CloseHelpDialog => self.close_dialog_traced(DialogType::Help, "帮助"),
-            HelpTipSeen(id) => {
-                self.window_state.storage.config.patch(|config| {
-                    if !config.ui.seen_help_tips.iter().any(|seen| seen == &id) {
-                        config.ui.seen_help_tips.push(id);
-                    }
-                });
-                if let Err(error) = self.window_state.storage.config.save() {
-                    tracing::warn!("保存帮助首次提示状态失败：{error}");
-                }
-            }
-            ResetHelpTips => {
-                self.window_state
-                    .storage
-                    .config
-                    .patch(|config| config.ui.seen_help_tips.clear());
-                if let Err(error) = self.window_state.storage.config.save() {
-                    tracing::warn!("清除帮助首次提示状态失败：{error}");
-                }
-                self.window_state
-                    .window
-                    .ui_mut()
-                    .root_mut()
-                    .reset_help_tips();
-            }
-            CloseCustomPrecisionDialog => {
-                self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度")
-            }
-            ApplyCustomPrecision(_, _) => {
-                // 应用精度（在对话框结果中处理）
-            }
-            OpenCollaborationDialog => self.open_dialog_traced(DialogType::Collaboration, "协作"),
-            CloseCollaborationDialog => self.close_dialog_traced(DialogType::Collaboration, "协作"),
-            OpenProjectSettingsDialog => {
-                tracing::info!("请求打开工程设置对话框");
-                // 优先使用已保存的项目标题，回退到文件名
-                let saved_title = self.window_state.window.ui().get_project_settings_title();
-                let display_title = if saved_title.is_empty() {
-                    self.midi_state
-                        .current_midi_source
-                        .as_ref()
-                        .and_then(|p| p.file_stem())
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| tr!("无标题").to_string())
-                } else {
-                    saved_title
-                };
-                let title = format!("{} - Lumino Midi", display_title);
-                self.window_state
-                    .dialog_manager
-                    .open_project_settings(title);
-            }
-            CloseProjectSettingsDialog => {
-                self.close_dialog_traced(DialogType::ProjectSettings, "工程设置")
-            }
-            OpenPortSoundfontsDialog => {
-                // REND-005：独立窗口；重复打开只聚焦，不叠开第二个。
-                if !self.focus_dialog_if_open(
-                    DialogType::PortSoundfonts,
-                    "端口音色库窗口已打开或在初始化中，忽略重复打开请求",
-                ) {
-                    self.open_dialog_traced(DialogType::PortSoundfonts, "端口音色库");
-                }
-            }
+            OpenCustomPrecisionDialog => self.on_open_custom_precision(),
+            OpenBrushSettingsDialog(config) => self.on_open_brush_settings(config),
+            OpenDrawSettingsDialog => self.on_open_draw_settings(),
+            CloseDrawSettingsDialog => self.on_close_draw_settings(),
+            OpenShapeDrawerDialog => self.on_open_shape_drawer(),
+            CloseShapeDrawerDialog => self.on_close_shape_drawer(),
+            OpenHistoryDialog => self.on_open_history(),
+            CloseHistoryDialog => self.on_close_history(),
+            ToggleHelpDialog => self.on_toggle_help(),
+            CloseHelpDialog => self.on_close_help(),
+            HelpTipSeen(id) => self.on_help_tip_seen(id),
+            ResetHelpTips => self.on_reset_help_tips(),
+            CloseCustomPrecisionDialog => self.on_close_custom_precision(),
+            ApplyCustomPrecision(_, _) => self.on_apply_custom_precision(),
+            OpenCollaborationDialog => self.on_open_collaboration(),
+            CloseCollaborationDialog => self.on_close_collaboration(),
+            OpenProjectSettingsDialog => self.on_open_project_settings(),
+            CloseProjectSettingsDialog => self.on_close_project_settings(),
+            OpenPortSoundfontsDialog => self.on_open_port_soundfonts(),
             ApplyProjectSettings {
                 title,
                 tempo,
@@ -176,140 +81,34 @@ impl RunnerInner {
                 author,
                 time_signatures,
                 use10,
-            } => {
-                tracing::info!(
-                    "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
-                    title,
-                    tempo,
-                    copyright,
-                    author,
-                    time_signatures.len()
-                );
-                // 应用设置到主窗口
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_project_settings(
-                    title,
-                    tempo,
-                    copyright,
-                    author,
-                    time_signatures,
-                    use10,
-                );
-                self.sync_shape_drawer_use10(use10);
-            }
-            OpenSpeedChangeDialog => self.open_dialog_traced(DialogType::SpeedChange, "音符变速"),
-            OpenMaterialDeleteDialog { index, name } => {
-                // DRAW-045：确认框是独立窗口。主窗口保持可交互，重复请求
-                // （连点 / 另一个素材）只聚焦已开的窗口，不叠开第二个。
-                if self
-                    .window_state
-                    .dialog_manager
-                    .is_open_or_pending(DialogType::MaterialDelete)
-                {
-                    // 主窗口的待确认下标已更新为最新素材：对话框必须同步，
-                    // 否则确认回执与配对校验不一致，删除会被静默拒绝。
-                    self.window_state
-                        .dialog_manager
-                        .rebind_material_delete(index, name);
-                    self.focus_dialog_if_open(
-                        DialogType::MaterialDelete,
-                        "素材删除确认窗口已打开或在初始化中，改指向最新目标",
-                    );
-                } else {
-                    self.window_state
-                        .dialog_manager
-                        .open_material_delete(index, name);
-                }
-            }
-            OpenTempoMaxBpmDialog { current_bpm } => {
-                if !self.focus_dialog_if_open(
-                    DialogType::TempoMaxBpm,
-                    "自定义 BPM 上限窗口已打开或在初始化中，忽略重复打开请求",
-                ) {
-                    self.window_state
-                        .dialog_manager
-                        .open_tempo_max_bpm(current_bpm);
-                }
-            }
-            OpenBatchEditDialog => self.open_dialog_traced(DialogType::BatchEdit, "批量编辑"),
-            OpenVideoExportDialog => {
-                // CPU 洋葱皮后端：视频导出是 GPU 专属逐帧渲染链路，菜单入口直接拒绝——
-                // 开了窗也只会在「开始导出」处失败，不如当下就说清原因。
-                if self.reject_video_export_on_cpu() {
-                    return;
-                }
-                self.open_dialog_traced(DialogType::VideoExport, "视频导出")
-            }
-            OpenMemoryMonitorDialog => {
-                self.open_dialog_traced(DialogType::MemoryMonitor, "内存监控")
-            }
-            CloseMemoryMonitorDialog => {
-                self.close_dialog_traced(DialogType::MemoryMonitor, "内存监控")
-            }
-            CloseVideoExportDialog => {
-                self.window_state
-                    .dialog_manager
-                    .mark_dialog_for_close(DialogType::VideoExport);
-                // 设置取消标志，让后台 video-render 线程退出
-                self.window_state
-                    .video_export_cancel
-                    .store(true, Ordering::Relaxed);
-            }
-            CloseSpeedChangeDialog => self.close_dialog_traced(DialogType::SpeedChange, "音符变速"),
-            ConfirmSpeedChange(factor) => {
-                tracing::info!("应用音符变速: 倍率={}", factor);
-                // 应用变速到主窗口
-                let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_speed_change(factor);
-            }
-            CloseBatchEditDialog => self.close_dialog_traced(DialogType::BatchEdit, "批量编辑"),
-            ConfirmBatchEdit { .. } => {
-                // 批量编辑通过对话框结果（DialogResult::BatchEdit）处理，
-                // 此处不直接应用。
-            }
-            OpenLoadConfirmDialog { .. } => {}
-            OpenRecoverTrackDialog => {
-                tracing::info!("请求打开找回删除音轨对话框");
-                // 先扫描缓存目录，把条目列表暂存到 pending_recover_track_entries
-                // 对话框 UI 就绪后在 about_to_wait 中通过 try_fill_recover_track_entries 注入
-                let entries = self.scan_recover_track_entries();
-                tracing::info!("找回删除音轨：扫描到 {} 个已删除音轨缓存", entries.len());
-                self.pending_recover_track_entries = Some(entries);
-                self.window_state.dialog_manager.open_recover_track();
-            }
-            CloseRecoverTrackDialog => {
-                self.close_dialog_traced(DialogType::RecoverTrack, "找回删除音轨");
-                // 清空 pending（防止对话框已关闭后 pending 残留）
-                self.pending_recover_track_entries = None;
-            }
-            StartAudioExport { config, document } => {
-                self.handle_start_audio_export(config, document);
-            }
-            StartVideoExport { config, document } => {
-                self.handle_start_video_export(config, document);
-            }
-            PauseAudioExport => {
-                if let Some(ctrl) = &self.window_state.audio_export_control {
-                    ctrl.pause();
-                    tracing::info!("音频导出已暂停");
-                }
-            }
-            ResumeAudioExport => {
-                if let Some(ctrl) = &self.window_state.audio_export_control {
-                    ctrl.resume();
-                    tracing::info!("音频导出已继续");
-                }
-            }
-            AbortAudioExport => {
-                if let Some(ctrl) = &self.window_state.audio_export_control {
-                    ctrl.abort();
-                    tracing::info!("音频导出已请求中止");
-                } else {
-                    tracing::warn!("中止音频导出：无进行中的导出任务");
-                }
-                // 立即清理控制句柄，避免暂停状态残留
-                // 实际文件删除由渲染线程的 abort 分支处理
-            }
+            } => self.on_apply_project_settings(
+                title,
+                tempo,
+                copyright,
+                author,
+                time_signatures,
+                use10,
+            ),
+            OpenSpeedChangeDialog => self.on_open_speed_change(),
+            OpenMaterialDeleteDialog { index, name } => self.on_open_material_delete(index, name),
+            OpenTempoMaxBpmDialog { current_bpm } => self.on_open_tempo_max_bpm(current_bpm),
+            OpenBatchEditDialog => self.on_open_batch_edit(),
+            OpenVideoExportDialog => self.on_open_video_export(),
+            OpenMemoryMonitorDialog => self.on_open_memory_monitor(),
+            CloseMemoryMonitorDialog => self.on_close_memory_monitor(),
+            CloseVideoExportDialog => self.on_close_video_export(),
+            CloseSpeedChangeDialog => self.on_close_speed_change(),
+            ConfirmSpeedChange(factor) => self.on_confirm_speed_change(factor),
+            CloseBatchEditDialog => self.on_close_batch_edit(),
+            ConfirmBatchEdit { .. } => self.on_confirm_batch_edit(),
+            OpenLoadConfirmDialog { .. } => self.on_open_load_confirm(),
+            OpenRecoverTrackDialog => self.on_open_recover_track(),
+            CloseRecoverTrackDialog => self.on_close_recover_track(),
+            StartAudioExport { config, document } => self.on_start_audio_export(config, document),
+            StartVideoExport { config, document } => self.on_start_video_export(config, document),
+            PauseAudioExport => self.on_pause_audio_export(),
+            ResumeAudioExport => self.on_resume_audio_export(),
+            AbortAudioExport => self.on_abort_audio_export(),
         }
     }
 }
