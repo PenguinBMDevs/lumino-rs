@@ -24,16 +24,8 @@ impl EguiOverlay {
         }
     }
 
-    /// 渲染一帧外壳并提交到目标纹理。
-    ///
-    /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
-    /// 调用方据此决定下一帧按键事件是否只给 egui。
-    pub(super) fn draw(&mut self, frame: OverlayFrame<'_>) -> OverlayOutput {
-        self.frames = self.frames.wrapping_add(1);
-
-        // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
-        lumino_ui_egui::theme::set_palette(frame.palette);
-
+    /// 把三张离屏纹理按原顺序注册到 egui 外部纹理表。
+    fn sync_external_textures(&mut self, frame: &OverlayFrame<'_>) {
         // 钢琴瀑布流：把 lumino-gfx 的离屏纹理注册成 egui 外部纹理。
         // 面板关闭 / 纹理未就绪时注销，避免 egui 引用已释放的视图。
         match &frame.waterfall {
@@ -78,36 +70,24 @@ impl EguiOverlay {
                 lumino_ui_egui::chrome::set_base_texture(&self.ctx, None);
             }
         }
+    }
 
+    /// 仅在 DPI 真正变化时重设，避免逐帧重建字体栅格。
+    fn apply_dpi(&mut self, pixels_per_point: f32) {
         // 让 egui 以真实 DPI 布局与栅格化字体：否则字体图集按 1× 生成、
         // 再由着色器放大会发虚（几何位置不变，但字形明显更糊）。
         // 只在 DPI 真正变化时重设：逐帧写入会反复重建字体栅格。
-        if (self.pixels_per_point - frame.pixels_per_point).abs() > f32::EPSILON {
-            self.ctx.set_pixels_per_point(frame.pixels_per_point);
-            self.pixels_per_point = frame.pixels_per_point;
+        if (self.pixels_per_point - pixels_per_point).abs() > f32::EPSILON {
+            self.ctx.set_pixels_per_point(pixels_per_point);
+            self.pixels_per_point = pixels_per_point;
         }
+    }
 
-        let logical = [
-            frame.size_px[0] as f32 / frame.pixels_per_point,
-            frame.size_px[1] as f32 / frame.pixels_per_point,
-        ];
-        let mut input = clock::raw_input(
-            frame.events,
-            [logical[0], logical[1]],
-            frame.focused,
-            self.clock.elapsed(),
-        );
-        let input_time = input.time;
-        if self.legacy_clock {
-            // 诊断 A/B：退回「不填 time，egui 按 predicted_dt 推时钟」的旧行为。
-            input.time = None;
-        }
-
-        let ctx = self.ctx.clone();
-        let icons = &mut self.icons;
+    /// 按原顺序把本帧的生产模型推入 egui 上下文。
+    fn publish_chrome(&self, ctx: &egui::Context, frame: &OverlayFrame<'_>) {
         // 真实窗口逻辑尺寸：路由栏底部按钮据此锚定（`ui.max_rect()` 可能无界）。
         lumino_ui_egui::chrome::set_window_size(
-            &ctx,
+            ctx,
             egui::vec2(
                 frame.size_px[0] as f32 / frame.pixels_per_point.max(1e-3),
                 frame.size_px[1] as f32 / frame.pixels_per_point.max(1e-3),
@@ -115,62 +95,36 @@ impl EguiOverlay {
         );
         // 「无面板」默认第一屏：主区域完全没有视图时显示品牌图标 + 字标；
         // 尚未载入真实工程时右栏追加操作按钮（新建 / 打开 / 设置 / 协作）。
-        lumino_ui_egui::chrome::set_first_screen(&ctx, frame.first_screen.clone());
+        lumino_ui_egui::chrome::set_first_screen(ctx, frame.first_screen.clone());
         // 走带标尺：把生产模型交给 egui（`LUMINO_EGUI_ARRANGEMENT=1` 时才会真正绘制）。
-        lumino_ui_egui::chrome::set_arrangement(&ctx, frame.arrangement.clone());
-        lumino_ui_egui::chrome::set_video_timeline(&ctx, frame.video_timeline.clone());
-        lumino_ui_egui::chrome::set_renderer_panel(&ctx, frame.renderer_panel.clone());
-        lumino_ui_egui::chrome::set_video_preview(&ctx, frame.video_preview.clone());
-        lumino_ui_egui::chrome::set_mask_panel(&ctx, frame.mask_panel.clone());
+        lumino_ui_egui::chrome::set_arrangement(ctx, frame.arrangement.clone());
+        lumino_ui_egui::chrome::set_video_timeline(ctx, frame.video_timeline.clone());
+        lumino_ui_egui::chrome::set_renderer_panel(ctx, frame.renderer_panel.clone());
+        lumino_ui_egui::chrome::set_video_preview(ctx, frame.video_preview.clone());
+        lumino_ui_egui::chrome::set_mask_panel(ctx, frame.mask_panel.clone());
         // 右下角浮层：Toast 通知 + 首次使用帮助提示（上一代 视图已删除）。
-        lumino_ui_egui::chrome::set_toast(&ctx, Some(frame.toast.clone()));
-        lumino_ui_egui::chrome::set_help_tip(&ctx, frame.help_tip.clone());
-        lumino_ui_egui::chrome::set_egg(&ctx, frame.egg);
-        lumino_ui_egui::chrome::set_piano_roll_menu(&ctx, frame.piano_roll_menu);
-        lumino_ui_egui::chrome::set_editor_buttons(&ctx, frame.editor_buttons.clone());
-        lumino_ui_egui::chrome::set_marquee(&ctx, frame.marquee.clone());
-        lumino_ui_egui::chrome::set_shape_edit(&ctx, frame.shape_edit.clone());
-        lumino_ui_egui::chrome::set_shape_list(&ctx, frame.shape_list.clone());
-        lumino_ui_egui::chrome::set_area_palette(&ctx, frame.area_palette.clone());
-        lumino_ui_egui::chrome::set_shape_preview(&ctx, frame.shape_preview.clone());
-        lumino_ui_egui::chrome::set_curve_preview(&ctx, frame.curve_preview.clone());
-        lumino_ui_egui::chrome::set_remote_cursors(&ctx, frame.remote_cursors.clone());
-        lumino_ui_egui::chrome::set_editor_overlay(&ctx, frame.editor_overlay.clone());
-        lumino_ui_egui::chrome::set_i2m_region(&ctx, frame.i2m_region);
-        lumino_ui_egui::chrome::set_bend_buttons(&ctx, frame.bend_buttons.clone());
-        lumino_ui_egui::chrome::set_text_tool(&ctx, frame.text_tool.clone());
-        lumino_ui_egui::chrome::set_velocity_panel(&ctx, frame.velocity_panel.clone());
+        lumino_ui_egui::chrome::set_toast(ctx, Some(frame.toast.clone()));
+        lumino_ui_egui::chrome::set_help_tip(ctx, frame.help_tip.clone());
+        lumino_ui_egui::chrome::set_egg(ctx, frame.egg);
+        lumino_ui_egui::chrome::set_piano_roll_menu(ctx, frame.piano_roll_menu);
+        lumino_ui_egui::chrome::set_editor_buttons(ctx, frame.editor_buttons.clone());
+        lumino_ui_egui::chrome::set_marquee(ctx, frame.marquee.clone());
+        lumino_ui_egui::chrome::set_shape_edit(ctx, frame.shape_edit.clone());
+        lumino_ui_egui::chrome::set_shape_list(ctx, frame.shape_list.clone());
+        lumino_ui_egui::chrome::set_area_palette(ctx, frame.area_palette.clone());
+        lumino_ui_egui::chrome::set_shape_preview(ctx, frame.shape_preview.clone());
+        lumino_ui_egui::chrome::set_curve_preview(ctx, frame.curve_preview.clone());
+        lumino_ui_egui::chrome::set_remote_cursors(ctx, frame.remote_cursors.clone());
+        lumino_ui_egui::chrome::set_editor_overlay(ctx, frame.editor_overlay.clone());
+        lumino_ui_egui::chrome::set_i2m_region(ctx, frame.i2m_region);
+        lumino_ui_egui::chrome::set_bend_buttons(ctx, frame.bend_buttons.clone());
+        lumino_ui_egui::chrome::set_text_tool(ctx, frame.text_tool.clone());
+        lumino_ui_egui::chrome::set_velocity_panel(ctx, frame.velocity_panel.clone());
+    }
 
-        let output = ctx.run_ui(input, |ui| {
-            chrome::show_bands(ui, frame.model, icons);
-            // 音频导出：整块面板覆盖右侧内容区。
-            if let Some(panel) = &frame.audio_export {
-                lumino_ui_egui::audio_export::show_panel(ui, panel);
-            }
-            // 形状抽屉：左侧面板 + 分割线 + 右侧画布全部由 egui 绘制。
-            if let Some(panel) = &frame.shape_drawer {
-                lumino_ui_egui::shape_drawer::show(ui, panel);
-                lumino_ui_egui::shape_canvas::show_splitter(
-                    ui,
-                    egui::Rect::from_min_size(
-                        egui::pos2(panel.rect.right(), panel.rect.top()),
-                        egui::vec2(SPLITTER_W, panel.rect.height()),
-                    ),
-                    frame.palette.selected_bg,
-                );
-            }
-            if let Some(canvas) = &frame.shape_canvas {
-                lumino_ui_egui::shape_canvas::show(ui, canvas);
-            }
-            if let Some(panel) = &frame.video_export {
-                lumino_ui_egui::video_export::show_panel(ui, panel);
-            }
-        });
-
-        // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
-        // 这里只要占用矩形与文本焦点。
-        self.diagnose_clock(&ctx, input_time);
-        let mut blocked = chrome::menu::take_blocked(&ctx);
+    /// 收取菜单与覆盖面板的占用矩形（顺序与绘制顺序一致）。
+    fn take_blocked(&self, ctx: &egui::Context, frame: &OverlayFrame<'_>) -> Vec<egui::Rect> {
+        let mut blocked = chrome::menu::take_blocked(ctx);
         // 音频导出面板不透明覆盖右侧内容区：整块进入占用列表，点击不再落到 上一代。
         if let Some(panel) = &frame.audio_export {
             blocked.push(panel.rect);
@@ -188,6 +142,47 @@ impl EguiOverlay {
         if let Some(panel) = &frame.video_export {
             blocked.push(panel.rect);
         }
+        blocked
+    }
+
+    /// 渲染一帧外壳并提交到目标纹理。
+    ///
+    /// 返回值末尾的 `bool` 表示 egui 本帧是否需要键盘输入（文本编辑中），
+    /// 调用方据此决定下一帧按键事件是否只给 egui。
+    pub(super) fn draw(&mut self, mut frame: OverlayFrame<'_>) -> OverlayOutput {
+        self.frames = self.frames.wrapping_add(1);
+
+        // 外壳是不透明 band，颜色必须跟随当前主题（默认配置是 Light）。
+        lumino_ui_egui::theme::set_palette(frame.palette);
+        self.sync_external_textures(&frame);
+        self.apply_dpi(frame.pixels_per_point);
+
+        let logical = [
+            frame.size_px[0] as f32 / frame.pixels_per_point,
+            frame.size_px[1] as f32 / frame.pixels_per_point,
+        ];
+        // 事件向量在此一次性消费，之后不再读取；用 take 取出以保留后续按帧整体借用。
+        let mut input = clock::raw_input(
+            std::mem::take(&mut frame.events),
+            [logical[0], logical[1]],
+            frame.focused,
+            self.clock.elapsed(),
+        );
+        let input_time = input.time;
+        if self.legacy_clock {
+            // 诊断 A/B：退回「不填 time，egui 按 predicted_dt 推时钟」的旧行为。
+            input.time = None;
+        }
+
+        let ctx = self.ctx.clone();
+        self.publish_chrome(&ctx, &frame);
+        let icons = &mut self.icons;
+        let output = ctx.run_ui(input, |ui| draw_overlays(ui, &frame, icons));
+
+        // `run_ui` 不返回闭包值：动作统一由 `OverlayActions::take` 取走，
+        // 这里只要占用矩形与文本焦点。
+        self.diagnose_clock(&ctx, input_time);
+        let blocked = self.take_blocked(&ctx, &frame);
 
         let mut textures = output.textures_delta;
         let egui_cursor = output.platform_output.cursor_icon;
@@ -263,5 +258,32 @@ impl EguiOverlay {
                 "[CLOCK] egui={egui_time:.3}s real={real:.3}s drift={drift:+.3}s（>0.25s 时点击判定会失真）"
             );
         }
+    }
+}
+
+/// 按原绘制顺序绘制外壳带与覆盖面板。
+fn draw_overlays(ui: &mut egui::Ui, frame: &OverlayFrame<'_>, icons: &mut IconCache) {
+    chrome::show_bands(ui, frame.model, icons);
+    // 音频导出：整块面板覆盖右侧内容区。
+    if let Some(panel) = &frame.audio_export {
+        lumino_ui_egui::audio_export::show_panel(ui, panel);
+    }
+    // 形状抽屉：左侧面板 + 分割线 + 右侧画布全部由 egui 绘制。
+    if let Some(panel) = &frame.shape_drawer {
+        lumino_ui_egui::shape_drawer::show(ui, panel);
+        lumino_ui_egui::shape_canvas::show_splitter(
+            ui,
+            egui::Rect::from_min_size(
+                egui::pos2(panel.rect.right(), panel.rect.top()),
+                egui::vec2(SPLITTER_W, panel.rect.height()),
+            ),
+            frame.palette.selected_bg,
+        );
+    }
+    if let Some(canvas) = &frame.shape_canvas {
+        lumino_ui_egui::shape_canvas::show(ui, canvas);
+    }
+    if let Some(panel) = &frame.video_export {
+        lumino_ui_egui::video_export::show_panel(ui, panel);
     }
 }

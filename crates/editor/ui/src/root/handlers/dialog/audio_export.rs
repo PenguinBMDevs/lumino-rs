@@ -54,6 +54,268 @@ fn build_audio_export_config(
     }
 }
 
+/// 关闭面板：保留原有的走带出口守卫，退回钢琴卷帘编辑视图。
+fn close_audio_export_panel(root: &mut Root) {
+    root.sidebar.audio_export_visible = false;
+    // 出口守卫：GPU 回工程走带（历史行为）；CPU 下走带已被入口闸禁用，
+    // 这里必须回钢琴卷帘编辑视图，否则「打开并关闭音频导出」就成了进走带的后门。
+    root.exit_rendering_panel();
+}
+
+/// 确认导出：刷新渲染状态、克隆文档快照并派发开始导出事件。
+fn confirm_audio_export(root: &mut Root) {
+    // 立即设置渲染状态（进度条第一时间刷新）
+    begin_audio_export_render(root);
+
+    // 从 dialog state 读取配置，发送事件到 runner
+    let st = &root.state.audio_export_dialog;
+
+    // 从 EditorData.document 克隆快照（ChunkedList Arc 块级共享，O(块数) 指针拷贝）
+    let document = root.editor.editor_state.data.document.as_ref().map(|doc| {
+        tracing::info!("使用内存中的 MidiDocument 进行音频导出（快照模式）");
+        std::sync::Arc::new(doc.clone())
+    });
+
+    if document.is_none() {
+        tracing::info!("内存中没有 MidiDocument，使用文件模式: {:?}", st.midi_path);
+    }
+
+    let config = build_audio_export_config(st);
+    let ev = crate::event::window::Event::start_audio_export(config, document);
+    crate::event::emit(crate::event::Event::Window(ev));
+}
+
+/// 暂停导出（仅在渲染中生效）。
+fn pause_audio_export(root: &mut Root) {
+    if root.state.audio_export_dialog.is_rendering {
+        root.state.audio_export_dialog.is_paused = true;
+        root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
+        let ev = crate::event::window::Event::dialog(
+            crate::event::window::dialog::Event::PauseAudioExport,
+        );
+        crate::event::emit(crate::event::Event::Window(ev));
+    }
+}
+
+/// 继续导出（仅在渲染中生效）。
+fn resume_audio_export(root: &mut Root) {
+    if root.state.audio_export_dialog.is_rendering {
+        root.state.audio_export_dialog.is_paused = false;
+        root.state.audio_export_dialog.render_message = tr!("正在继续...").to_string();
+        let ev = crate::event::window::Event::dialog(
+            crate::event::window::dialog::Event::ResumeAudioExport,
+        );
+        crate::event::emit(crate::event::Event::Window(ev));
+    }
+}
+
+/// 切换暂停/继续：先读当前状态，再写入并派发对应事件。
+fn toggle_pause_audio_export(root: &mut Root) {
+    if root.state.audio_export_dialog.is_rendering {
+        if root.state.audio_export_dialog.is_paused {
+            root.state.audio_export_dialog.is_paused = false;
+            root.state.audio_export_dialog.render_message = tr!("正在继续...").to_string();
+            let ev = crate::event::window::Event::dialog(
+                crate::event::window::dialog::Event::ResumeAudioExport,
+            );
+            crate::event::emit(crate::event::Event::Window(ev));
+        } else {
+            root.state.audio_export_dialog.is_paused = true;
+            root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
+            let ev = crate::event::window::Event::dialog(
+                crate::event::window::dialog::Event::PauseAudioExport,
+            );
+            crate::event::emit(crate::event::Event::Window(ev));
+        }
+    }
+}
+
+/// 中止导出（仅在渲染中生效）。
+fn abort_audio_export(root: &mut Root) {
+    if root.state.audio_export_dialog.is_rendering {
+        root.state.audio_export_dialog.render_message = tr!("正在中止...").to_string();
+        let ev = crate::event::window::Event::dialog(
+            crate::event::window::dialog::Event::AbortAudioExport,
+        );
+        crate::event::emit(crate::event::Event::Window(ev));
+    }
+}
+
+/// 浏览输出路径：对话框在后台线程打开，结果回写由 poll_path_dialogs 负责。
+fn browse_audio_export_output(root: &mut Root) {
+    let st = &root.state.audio_export_dialog;
+    let current = st.output_path.clone();
+    let ext = st.format.extension().to_string();
+    let filter_label = trf!("{format} 文件", format = st.format);
+    let default_name = std::path::Path::new(&current)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("export.wav")
+        .to_string();
+    let default_dir = std::path::Path::new(&current)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or(".")
+        .to_string();
+    // 对话框在后台线程打开（防 UI 冻结），结果由 poll_path_dialogs 写回
+    root.spawn_path_dialog(PathDialogTask::AudioExportOutput, move || {
+        lumino_platform::dialog::FileDialog::new()
+            .set_file_name(
+                default_name
+                    .rsplit_once('.')
+                    .map(|(base, _)| format!("{base}.{ext}"))
+                    .unwrap_or_else(|| format!("export.{ext}")),
+            )
+            .set_directory(default_dir)
+            .add_filter(filter_label, &[ext.as_str()])
+            .save_file()
+    });
+}
+
+/// 浏览 MIDI 文件。
+fn browse_audio_export_midi(root: &mut Root) {
+    root.spawn_path_dialog(PathDialogTask::AudioExportMidi, || {
+        lumino_platform::dialog::FileDialog::new()
+            .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
+            .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
+            .add_filter(tr!("Lumino 项目"), &["lmpj"])
+            .add_filter(tr!("所有文件"), &["*"])
+            .pick_file()
+    });
+}
+
+/// 浏览音色库文件。
+fn browse_audio_export_soundfont(root: &mut Root) {
+    root.spawn_path_dialog(PathDialogTask::AudioExportSoundfont, || {
+        lumino_platform::dialog::FileDialog::new()
+            .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
+            .add_filter(tr!("SF2 文件"), &["sf2"])
+            .add_filter(tr!("SFZ 文件"), &["sfz"])
+            .add_filter(tr!("所有文件"), &["*"])
+            .pick_file()
+    });
+}
+
+/// 渲染完成：收尾渲染态并把进度置满。
+fn render_audio_export_completed(root: &mut Root) {
+    root.state.audio_export_dialog.is_rendering = false;
+    root.state.audio_export_dialog.is_paused = false;
+    root.state.audio_export_dialog.render_completed = true;
+    root.state.audio_export_dialog.render_progress = 1.0;
+    root.state.audio_export_dialog.render_message = tr!("导出完成").to_string();
+}
+
+/// 渲染失败：区分主动中止与真实错误，按原顺序写入状态。
+fn render_audio_export_failed(root: &mut Root, error: String) {
+    root.state.audio_export_dialog.is_rendering = false;
+    root.state.audio_export_dialog.is_paused = false;
+    if error == "已中止" {
+        root.state.audio_export_dialog.render_error = Some(error.clone());
+        root.state.audio_export_dialog.render_message = tr!("已中止").to_string();
+    } else {
+        root.state.audio_export_dialog.render_error = Some(error.clone());
+        root.state.audio_export_dialog.render_message = trf!("导出失败: {error}", error = error);
+    }
+}
+
+/// 重置渲染状态（逐字段清空，与完成/失败路径互不混淆）。
+fn reset_audio_export_rendering(root: &mut Root) {
+    root.state.audio_export_dialog.is_rendering = false;
+    root.state.audio_export_dialog.is_paused = false;
+    root.state.audio_export_dialog.render_completed = false;
+    root.state.audio_export_dialog.render_error = None;
+    root.state.audio_export_dialog.render_progress = 0.0;
+    root.state.audio_export_dialog.render_message.clear();
+}
+
+/// 配置字段变更：字段写入与解析顺序与主函数原来的逐臂处理完全一致。
+fn apply_config_change(root: &mut Root, action: AudioExportAction) {
+    use AudioExportAction as A;
+    match action {
+        A::ProjectNameChanged(value) => {
+            root.state.audio_export_dialog.project_name = value;
+        }
+        A::OutputPathChanged(value) => {
+            root.state.audio_export_dialog.output_path = value;
+        }
+        A::FormatChanged(value) => {
+            root.state.audio_export_dialog.format = value;
+        }
+        A::BitrateChanged(value) => {
+            if let Some(v) = parse_uint(&value) {
+                root.state.audio_export_dialog.audio_bitrate = v;
+            }
+        }
+        A::SampleRateChanged(value) => {
+            root.state.audio_export_dialog.sample_rate = value;
+        }
+        A::ChannelsChanged(value) => {
+            root.state.audio_export_dialog.channels = value;
+        }
+        A::LayersChanged(value) => {
+            if let Some(v) = parse_uint(&value) {
+                root.state.audio_export_dialog.layers = v;
+            }
+        }
+        A::ChannelThreadingChanged(value) => {
+            root.state.audio_export_dialog.channel_threading = value;
+        }
+        A::KeyThreadingChanged(value) => {
+            root.state.audio_export_dialog.key_threading = value;
+        }
+        A::InterpolationChanged(value) => {
+            root.state.audio_export_dialog.interpolation = value;
+        }
+        A::ApplyLimiterChanged(value) => {
+            root.state.audio_export_dialog.apply_limiter = value;
+        }
+        A::DisableFadeOutChanged(value) => {
+            root.state.audio_export_dialog.disable_fade_out = value;
+        }
+        A::LinearEnvelopeChanged(value) => {
+            root.state.audio_export_dialog.linear_envelope = value;
+        }
+        A::IgnoreProgramChangesChanged(value) => {
+            root.state.audio_export_dialog.ignore_program_changes = value;
+        }
+        A::FilterVelocityChanged(value) => {
+            root.state.audio_export_dialog.filter_velocity = value;
+        }
+        A::VelocityLowChanged(value) => {
+            if let Some(v) = parse_u8_bounded(&value, 127) {
+                root.state.audio_export_dialog.velocity_low = v;
+            }
+        }
+        A::VelocityHighChanged(value) => {
+            if let Some(v) = parse_u8_bounded(&value, 127) {
+                root.state.audio_export_dialog.velocity_high = v;
+            }
+        }
+        A::FilterKeyChanged(value) => {
+            root.state.audio_export_dialog.filter_key = value;
+        }
+        A::KeyLowChanged(value) => {
+            if let Some(v) = parse_u8_bounded(&value, 127) {
+                root.state.audio_export_dialog.key_low = v;
+            }
+        }
+        A::KeyHighChanged(value) => {
+            if let Some(v) = parse_u8_bounded(&value, 127) {
+                root.state.audio_export_dialog.key_high = v;
+            }
+        }
+        A::NoteForceEndDelayChanged(value) => {
+            if let Some(v) = parse_uint(&value) {
+                root.state.audio_export_dialog.note_force_end_delay = v;
+            }
+        }
+        A::BackendChanged(value) => {
+            root.state.audio_export_dialog.backend = value;
+        }
+        _ => {}
+    }
+}
+
 impl DialogHandler {
     pub(super) fn handle_audio_export(
         &self,
@@ -66,211 +328,37 @@ impl DialogHandler {
                 root.sidebar.audio_export_visible = true;
                 root.sidebar.route = crate::sidebar::Route::AudioExport;
             }
-            A::ClosePanel => {
-                root.sidebar.audio_export_visible = false;
-                // 出口守卫：GPU 回工程走带（历史行为）；CPU 下走带已被入口闸禁用，
-                // 这里必须回钢琴卷帘编辑视图，否则「打开并关闭音频导出」就成了进走带的后门。
-                root.exit_rendering_panel();
-            }
-            A::Confirm => {
-                // 立即设置渲染状态（进度条第一时间刷新）
-                begin_audio_export_render(root);
-
-                // 从 dialog state 读取配置，发送事件到 runner
-                let st = &root.state.audio_export_dialog;
-
-                // 从 EditorData.document 克隆快照（ChunkedList Arc 块级共享，O(块数) 指针拷贝）
-                let document = root.editor.editor_state.data.document.as_ref().map(|doc| {
-                    tracing::info!("使用内存中的 MidiDocument 进行音频导出（快照模式）");
-                    std::sync::Arc::new(doc.clone())
-                });
-
-                if document.is_none() {
-                    tracing::info!("内存中没有 MidiDocument，使用文件模式: {:?}", st.midi_path);
-                }
-
-                let config = build_audio_export_config(st);
-                let ev = crate::event::window::Event::start_audio_export(config, document);
-                crate::event::emit(crate::event::Event::Window(ev));
-            }
-            A::ProjectNameChanged(value) => {
-                root.state.audio_export_dialog.project_name = value;
-            }
-            A::OutputPathChanged(value) => {
-                root.state.audio_export_dialog.output_path = value;
-            }
-            A::FormatChanged(value) => {
-                root.state.audio_export_dialog.format = value;
-            }
-            A::BitrateChanged(value) => {
-                if let Some(v) = parse_uint(&value) {
-                    root.state.audio_export_dialog.audio_bitrate = v;
-                }
-            }
-            A::SampleRateChanged(value) => {
-                root.state.audio_export_dialog.sample_rate = value;
-            }
-            A::ChannelsChanged(value) => {
-                root.state.audio_export_dialog.channels = value;
-            }
-            A::LayersChanged(value) => {
-                if let Some(v) = parse_uint(&value) {
-                    root.state.audio_export_dialog.layers = v;
-                }
-            }
-            A::ChannelThreadingChanged(value) => {
-                root.state.audio_export_dialog.channel_threading = value;
-            }
-            A::KeyThreadingChanged(value) => {
-                root.state.audio_export_dialog.key_threading = value;
-            }
-            A::InterpolationChanged(value) => {
-                root.state.audio_export_dialog.interpolation = value;
-            }
-            A::ApplyLimiterChanged(value) => {
-                root.state.audio_export_dialog.apply_limiter = value;
-            }
-            A::DisableFadeOutChanged(value) => {
-                root.state.audio_export_dialog.disable_fade_out = value;
-            }
-            A::LinearEnvelopeChanged(value) => {
-                root.state.audio_export_dialog.linear_envelope = value;
-            }
-            A::IgnoreProgramChangesChanged(value) => {
-                root.state.audio_export_dialog.ignore_program_changes = value;
-            }
-            A::FilterVelocityChanged(value) => {
-                root.state.audio_export_dialog.filter_velocity = value;
-            }
-            A::VelocityLowChanged(value) => {
-                if let Some(v) = parse_u8_bounded(&value, 127) {
-                    root.state.audio_export_dialog.velocity_low = v;
-                }
-            }
-            A::VelocityHighChanged(value) => {
-                if let Some(v) = parse_u8_bounded(&value, 127) {
-                    root.state.audio_export_dialog.velocity_high = v;
-                }
-            }
-            A::FilterKeyChanged(value) => {
-                root.state.audio_export_dialog.filter_key = value;
-            }
-            A::KeyLowChanged(value) => {
-                if let Some(v) = parse_u8_bounded(&value, 127) {
-                    root.state.audio_export_dialog.key_low = v;
-                }
-            }
-            A::KeyHighChanged(value) => {
-                if let Some(v) = parse_u8_bounded(&value, 127) {
-                    root.state.audio_export_dialog.key_high = v;
-                }
-            }
-            A::NoteForceEndDelayChanged(value) => {
-                if let Some(v) = parse_uint(&value) {
-                    root.state.audio_export_dialog.note_force_end_delay = v;
-                }
-            }
-            A::BackendChanged(value) => {
-                root.state.audio_export_dialog.backend = value;
-            }
-            A::Pause => {
-                if root.state.audio_export_dialog.is_rendering {
-                    root.state.audio_export_dialog.is_paused = true;
-                    root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
-                    let ev = crate::event::window::Event::dialog(
-                        crate::event::window::dialog::Event::PauseAudioExport,
-                    );
-                    crate::event::emit(crate::event::Event::Window(ev));
-                }
-            }
-            A::Resume => {
-                if root.state.audio_export_dialog.is_rendering {
-                    root.state.audio_export_dialog.is_paused = false;
-                    root.state.audio_export_dialog.render_message = tr!("正在继续...").to_string();
-                    let ev = crate::event::window::Event::dialog(
-                        crate::event::window::dialog::Event::ResumeAudioExport,
-                    );
-                    crate::event::emit(crate::event::Event::Window(ev));
-                }
-            }
-            A::TogglePause => {
-                if root.state.audio_export_dialog.is_rendering {
-                    if root.state.audio_export_dialog.is_paused {
-                        root.state.audio_export_dialog.is_paused = false;
-                        root.state.audio_export_dialog.render_message =
-                            tr!("正在继续...").to_string();
-                        let ev = crate::event::window::Event::dialog(
-                            crate::event::window::dialog::Event::ResumeAudioExport,
-                        );
-                        crate::event::emit(crate::event::Event::Window(ev));
-                    } else {
-                        root.state.audio_export_dialog.is_paused = true;
-                        root.state.audio_export_dialog.render_message = tr!("已暂停").to_string();
-                        let ev = crate::event::window::Event::dialog(
-                            crate::event::window::dialog::Event::PauseAudioExport,
-                        );
-                        crate::event::emit(crate::event::Event::Window(ev));
-                    }
-                }
-            }
-            A::Abort => {
-                if root.state.audio_export_dialog.is_rendering {
-                    root.state.audio_export_dialog.render_message = tr!("正在中止...").to_string();
-                    let ev = crate::event::window::Event::dialog(
-                        crate::event::window::dialog::Event::AbortAudioExport,
-                    );
-                    crate::event::emit(crate::event::Event::Window(ev));
-                }
-            }
-            A::BrowseOutput => {
-                let st = &root.state.audio_export_dialog;
-                let current = st.output_path.clone();
-                let ext = st.format.extension().to_string();
-                let filter_label = trf!("{format} 文件", format = st.format);
-                let default_name = std::path::Path::new(&current)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("export.wav")
-                    .to_string();
-                let default_dir = std::path::Path::new(&current)
-                    .parent()
-                    .and_then(|p| p.to_str())
-                    .unwrap_or(".")
-                    .to_string();
-                // 对话框在后台线程打开（防 UI 冻结），结果由 poll_path_dialogs 写回
-                root.spawn_path_dialog(PathDialogTask::AudioExportOutput, move || {
-                    lumino_platform::dialog::FileDialog::new()
-                        .set_file_name(
-                            default_name
-                                .rsplit_once('.')
-                                .map(|(base, _)| format!("{base}.{ext}"))
-                                .unwrap_or_else(|| format!("export.{ext}")),
-                        )
-                        .set_directory(default_dir)
-                        .add_filter(filter_label, &[ext.as_str()])
-                        .save_file()
-                });
-            }
-            A::BrowseMidi => {
-                root.spawn_path_dialog(PathDialogTask::AudioExportMidi, || {
-                    lumino_platform::dialog::FileDialog::new()
-                        .add_filter(tr!("音乐文件"), &["mid", "midi", "lmpj"])
-                        .add_filter(tr!("MIDI 文件"), &["mid", "midi"])
-                        .add_filter(tr!("Lumino 项目"), &["lmpj"])
-                        .add_filter(tr!("所有文件"), &["*"])
-                        .pick_file()
-                });
-            }
-            A::BrowseSoundfont => {
-                root.spawn_path_dialog(PathDialogTask::AudioExportSoundfont, || {
-                    lumino_platform::dialog::FileDialog::new()
-                        .add_filter(tr!("音色库文件"), &["sf2", "sfz"])
-                        .add_filter(tr!("SF2 文件"), &["sf2"])
-                        .add_filter(tr!("SFZ 文件"), &["sfz"])
-                        .add_filter(tr!("所有文件"), &["*"])
-                        .pick_file()
-                });
-            }
+            A::ClosePanel => close_audio_export_panel(root),
+            A::Confirm => confirm_audio_export(root),
+            A::ProjectNameChanged(_) => apply_config_change(root, action),
+            A::OutputPathChanged(_) => apply_config_change(root, action),
+            A::FormatChanged(_) => apply_config_change(root, action),
+            A::BitrateChanged(_) => apply_config_change(root, action),
+            A::SampleRateChanged(_) => apply_config_change(root, action),
+            A::ChannelsChanged(_) => apply_config_change(root, action),
+            A::LayersChanged(_) => apply_config_change(root, action),
+            A::ChannelThreadingChanged(_) => apply_config_change(root, action),
+            A::KeyThreadingChanged(_) => apply_config_change(root, action),
+            A::InterpolationChanged(_) => apply_config_change(root, action),
+            A::ApplyLimiterChanged(_) => apply_config_change(root, action),
+            A::DisableFadeOutChanged(_) => apply_config_change(root, action),
+            A::LinearEnvelopeChanged(_) => apply_config_change(root, action),
+            A::IgnoreProgramChangesChanged(_) => apply_config_change(root, action),
+            A::FilterVelocityChanged(_) => apply_config_change(root, action),
+            A::VelocityLowChanged(_) => apply_config_change(root, action),
+            A::VelocityHighChanged(_) => apply_config_change(root, action),
+            A::FilterKeyChanged(_) => apply_config_change(root, action),
+            A::KeyLowChanged(_) => apply_config_change(root, action),
+            A::KeyHighChanged(_) => apply_config_change(root, action),
+            A::NoteForceEndDelayChanged(_) => apply_config_change(root, action),
+            A::BackendChanged(_) => apply_config_change(root, action),
+            A::Pause => pause_audio_export(root),
+            A::Resume => resume_audio_export(root),
+            A::TogglePause => toggle_pause_audio_export(root),
+            A::Abort => abort_audio_export(root),
+            A::BrowseOutput => browse_audio_export_output(root),
+            A::BrowseMidi => browse_audio_export_midi(root),
+            A::BrowseSoundfont => browse_audio_export_soundfont(root),
             A::StartRendering => {
                 begin_audio_export_render(root);
             }
@@ -278,33 +366,9 @@ impl DialogHandler {
                 root.state.audio_export_dialog.render_message = message;
                 root.state.audio_export_dialog.render_progress = progress;
             }
-            A::RenderCompleted => {
-                root.state.audio_export_dialog.is_rendering = false;
-                root.state.audio_export_dialog.is_paused = false;
-                root.state.audio_export_dialog.render_completed = true;
-                root.state.audio_export_dialog.render_progress = 1.0;
-                root.state.audio_export_dialog.render_message = tr!("导出完成").to_string();
-            }
-            A::RenderFailed(error) => {
-                root.state.audio_export_dialog.is_rendering = false;
-                root.state.audio_export_dialog.is_paused = false;
-                if error == "已中止" {
-                    root.state.audio_export_dialog.render_error = Some(error.clone());
-                    root.state.audio_export_dialog.render_message = tr!("已中止").to_string();
-                } else {
-                    root.state.audio_export_dialog.render_error = Some(error.clone());
-                    root.state.audio_export_dialog.render_message =
-                        trf!("导出失败: {error}", error = error);
-                }
-            }
-            A::ResetRendering => {
-                root.state.audio_export_dialog.is_rendering = false;
-                root.state.audio_export_dialog.is_paused = false;
-                root.state.audio_export_dialog.render_completed = false;
-                root.state.audio_export_dialog.render_error = None;
-                root.state.audio_export_dialog.render_progress = 0.0;
-                root.state.audio_export_dialog.render_message.clear();
-            }
+            A::RenderCompleted => render_audio_export_completed(root),
+            A::RenderFailed(error) => render_audio_export_failed(root, error),
+            A::ResetRendering => reset_audio_export_rendering(root),
         }
         None
     }

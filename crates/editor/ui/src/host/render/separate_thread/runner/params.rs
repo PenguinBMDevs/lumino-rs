@@ -57,21 +57,40 @@ fn estimate_visible_fraction(
     }
 }
 
+/// 主题颜色与基础几何量（按原函数首批计算的顺序聚合）。
+struct BaseParams {
+    width: u32,
+    height: u32,
+    bg_r: f64,
+    bg_g: f64,
+    bg_b: f64,
+    bg_a: f64,
+    colors: GridColors,
+    ppq: u16,
+    is_arrangement_mode: bool,
+    max_key_index: f32,
+}
+
+/// 画布偏移/尺寸与键盘列、标尺尺寸。
+struct CanvasRect {
+    canvas_offset: (f32, f32),
+    canvas_size: (f32, f32),
+    keyboard_width: f32,
+    ruler_height: f32,
+}
+
 impl Host {
-    /// 构建渲染参数
-    pub(crate) fn build_render_params(&mut self, data: RenderData) -> RenderParams {
-        use crate::editor::velocity::PANEL_PADDING_Y;
+    /// 计算主题颜色与基础几何量（原函数首批计算，顺序不变）。
+    fn compute_base(&self) -> BaseParams {
         let es = &self.root.editor.editor_state;
         let physical_size = self.render_ctx.viewport.physical_size();
         let theme = self.root.theme();
         let colors = GridColors::from_theme(&theme);
 
-        let bg_color = [
-            colors.bg[0] as f64,
-            colors.bg[1] as f64,
-            colors.bg[2] as f64,
-            colors.bg[3] as f64,
-        ];
+        let bg_r = colors.bg[0] as f64;
+        let bg_g = colors.bg[1] as f64;
+        let bg_b = colors.bg[2] as f64;
+        let bg_a = colors.bg[3] as f64;
         let ppq = es.view.ppq;
         let is_arrangement_mode = self.root.is_arrangement_mode();
         let max_key_index = if is_arrangement_mode {
@@ -81,7 +100,23 @@ impl Host {
         } else {
             (es.view.visible_key_count.saturating_sub(1)) as f32
         };
+        BaseParams {
+            width: physical_size.width,
+            height: physical_size.height,
+            bg_r,
+            bg_g,
+            bg_b,
+            bg_a,
+            colors,
+            ppq,
+            is_arrangement_mode,
+            max_key_index,
+        }
+    }
 
+    /// 从视口信息计算画布矩形与键盘列/标尺尺寸。
+    fn compute_canvas_rect(&self, is_arrangement_mode: bool) -> CanvasRect {
+        let es = &self.root.editor.editor_state;
         // 从 collect_viewport_info 获取 canvas_offset 和 canvas_size
         let viewport_info = self.collect_viewport_info();
         let (canvas_offset, canvas_size, keyboard_width, ruler_height) = if is_arrangement_mode {
@@ -99,11 +134,26 @@ impl Host {
                 es.view.ruler_height,
             )
         };
+        CanvasRect {
+            canvas_offset,
+            canvas_size,
+            keyboard_width,
+            ruler_height,
+        }
+    }
 
+    /// 构建走带视图的 arrangement uniform（非走带模式返回默认值）。
+    fn build_arrangement_uniform(
+        &self,
+        data: &RenderData,
+        is_arrangement_mode: bool,
+        canvas_offset: (f32, f32),
+        colors: &GridColors,
+    ) -> ArrangementUniform {
         // 构建 arrangement uniform
         let bg_color_arr = colors.bg;
         let bar_color = colors.bar_line;
-        let arrangement_uniform = if is_arrangement_mode {
+        if is_arrangement_mode {
             let av = &self.root.arrangement_view.viewport;
             let track_count = self.root.sidebar.tracks.len().max(1) as f32;
             let mut track_colors = [[0.0_f32; 4]; 16];
@@ -147,25 +197,33 @@ impl Host {
             }
         } else {
             ArrangementUniform::default()
-        };
+        }
+    }
 
-        // 计算力度面板矩形（用于 wgpu scissor 裁剪）
+    /// 计算力度面板矩形（用于 wgpu scissor 裁剪）。
+    fn compute_velocity_panel_rect(
+        &self,
+        is_arrangement_mode: bool,
+    ) -> Option<(f32, f32, f32, f32)> {
+        use crate::editor::velocity::PANEL_PADDING_Y;
         // 仅在自动化面板可见时设置，否则跳过 CC bar 渲染器 prepare/draw
-        let velocity_panel_rect =
-            if is_arrangement_mode || !self.root.sidebar.automation_panel_visible {
-                None
-            } else {
-                let es = &self.root.editor.editor_state;
-                // velocity 面板在 grid Canvas 下方，间隔 0px
-                const H_SCROLLBAR_HEIGHT: f32 = 20.0;
-                Some((
-                    es.canvas.offset_x,
-                    es.canvas.offset_y + es.canvas.size_y + H_SCROLLBAR_HEIGHT,
-                    es.canvas.size_x,
-                    self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
-                ))
-            };
+        if is_arrangement_mode || !self.root.sidebar.automation_panel_visible {
+            None
+        } else {
+            let es = &self.root.editor.editor_state;
+            // velocity 面板在 grid Canvas 下方，间隔 0px
+            const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+            Some((
+                es.canvas.offset_x,
+                es.canvas.offset_y + es.canvas.size_y + H_SCROLLBAR_HEIGHT,
+                es.canvas.size_x,
+                self.root.visual.velocity_panel_height + PANEL_PADDING_Y + 10.0,
+            ))
+        }
+    }
 
+    /// 计算内容脏标记并更新视口指纹（含 render_ctx 状态写入，顺序不可变）。
+    fn take_content_dirty(&mut self, width: u32, height: u32) -> bool {
         // ── 内容脏标记（2026-10-01 滚动拖拽全程卡顿修复）──
         //
         // 决定调用方 present 前是否必须等待渲染线程提交本帧：
@@ -178,16 +236,17 @@ impl Host {
         //
         // 注意：随视口每帧重算的派生实例（网格/标尺/走带覆盖层/CC 柱）**不**置位——
         // 它们落后一帧无感知，置位会让纯滚动帧永远走等待路径、免等待策略失效。
-        let viewport_key = viewport_key(
-            physical_size.width,
-            physical_size.height,
-            self.render_ctx.viewport.scale_factor(),
-        );
+        let viewport_key = viewport_key(width, height, self.render_ctx.viewport.scale_factor());
         let viewport_changed = self.render_ctx.last_sent_viewport != Some(viewport_key);
         let content_dirty =
             std::mem::take(&mut self.render_ctx.render_content_dirty) || viewport_changed;
         self.render_ctx.last_sent_viewport = Some(viewport_key);
+        content_dirty
+    }
 
+    /// 计算亚像素档位与 VS cull 直绘闸门（判据顺序与原来一致）。
+    fn compute_cull_modes(&self, canvas_size: (f32, f32), max_key_index: f32) -> (bool, bool) {
+        let es = &self.root.editor.editor_state;
         // ── 亚像素档位（PREF-004 P1）──
         //
         // 判据：最细可画音符（吸附精度，单位 tick）在时间轴缩放下也不足 1 像素，
@@ -220,38 +279,57 @@ impl Host {
         );
         let vs_cull_mode =
             !es.is_vertical_roll && visible_fraction > VS_CULL_VISIBLE_FRACTION_THRESHOLD;
+        (subpixel_note_mode, vs_cull_mode)
+    }
+
+    /// 构建渲染参数：按原顺序逐块计算，最后逐字段装配。
+    pub(crate) fn build_render_params(&mut self, data: RenderData) -> RenderParams {
+        let base = self.compute_base();
+        let view = self.compute_canvas_rect(base.is_arrangement_mode);
+        let arrangement_uniform = self.build_arrangement_uniform(
+            &data,
+            base.is_arrangement_mode,
+            view.canvas_offset,
+            &base.colors,
+        );
+        let velocity_panel_rect = self.compute_velocity_panel_rect(base.is_arrangement_mode);
+        let content_dirty = self.take_content_dirty(base.width, base.height);
+        let (subpixel_note_mode, vs_cull_mode) =
+            self.compute_cull_modes(view.canvas_size, base.max_key_index);
 
         // 卷帘骨架：键盘列 / 滚动条 / 标尺全部由 egui 绘制（gfx 网格着色器
         // discard 键盘列，egui 标尺已支持拍号分段）。模型存在时 gfx 让出骨架。
         let piano_roll = self.root.egui_piano_roll_view();
 
-        let ppq_f32 = ppq as f32;
-        let (ticks_per_measure, ticks_per_beat) =
-            RenderParams::ticks_from_first_time_signature(ppq_f32, &es.data.time_signatures);
+        let ppq_f32 = base.ppq as f32;
+        let (ticks_per_measure, ticks_per_beat) = RenderParams::ticks_from_first_time_signature(
+            ppq_f32,
+            &self.root.editor.editor_state.data.time_signatures,
+        );
 
         RenderParams {
-            viewport_size: (physical_size.width, physical_size.height),
+            viewport_size: (base.width, base.height),
             logical_size: (data.viewport_size.width, data.viewport_size.height),
             scale_factor: self.render_ctx.viewport.scale_factor(),
             scroll: data.scroll,
             zoom: data.zoom,
-            keyboard_width,
-            ruler_height,
-            canvas_offset: (canvas_offset.0, canvas_offset.1),
-            canvas_size: (canvas_size.0, canvas_size.1),
-            background_color: bg_color,
-            color_bg: colors.bg,
-            color_bg_black_key: colors.black_key,
-            color_bar: colors.bar_line,
-            color_beat: colors.beat_line,
-            color_half_beat: colors.half_beat_line,
-            color_grid: colors.grid_line,
-            color_key_line: colors.key_line,
+            keyboard_width: view.keyboard_width,
+            ruler_height: view.ruler_height,
+            canvas_offset: (view.canvas_offset.0, view.canvas_offset.1),
+            canvas_size: (view.canvas_size.0, view.canvas_size.1),
+            background_color: [base.bg_r, base.bg_g, base.bg_b, base.bg_a],
+            color_bg: base.colors.bg,
+            color_bg_black_key: base.colors.black_key,
+            color_bar: base.colors.bar_line,
+            color_beat: base.colors.beat_line,
+            color_half_beat: base.colors.half_beat_line,
+            color_grid: base.colors.grid_line,
+            color_key_line: base.colors.key_line,
             ppq: ppq_f32,
-            max_key_index,
-            is_arrangement_mode,
+            max_key_index: base.max_key_index,
+            is_arrangement_mode: base.is_arrangement_mode,
             ruler_instances: data.ruler_instances,
-            time_signatures: es.data.time_signatures.clone(),
+            time_signatures: self.root.editor.editor_state.data.time_signatures.clone(),
             arrangement_overlay_instances: data.arrangement_overlay_instances,
             arrangement_overlay_back_len: data.arrangement_overlay_back_len,
             arrangement_track_order: data
