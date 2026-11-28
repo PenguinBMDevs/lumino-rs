@@ -1,6 +1,6 @@
 {
-  "files_total": 2344,
-  "lines_total": 422521,
+  "files_total": 2345,
+  "lines_total": 422824,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -76,13 +76,6 @@
   "test_files_over_800": [],
   "production_files_over_600": 1,
   "functions_over_100": [
-    {
-      "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
-      "name": "start",
-      "line": 23,
-      "lines": 433,
-      "test": false
-    },
     {
       "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
       "name": "dispatch",
@@ -1702,13 +1695,6 @@
     }
   ],
   "functions_over_200": [
-    {
-      "path": "crates/audio/gpu-synth/src/audio/playback/start.rs",
-      "name": "start",
-      "line": 23,
-      "lines": 433,
-      "test": false
-    },
     {
       "path": "crates/audio/gpu-synth/src/synth/engine/dispatch.rs",
       "name": "dispatch",
