@@ -41,10 +41,30 @@ impl Root {
             return;
         }
 
-        // 音轨分配策略：轨 0 始终写入当前音轨；轨 1+ 优先复用现有非当前音轨
-        // （按侧边栏顺序取用），数量不足时才新建缺失数量的音轨——避免多次
-        // 放置都无脑新建 N-1 条轨道，导致音轨无限膨胀。
         let needed_extra = preview.tracks.len().saturating_sub(1);
+        let (reused_tracks, new_track_ids) =
+            self.allocate_placement_tracks(current_track, needed_extra);
+        let (create_ops, affected, main_track_needs_dirty) = self.write_placement_tracks(
+            &tracks_data,
+            current_track,
+            &reused_tracks,
+            &new_track_ids,
+            total_notes,
+        );
+        self.commit_placement_history(create_ops, affected, main_track_needs_dirty);
+        self.finish_placement_write();
+
+        tracing::info!("放置写入完成：{} 个音符", total_notes);
+    }
+
+    /// 音轨分配策略：轨 0 始终写入当前音轨；轨 1+ 优先复用现有非当前音轨
+    /// （按侧边栏顺序取用），数量不足时才新建缺失数量的音轨——避免多次
+    /// 放置都无脑新建 N-1 条轨道，导致音轨无限膨胀。
+    fn allocate_placement_tracks(
+        &mut self,
+        current_track: usize,
+        needed_extra: usize,
+    ) -> (Vec<usize>, Vec<usize>) {
         let reused_tracks: Vec<usize> = self
             .sidebar
             .tracks
@@ -68,9 +88,25 @@ impl Root {
             .filter(|t| !before.contains(&t.id))
             .map(|t| t.id)
             .collect();
+        (reused_tracks, new_track_ids)
+    }
 
-        // 逐轨批量写入（O(N+M) 归并，单次重建，单轨单次 COW）
-        // 旧路径逐音符 insert_note → N 次 COW 深拷 + N 条 delta → 数千音符卡死
+    /// 逐轨批量写入（O(N+M) 归并，单次重建，单轨单次 COW）
+    ///
+    /// 旧路径逐音符 insert_note → N 次 COW 深拷 + N 条 delta → 数千音符卡死。
+    /// 返回 `CreateOp` 列表、受影响音轨集合与主轨脏标记。
+    fn write_placement_tracks(
+        &mut self,
+        tracks_data: &[Vec<(f32, u8, f32)>],
+        current_track: usize,
+        reused_tracks: &[usize],
+        new_track_ids: &[usize],
+        total_notes: usize,
+    ) -> (
+        Vec<lumino_note_core::history::CreateOp>,
+        std::collections::HashSet<usize>,
+        bool,
+    ) {
         let mut create_ops: Vec<lumino_note_core::history::CreateOp> =
             Vec::with_capacity(total_notes);
         let mut affected = std::collections::HashSet::new();
@@ -134,8 +170,16 @@ impl Root {
                 // 同步维护 max_end 缓存（batch 已处理）无需额外置脏
             }
         }
+        (create_ops, affected, main_track_needs_dirty)
+    }
 
-        // 历史记录 + 标记变化（主轨走全量 dirty，其余轨洋葱皮增量豁免）
+    /// 历史记录 + 标记变化（主轨走全量 dirty，其余轨洋葱皮增量豁免）
+    fn commit_placement_history(
+        &mut self,
+        create_ops: Vec<lumino_note_core::history::CreateOp>,
+        affected: std::collections::HashSet<usize>,
+        main_track_needs_dirty: bool,
+    ) {
         if !create_ops.is_empty() {
             self.editor
                 .editor_state
@@ -155,7 +199,10 @@ impl Root {
                 self.editor.editor_state.data.note_delta_dirty = true;
             }
         }
+    }
 
+    /// 写入收尾：清除放置模式、还原工具与残留交互状态，再刷新播放音符
+    fn finish_placement_write(&mut self) {
         // 清除放置模式，还原显示区域
         self.editor.editor_state.image_to_midi.cancel();
         self.right_sidebar.converting = false;
@@ -172,7 +219,5 @@ impl Root {
         self.editor.mark_notes_changed();
         self.update_playback_notes();
         self.editor.clear_notes_changed();
-
-        tracing::info!("放置写入完成：{} 个音符", total_notes);
     }
 }

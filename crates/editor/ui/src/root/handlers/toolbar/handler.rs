@@ -41,6 +41,30 @@ impl ToolbarHandler {
             return;
         }
 
+        // 编辑锚点与临时浮层：必须早于 `toolbar.update` 生效。
+        Self::prepare_event_state(root, &event);
+
+        // 更新工具栏自身状态
+        root.toolbar.update(event.clone());
+
+        // 同步画刷配置到编辑器（绘制时按当前全局粗细/音轨分配落笔）
+        root.editor.brush = root.toolbar.brush.clone();
+
+        // 处理播放控制 - 直接执行，不通过消息循环
+        self.handle_toolbar_playback(root, &event);
+
+        // 工具状态与首次选中帮助 tip
+        self.sync_tool_state_and_help(root, &event);
+
+        // 其余工具栏动作：精度 / 滚动 / 撤销 / 量化 / 悬停
+        self.dispatch_toolbar_actions(root, &event);
+    }
+
+    /// 分派前的状态准备：锁定 BPM 编辑锚点、收起「分音符填充」临时浮层。
+    ///
+    /// 两者都必须早于 `toolbar.update`：锚点记录的是「用户开始编辑那一刻」的播放
+    /// 位置，浮层收起则不应看见本次事件写入后的状态。
+    fn prepare_event_state(root: &mut Root, event: &crate::toolbar::Event) {
         // 进入 BPM 编辑时锁定播放位置：播放中编辑时播放头继续前进，提交必须
         // 修改用户一开始看到的那条 tempo 点，而不是「提交时刻」生效的另一条。
         if matches!(event, crate::toolbar::Event::BpmEditToggled(_)) {
@@ -65,20 +89,14 @@ impl ToolbarHandler {
         {
             root.state.fill_division_dialog.is_open = false;
         }
+    }
 
-        // 更新工具栏自身状态
-        root.toolbar.update(event.clone());
-
-        // 同步画刷配置到编辑器（绘制时按当前全局粗细/音轨分配落笔）
-        root.editor.brush = root.toolbar.brush.clone();
-
-        // 处理播放控制 - 直接执行，不通过消息循环
-        self.handle_toolbar_playback(root, &event);
-
+    /// 同步工具状态，并在工具首次选中时弹一次帮助 tip。
+    fn sync_tool_state_and_help(&self, root: &mut Root, event: &crate::toolbar::Event) {
         // 同步工具状态
-        self.sync_toolbar_tool_state(root, &event);
+        self.sync_toolbar_tool_state(root, event);
         // 工具首次选中 → 弹一次帮助 tip（DRAW-038）
-        match &event {
+        match event {
             crate::toolbar::Event::ToolSelected(tool) => root.maybe_show_help_tip(*tool),
             crate::toolbar::Event::ToolPanelItemSelected(_)
             | crate::toolbar::Event::ToolPanelItemSettingsRequested(_) => {
@@ -87,59 +105,62 @@ impl ToolbarHandler {
             }
             _ => {}
         }
+    }
 
+    /// 逐项分派与工具栏动作对应的处理器（精度、滚动、撤销、量化、翻转、悬停等）。
+    fn dispatch_toolbar_actions(&self, root: &mut Root, event: &crate::toolbar::Event) {
         // 同步精度设置
-        self.sync_toolbar_precision(root, &event);
+        self.sync_toolbar_precision(root, event);
 
         // 同步自动滚动模式（在 toolbar 更新之后）
-        self.sync_auto_scroll_mode(root, &event);
+        self.sync_auto_scroll_mode(root, event);
 
         // 同步洋葱皮显示范围（未接入的「指定音轨」在此提示）
-        self.sync_onion_skin_mode(root, &event);
+        self.sync_onion_skin_mode(root, event);
 
         // 处理撤销/重做
-        self.handle_toolbar_undo_redo(root, &event);
+        self.handle_toolbar_undo_redo(root, event);
 
         // 处理量化
-        self.handle_toolbar_quantize(root, &event);
+        self.handle_toolbar_quantize(root, event);
 
         // 处理音符变速
-        self.handle_toolbar_speed_change(root, &event);
+        self.handle_toolbar_speed_change(root, event);
 
         // 处理协作对话框
-        self.handle_toolbar_collaboration(root, &event);
+        self.handle_toolbar_collaboration(root, event);
 
         // 处理内存监控对话框
-        self.handle_toolbar_memory_monitor(root, &event);
+        self.handle_toolbar_memory_monitor(root, event);
 
         // 处理「音符画设置」对话框（悬浮条右端齿轮）
-        self.handle_toolbar_draw_settings(root, &event);
+        self.handle_toolbar_draw_settings(root, event);
         // 处理「形状抽屉」独立窗口（DRAW-033B0；正式发布构建不编译）
         #[cfg(lumino_shape_drawer_entry)]
-        self.handle_toolbar_shape_drawer(root, &event);
+        self.handle_toolbar_shape_drawer(root, event);
         // 处理「撤销历史」独立窗口（DRAW-035）
-        self.handle_toolbar_history(root, &event);
+        self.handle_toolbar_history(root, event);
 
         // 处理录制
-        self.handle_toolbar_recording(root, &event);
+        self.handle_toolbar_recording(root, event);
 
         // 处理垂直翻转
-        self.handle_toolbar_flip_vertical(root, &event);
+        self.handle_toolbar_flip_vertical(root, event);
 
         // 处理水平翻转
-        self.handle_toolbar_flip_horizontal(root, &event);
+        self.handle_toolbar_flip_horizontal(root, event);
 
         // 处理移调
-        self.handle_toolbar_transpose(root, &event);
+        self.handle_toolbar_transpose(root, event);
 
         // 处理连奏
-        self.handle_toolbar_tie(root, &event);
+        self.handle_toolbar_tie(root, event);
 
         // 处理分割/合并
-        self.handle_toolbar_split_glue(root, &event);
+        self.handle_toolbar_split_glue(root, event);
 
         // 工具栏按钮悬停：驱动底部状态栏左侧描述区
-        if let crate::toolbar::Event::ButtonHovered(label) = &event {
+        if let crate::toolbar::Event::ButtonHovered(label) = event {
             root.statusbar.set_hover_label(*label);
         }
     }

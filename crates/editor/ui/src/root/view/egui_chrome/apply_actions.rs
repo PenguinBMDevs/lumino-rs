@@ -207,6 +207,15 @@ impl Root {
         logical: egui::Vec2,
         plan: &mut EguiPlan,
     ) {
+        self.plan_egui_after_canvas_chrome(actions, plan);
+        self.plan_egui_after_canvas_timeline(actions, plan);
+        self.plan_egui_after_canvas_dialogs(actions, plan);
+        self.plan_egui_after_canvas_prefs(actions, plan);
+        self.plan_egui_after_canvas_toolbar(actions, logical, plan);
+    }
+
+    /// 常驻控件：帮助提示 / 侧边栏 / 状态栏 / 遮罩面板 / 素材与 BPM 输入。
+    fn plan_egui_after_canvas_chrome(&self, actions: &mut OverlayActions, plan: &mut EguiPlan) {
         push_always!(self, actions, plan, help_tip, help_tip_action_message);
         push_option!(
             self,
@@ -238,6 +247,10 @@ impl Root {
             tempo_max_bpm,
             tempo_max_bpm_action_message
         );
+    }
+
+    /// 混音台 / 视频时间轴 / 走带泳道 / 侧边栏路由。
+    fn plan_egui_after_canvas_timeline(&self, actions: &mut OverlayActions, plan: &mut EguiPlan) {
         for action in std::mem::take(&mut actions.mixer) {
             if self.state.dialog_type == DialogType::Mixer {
                 plan.mixer_dialog.push(action);
@@ -263,6 +276,10 @@ impl Root {
             video_overlay_action_message
         );
         plan_sidebar_route(actions.sidebar_route.take(), &mut plan.messages);
+    }
+
+    /// 导出 / 形状抽屉 / 云浏览 / 协作 / 素材恢复类对话框。
+    fn plan_egui_after_canvas_dialogs(&self, actions: &mut OverlayActions, plan: &mut EguiPlan) {
         push_option_ref!(
             self,
             actions,
@@ -305,6 +322,10 @@ impl Root {
             brush_settings,
             brush_settings_action_message
         );
+    }
+
+    /// 加载确认 / 设置 / 帮助 / 精度类对话框。
+    fn plan_egui_after_canvas_prefs(&self, actions: &mut OverlayActions, plan: &mut EguiPlan) {
         push_option_ref!(
             self,
             actions,
@@ -357,6 +378,15 @@ impl Root {
         );
         push_option_ref!(self, actions, plan, settings, settings_action_message);
         push_option_ref!(self, actions, plan, panel, right_sidebar_action_message);
+    }
+
+    /// 工具栏溢出与设备检查覆盖窗。
+    fn plan_egui_after_canvas_toolbar(
+        &self,
+        actions: &mut OverlayActions,
+        logical: egui::Vec2,
+        plan: &mut EguiPlan,
+    ) {
         if let Some(action) = actions.toolbar.take() {
             let message = match &action {
                 lumino_ui_egui::chrome::ToolbarAction::OverflowItem(index) => {

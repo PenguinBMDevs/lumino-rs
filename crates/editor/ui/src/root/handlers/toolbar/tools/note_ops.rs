@@ -66,16 +66,7 @@ impl ToolbarHandler {
         let config = lumino_midi_loader::quantize::QuantizeConfig::new(grid_size, 1.0);
 
         // 获取选中音符索引（无选中则量化全部）
-        let selected_indices: Vec<usize> = {
-            let selected = &root.editor.editor_state.interaction.selected_notes;
-            if selected.is_empty() {
-                (0..root.editor.editor_state.data.current_track_note_count()).collect()
-            } else {
-                let mut v: Vec<usize> = selected.iter().collect();
-                v.sort();
-                v
-            }
-        };
+        let selected_indices = Self::quantize_target_indices(root);
 
         tracing::info!(
             "Root: 量化配置 - 网格大小: {} ticks, 目标音符: {} (选中 {} 个)",
@@ -91,21 +82,64 @@ impl ToolbarHandler {
         );
         root.editor.editor_state.data.history.push(snapshot);
 
-        let mut quantizable_notes: Vec<lumino_midi_loader::quantize::QuantizableNote> =
-            selected_indices
-                .iter()
-                .map(|&i| {
-                    let note = &root.editor.editor_state.data.current_track_notes()[i];
-                    lumino_midi_loader::quantize::QuantizableNote::new(
-                        note.start_tick as f32,
-                        (note.end_tick - note.start_tick) as f32,
-                    )
-                })
-                .collect();
+        let mut quantizable_notes = Self::collect_quantizable_notes(root, &selected_indices);
 
         // 2026-09 协作修复：量化会改变 tick/length，须广播旧→新让 B 端同步。
         // 提前捕获每个选中音符的旧状态（vel/ch 不变，key 不变）。
-        let old_notes: Vec<(f32, u16, f32, u8, u8)> = selected_indices
+        let old_notes = Self::collect_old_note_states(root, &selected_indices);
+
+        let modified_count =
+            lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
+
+        if modified_count > 0 {
+            Self::commit_quantize_result(root, &selected_indices, &quantizable_notes, &old_notes);
+            tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);
+        } else {
+            root.editor.editor_state.data.history.discard_last();
+            tracing::debug!("Root: 没有音符被量化");
+        }
+
+        if root.editor.notes_changed() {
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        }
+    }
+
+    /// 量化目标索引：无选中则覆盖整轨，有选中则按索引升序返回。
+    fn quantize_target_indices(root: &Root) -> Vec<usize> {
+        let selected = &root.editor.editor_state.interaction.selected_notes;
+        if selected.is_empty() {
+            (0..root.editor.editor_state.data.current_track_note_count()).collect()
+        } else {
+            let mut v: Vec<usize> = selected.iter().collect();
+            v.sort();
+            v
+        }
+    }
+
+    /// 收集待量化音符的起始 tick 与长度，顺序与 `selected_indices` 一一对应。
+    fn collect_quantizable_notes(
+        root: &Root,
+        selected_indices: &[usize],
+    ) -> Vec<lumino_midi_loader::quantize::QuantizableNote> {
+        selected_indices
+            .iter()
+            .map(|&i| {
+                let note = &root.editor.editor_state.data.current_track_notes()[i];
+                lumino_midi_loader::quantize::QuantizableNote::new(
+                    note.start_tick as f32,
+                    (note.end_tick - note.start_tick) as f32,
+                )
+            })
+            .collect()
+    }
+
+    /// 收集选中音符的旧状态 `(start_tick, key, length, velocity, channel)`，供协作端同步。
+    fn collect_old_note_states(
+        root: &Root,
+        selected_indices: &[usize],
+    ) -> Vec<(f32, u16, f32, u8, u8)> {
+        selected_indices
             .iter()
             .map(|&i| {
                 let note = &root.editor.editor_state.data.current_track_notes()[i];
@@ -117,71 +151,63 @@ impl ToolbarHandler {
                     note.channel,
                 )
             })
-            .collect();
+            .collect()
+    }
 
-        let modified_count =
-            lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
-
-        if modified_count > 0 {
-            // 主选择漂移防护：量化可越过未量化音符 → 重排会位移选中索引（按值捕获）。
-            let identity = root.editor.capture_selection_identity();
-            // 量化仅改 tick/length（按值）：直接改 document，不记 ID。
-            for (pos, &i) in selected_indices.iter().enumerate() {
-                if let Some(note) = root
-                    .editor
-                    .editor_state
-                    .data
-                    .document
-                    .as_mut()
-                    .and_then(|doc| {
-                        doc.track_notes_mut(root.editor.editor_state.data.current_track)
-                    })
-                    .and_then(|track| track.get_mut(i))
-                {
-                    let new_tick = lumino_editor_state::f32_to_tick(quantizable_notes[pos].tick);
-                    let new_length =
-                        lumino_editor_state::f32_to_tick(quantizable_notes[pos].length);
-                    note.end_tick = new_tick.saturating_add(new_length.max(1));
-                    note.start_tick = new_tick;
-                }
-            }
-
-            // 子集量化可跨越未量化音符的 tick → 破坏「按 start_tick 升序」不变式
-            // （window_range/position_of 窗口二分依赖，破坏后渲染/命中会漏检音符）
-            // → 立即恢复；重排时按受影响闭区间增量更新（替代全量重建）。
-            root.editor
+    /// 把量化结果写回文档：恢复排序不变式、重映射选区，并按值广播协作变更。
+    fn commit_quantize_result(
+        root: &mut Root,
+        selected_indices: &[usize],
+        quantizable_notes: &[lumino_midi_loader::quantize::QuantizableNote],
+        old_notes: &[(f32, u16, f32, u8, u8)],
+    ) {
+        // 主选择漂移防护：量化可越过未量化音符 → 重排会位移选中索引（按值捕获）。
+        let identity = root.editor.capture_selection_identity();
+        // 量化仅改 tick/length（按值）：直接改 document，不记 ID。
+        for (pos, &i) in selected_indices.iter().enumerate() {
+            if let Some(note) = root
+                .editor
                 .editor_state
                 .data
-                .restore_current_track_sorted_incremental(&selected_indices);
-            root.editor.remap_selection_by_identity(&identity);
-
-            // 2026-09 去 ID 协作修复：仅对真正变化的音符发「删旧 + 加新」（按值，key/vel/ch 不变）。
-            let track = root.editor.editor_state.data.current_track;
-            for (pos, old) in old_notes.iter().enumerate() {
-                let new_tick = quantizable_notes[pos].tick;
-                let new_length = quantizable_notes[pos].length;
-                if (new_tick, new_length) != (old.0, old.2) {
-                    root.editor.editor_state.data.push_collab_transform_sync(
-                        false, old.0, old.1, old.2, old.3, old.4, track,
-                    );
-                    root.editor.editor_state.data.push_collab_transform_sync(
-                        true, new_tick, old.1, new_length, old.3, old.4, track,
-                    );
-                }
+                .document
+                .as_mut()
+                .and_then(|doc| doc.track_notes_mut(root.editor.editor_state.data.current_track))
+                .and_then(|track| track.get_mut(i))
+            {
+                let new_tick = lumino_editor_state::f32_to_tick(quantizable_notes[pos].tick);
+                let new_length = lumino_editor_state::f32_to_tick(quantizable_notes[pos].length);
+                note.end_tick = new_tick.saturating_add(new_length.max(1));
+                note.start_tick = new_tick;
             }
-            root.editor.broadcast_pending_collab_transform_sync();
-
-            root.editor.mark_notes_changed();
-            tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);
-        } else {
-            root.editor.editor_state.data.history.discard_last();
-            tracing::debug!("Root: 没有音符被量化");
         }
 
-        if root.editor.notes_changed() {
-            root.update_playback_notes();
-            root.editor.clear_notes_changed();
+        // 子集量化可跨越未量化音符的 tick → 破坏「按 start_tick 升序」不变式
+        // （window_range/position_of 窗口二分依赖，破坏后渲染/命中会漏检音符）
+        // → 立即恢复；重排时按受影响闭区间增量更新（替代全量重建）。
+        root.editor
+            .editor_state
+            .data
+            .restore_current_track_sorted_incremental(selected_indices);
+        root.editor.remap_selection_by_identity(&identity);
+
+        // 2026-09 去 ID 协作修复：仅对真正变化的音符发「删旧 + 加新」（按值，key/vel/ch 不变）。
+        let track = root.editor.editor_state.data.current_track;
+        for (pos, old) in old_notes.iter().enumerate() {
+            let new_tick = quantizable_notes[pos].tick;
+            let new_length = quantizable_notes[pos].length;
+            if (new_tick, new_length) != (old.0, old.2) {
+                root.editor
+                    .editor_state
+                    .data
+                    .push_collab_transform_sync(false, old.0, old.1, old.2, old.3, old.4, track);
+                root.editor.editor_state.data.push_collab_transform_sync(
+                    true, new_tick, old.1, new_length, old.3, old.4, track,
+                );
+            }
         }
+        root.editor.broadcast_pending_collab_transform_sync();
+
+        root.editor.mark_notes_changed();
     }
 
     /// 处理音符变速

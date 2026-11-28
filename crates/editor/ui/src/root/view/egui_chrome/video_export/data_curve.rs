@@ -39,9 +39,9 @@ fn color_cell(label: &str, value: &str, id: impl Into<VideoRowId>) -> TextPairCe
     }
 }
 
-/// 构建数据曲线分区。
-pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
-    let mut rows = vec![
+/// 数据源与「曲线参数」分组（数据来源选择、两行参数、说明）。
+fn source_rows(state: &VideoExportDialogState) -> Vec<VideoRow> {
+    vec![
         pick(
             tr!("数据来源:"),
             100.0,
@@ -75,6 +75,12 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         },
         gap(4.0),
         label(tr!("折线平滑=0 关闭；越大曲线越平滑但更趋直线"), 11.0, true),
+    ]
+}
+
+/// 「外观」分组（颜色 / 线宽 / 字号 / 字体来源选择）。
+fn appearance_rows(state: &VideoExportDialogState) -> Vec<VideoRow> {
+    vec![
         gap(12.0),
         label(tr!("外观"), 13.0, false),
         gap(4.0),
@@ -120,10 +126,13 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             217,
         ),
         gap(6.0),
-    ];
+    ]
+}
 
+/// 字体来源分支行（系统字体 / 自定义字体 / 内置点阵提示）。
+fn font_row(state: &VideoExportDialogState) -> VideoRow {
     match state.data_curve.font_mode.as_str() {
-        "系统字体" => rows.push(pick(
+        "系统字体" => pick(
             tr!("字体:"),
             100.0,
             SYSTEM_FONT_FAMILIES.iter().map(|s| s.to_string()).collect(),
@@ -133,8 +142,8 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
                 .unwrap_or(0),
             140.0,
             218,
-        )),
-        "自定义字体" => rows.push(text_button(
+        ),
+        "自定义字体" => text_button(
             "",
             0.0,
             219,
@@ -142,62 +151,71 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             tr!("选择 TTF/OTF 字体文件..."),
             0.0,
             button(tr!("浏览..."), 220, VideoButtonFill::Primary, 0.0),
-        )),
-        _ => rows.push(label(
+        ),
+        _ => label(
             tr!("内置 5x7 点阵字体，仅支持 ASCII 数字与字母"),
             11.0,
             true,
-        )),
-    }
-
-    rows.push(gap(4.0));
-    rows.push(label(
-        tr!("支持 8 位 hex 带透明度，如 #FFFFFF7F"),
-        11.0,
-        true,
-    ));
-    rows.push(gap(12.0));
-    rows.push(label(tr!("文字与刻度"), 13.0, false));
-    rows.push(gap(4.0));
-    rows.push(VideoRow::TextPair {
-        left: number_cell(tr!("X 偏移(px)"), &state.data_curve.text_x_offset, 230),
-        right: number_cell(tr!("Y 偏移(px)"), &state.data_curve.text_y_offset, 231),
-        separator: String::new(),
-    });
-    rows.push(gap(6.0));
-    rows.push(VideoRow::TextPair {
-        left: number_cell(
-            tr!("里程碑放大"),
-            &state.data_curve.milestone_scale_mul,
-            232,
         ),
-        right: number_cell(tr!("缩写位数"), &state.data_curve.abbreviate_digits, 233),
-        separator: String::new(),
-    });
-    rows.push(gap(6.0));
-    rows.push(VideoRow::Toggle {
-        label: tr!("刻度数字缩写（1,000 → 1K）").to_string(),
-        checked: state.data_curve.abbreviate,
-        id: 234.into(),
-    });
-    rows.push(gap(4.0));
-    rows.push(VideoRow::Toggle {
-        label: tr!("显示刻度文字").to_string(),
-        checked: state.data_curve.show_text,
-        id: 235.into(),
-    });
-    rows.push(gap(4.0));
-    rows.push(VideoRow::Toggle {
-        label: tr!("显示水平网格线").to_string(),
-        checked: state.data_curve.show_bars,
-        id: 236.into(),
-    });
-    rows.push(gap(4.0));
-    rows.push(label(
-        tr!("里程碑 = 1,000 / 10,000 / 100,000 等整数次幂刻度，文字放大显示"),
-        11.0,
-        true,
-    ));
+    }
+}
+
+/// 「文字与刻度」分组（偏移 / 里程碑放大 / 缩写位数 / 三条显示开关）。
+fn text_rows(state: &VideoExportDialogState) -> Vec<VideoRow> {
+    vec![
+        gap(4.0),
+        label(tr!("支持 8 位 hex 带透明度，如 #FFFFFF7F"), 11.0, true),
+        gap(12.0),
+        label(tr!("文字与刻度"), 13.0, false),
+        gap(4.0),
+        VideoRow::TextPair {
+            left: number_cell(tr!("X 偏移(px)"), &state.data_curve.text_x_offset, 230),
+            right: number_cell(tr!("Y 偏移(px)"), &state.data_curve.text_y_offset, 231),
+            separator: String::new(),
+        },
+        gap(6.0),
+        VideoRow::TextPair {
+            left: number_cell(
+                tr!("里程碑放大"),
+                &state.data_curve.milestone_scale_mul,
+                232,
+            ),
+            right: number_cell(tr!("缩写位数"), &state.data_curve.abbreviate_digits, 233),
+            separator: String::new(),
+        },
+        gap(6.0),
+        VideoRow::Toggle {
+            label: tr!("刻度数字缩写（1,000 → 1K）").to_string(),
+            checked: state.data_curve.abbreviate,
+            id: 234.into(),
+        },
+        gap(4.0),
+        VideoRow::Toggle {
+            label: tr!("显示刻度文字").to_string(),
+            checked: state.data_curve.show_text,
+            id: 235.into(),
+        },
+        gap(4.0),
+        VideoRow::Toggle {
+            label: tr!("显示水平网格线").to_string(),
+            checked: state.data_curve.show_bars,
+            id: 236.into(),
+        },
+        gap(4.0),
+        label(
+            tr!("里程碑 = 1,000 / 10,000 / 100,000 等整数次幂刻度，文字放大显示"),
+            11.0,
+            true,
+        ),
+    ]
+}
+
+/// 构建数据曲线分区。
+pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
+    let mut rows = source_rows(state);
+    rows.extend(appearance_rows(state));
+    rows.push(font_row(state));
+    rows.extend(text_rows(state));
 
     VideoSection {
         title: tr!("数据曲线设置").to_string(),

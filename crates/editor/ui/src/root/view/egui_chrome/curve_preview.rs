@@ -9,6 +9,17 @@ use lumino_ui_egui::curve_preview::{AnchorMark, CurvePreviewModel, CurveSegment,
 
 use crate::root::Root;
 
+/// 单次路径遍历的产出：段 / 产物块 / 控制柄连线 / 控制柄 / 锚点。
+///
+/// 保持一个累加器而不再分多次遍历，使产出顺序与原内联循环完全一致。
+struct CurvePathLayers {
+    segments: Vec<CurveSegment>,
+    blocks: Vec<egui::Rect>,
+    connectors: Vec<(egui::Pos2, egui::Pos2)>,
+    handles: Vec<egui::Rect>,
+    anchors: Vec<AnchorMark>,
+}
+
 impl Root {
     /// 本帧曲线工具预览。
     pub fn curve_preview_model(&self) -> CurvePreviewModel {
@@ -41,13 +52,6 @@ impl Root {
             )
         };
 
-        let selected = line.selected_anchor();
-        let show_handles = editor.editor_state.current_tool() == Tool::Curve;
-        let mut segments = Vec::new();
-        let mut blocks = Vec::new();
-        let mut connectors = Vec::new();
-        let mut handles = Vec::new();
-        let mut anchors = Vec::new();
         let mut fill_blocks = Vec::new();
         let mut fill_loops = Vec::new();
 
@@ -63,6 +67,44 @@ impl Root {
                 );
             }
         }
+
+        let layers = self.curve_path_layers(line, &to_point, &to_rect);
+
+        let model = CurvePreviewModel {
+            clip: self.canvas_overlay_clip(),
+            segments: layers.segments,
+            blocks: layers.blocks,
+            connectors: layers.connectors,
+            handles: layers.handles,
+            anchors: layers.anchors,
+            fill_blocks,
+            fill_loops,
+        };
+        if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
+            let points: Vec<(f32, f32)> =
+                model.anchors.iter().map(|a| (a.pos.x, a.pos.y)).collect();
+            tracing::info!(?points, "DEBUG curve anchors");
+        }
+        model
+    }
+
+    /// 遍历 `line.paths`，产出段 / 产物块 / 控制柄 / 锚点。
+    ///
+    /// `to_point` / `to_rect` 由调用方传入，保证与填充预览共用同一份坐标换算。
+    fn curve_path_layers(
+        &self,
+        line: &lumino_editor_state::LineToolState,
+        to_point: &impl Fn((f32, f32)) -> egui::Pos2,
+        to_rect: &impl Fn(f32, f32, f32) -> egui::Rect,
+    ) -> CurvePathLayers {
+        let editor = &self.editor;
+        let selected = line.selected_anchor();
+        let show_handles = editor.editor_state.current_tool() == Tool::Curve;
+        let mut segments = Vec::new();
+        let mut blocks = Vec::new();
+        let mut connectors = Vec::new();
+        let mut handles = Vec::new();
+        let mut anchors = Vec::new();
 
         for (pi, path) in line.paths.iter().enumerate() {
             // 圆弧模式：与 √ 产物同源的采样折线（圆心在锚点外，不能画贝塞尔）。
@@ -122,21 +164,12 @@ impl Root {
             }
         }
 
-        let model = CurvePreviewModel {
-            clip: self.canvas_overlay_clip(),
+        CurvePathLayers {
             segments,
             blocks,
             connectors,
             handles,
             anchors,
-            fill_blocks,
-            fill_loops,
-        };
-        if std::env::var_os("LUMINO_EGUI_DEBUG_RECTS").is_some_and(|v| v != "0") {
-            let points: Vec<(f32, f32)> =
-                model.anchors.iter().map(|a| (a.pos.x, a.pos.y)).collect();
-            tracing::info!(?points, "DEBUG curve anchors");
         }
-        model
     }
 }

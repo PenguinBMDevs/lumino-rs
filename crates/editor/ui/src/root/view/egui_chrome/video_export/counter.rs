@@ -36,7 +36,23 @@ fn pad_cell(label: &str, value: u32, id: impl Into<VideoRowId>) -> TextPairCell 
 
 /// 构建计数器分区。
 pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
-    let mut rows = vec![
+    let mut rows = header_rows(state);
+
+    push_font_rows(&mut rows, state);
+    rows.push(gap(8.0));
+    push_appearance_rows(&mut rows, state);
+    push_csv_rows(&mut rows, state);
+    push_pad_rows(&mut rows, state);
+
+    VideoSection {
+        title: tr!("计数器设置").to_string(),
+        rows,
+    }
+}
+
+/// 分区头部：模板文本域 / 模板按钮 / 字体来源下拉。
+fn header_rows(state: &VideoExportDialogState) -> Vec<VideoRow> {
+    vec![
         label(
             tr!("文本模板（支持 {nc} {nps} {bpm} 等占位符，\\n 换行）"),
             12.0,
@@ -70,8 +86,11 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             103,
         ),
         gap(6.0),
-    ];
+    ]
+}
 
+/// 字体来源行：系统字体下拉 / 自定义字体路径 / 内置点阵提示。
+fn push_font_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState) {
     // 字体来源分支（与 上一代 同：系统字体 / 自定义字体 / 内置点阵提示）。
     match state.counter.font_mode.as_str() {
         "系统字体" => rows.push(pick(
@@ -100,8 +119,10 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             true,
         )),
     }
+}
 
-    rows.push(gap(8.0));
+/// 对齐 / 字号 / 千分位 / 补零开关行。
+fn push_appearance_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState) {
     rows.push(pick(
         tr!("对齐:"),
         100.0,
@@ -138,7 +159,10 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         id: 110.into(),
     });
     rows.push(gap(12.0));
+}
 
+/// CSV 导出开关与路径 / 格式行（仅在开启时出现）。
+fn push_csv_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState) {
     // CSV 导出。
     rows.push(VideoRow::Toggle {
         label: tr!("每帧统计数据写入 CSV 文件").to_string(),
@@ -167,7 +191,10 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
         });
     }
     rows.push(gap(12.0));
+}
 
+/// 补零宽度双列表格与恢复默认按钮。
+fn push_pad_rows(rows: &mut Vec<VideoRow>, state: &VideoExportDialogState) {
     // 数字补零宽度（8 项，两列四行）+ 恢复默认。
     rows.push(label(tr!("数字补零宽度"), 13.0, false));
     rows.push(gap(4.0));
@@ -208,9 +235,4 @@ pub(super) fn section(state: &VideoExportDialogState) -> VideoSection {
             width: 0.0,
         }],
     });
-
-    VideoSection {
-        title: tr!("计数器设置").to_string(),
-        rows,
-    }
 }

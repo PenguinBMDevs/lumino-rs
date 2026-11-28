@@ -17,51 +17,8 @@ impl crate::root::Root {
         let state = &self.state.shape_drawer;
         let doc = state.doc.borrow();
 
-        let rows = state
-            .library
-            .all()
-            .map(|drawing| {
-                let selected = state.selected.as_deref() == Some(drawing.id.as_str());
-                ShapeRowModel {
-                    id: drawing.id.clone(),
-                    label: format!("{}{}", if selected { "● " } else { "" }, drawing.name),
-                    selected,
-                }
-            })
-            .collect();
-
-        // 锚点弯折：仅当选中曲线描边上的锚点时出现。
-        let bend = doc.selected_anchor.and_then(|(stroke, anchor)| {
-            let stroke = doc.strokes.get(stroke)?;
-            if stroke.kind != StrokeKind::Curve {
-                return None;
-            }
-            stroke.anchors.get(anchor).map(|anchor| anchor.bend)
-        });
-
-        let area_hint = if doc.can_area_paint() {
-            format!("current colour: {}", doc.area_colour)
-        } else {
-            "single closed stroke only".to_string()
-        };
-        let fill_label = match doc.fill {
-            ShapeFill::Empty => "Fill: Empty",
-            ShapeFill::Fill => "Fill: Fill",
-            ShapeFill::Spam => "Fill: Spam",
-            ShapeFill::OutlineSpam => "Fill: Outline",
-        };
-        let align_label = match doc.align {
-            SpamAlign::Auto => "Align: Auto",
-            SpamAlign::Aligned => "Align: Aligned",
-            SpamAlign::Centred => "Align: Centred",
-        };
-        let ends_label = match doc.ends {
-            SpamEnds::Round => "Ends: Round",
-            SpamEnds::Keep => "Ends: Keep",
-            SpamEnds::Drop => "Ends: Drop",
-            SpamEnds::Min => "Ends: Min",
-            SpamEnds::Stretch => "Ends: Stretch",
-        };
+        let rows = self.shape_drawer_rows();
+        let bend = self.shape_drawer_bend();
 
         ShapeDrawerModel {
             titlebar: !self.settings.synth.use_native_titlebar,
@@ -70,19 +27,8 @@ impl crate::root::Root {
             rows,
             name_input: state.name_input.clone(),
             name_hint: "Shape name".to_string(),
-            file_actions: vec![
-                action("New", ShapePanelAction::New),
-                action("Save", ShapePanelAction::Save),
-                action("Rename", ShapePanelAction::Rename),
-                action("Del", ShapePanelAction::Delete),
-            ],
-            edit_actions: vec![
-                action("Copy", ShapePanelAction::Copy),
-                action("Paste", ShapePanelAction::Paste),
-                action("FlipH", ShapePanelAction::FlipHorizontal),
-                action("FlipV", ShapePanelAction::FlipVertical),
-                action("Rot90", ShapePanelAction::Rotate90),
-            ],
+            file_actions: Self::shape_drawer_file_actions(),
+            edit_actions: Self::shape_drawer_edit_actions(),
             area_toggle_label: if doc.area_mode {
                 "Area: on".to_string()
             } else {
@@ -90,51 +36,21 @@ impl crate::root::Root {
             },
             area_mode: doc.area_mode,
             area_clear: "Clear".to_string(),
-            area_hint,
+            area_hint: self.shape_drawer_area_hint(),
             use10_hint: if doc.max_colour >= 16 {
                 "16 = GM 通道 10".to_string()
             } else {
                 "16 = 通道 10（需在工程设置启用）".to_string()
             },
-            swatches: (0..=16u8)
-                .map(|colour| ShapeSwatchModel {
-                    colour,
-                    label: format!("{colour}"),
-                    selected: doc.area_mode && doc.area_colour == colour,
-                })
-                .collect(),
-            fill_actions: vec![
-                action(fill_label, ShapePanelAction::CycleFill),
-                action(align_label, ShapePanelAction::CycleAlign),
-                action(ends_label, ShapePanelAction::CycleEnds),
-            ],
+            swatches: self.shape_drawer_swatches(),
+            fill_actions: self.shape_drawer_fill_actions(),
             gate_label: "Gate".to_string(),
             gate_beats: doc.gate_beats,
             gate_minus: "-".to_string(),
             gate_plus: "+".to_string(),
-            switch_actions: vec![
-                action(
-                    &format!("Union: {}", if doc.union { "On" } else { "Off" }),
-                    ShapePanelAction::ToggleUnion,
-                ),
-                action(
-                    &format!("Apart: {}", if doc.apart { "On" } else { "Off" }),
-                    ShapePanelAction::ToggleApart,
-                ),
-                action(
-                    &format!("Borders: {}", if doc.borders { "On" } else { "Off" }),
-                    ShapePanelAction::ToggleBorders,
-                ),
-            ],
+            switch_actions: self.shape_drawer_switch_actions(),
             status: state.status.clone(),
-            warning: state.warnings.first().map(|warning| {
-                format!(
-                    "{} {}: {}",
-                    tr!("跳过"),
-                    warning.path.display(),
-                    warning.message
-                )
-            }),
+            warning: self.shape_drawer_warning(),
             size_label: "Size".to_string(),
             insert_beats: state.insert_beats_text.clone(),
             insert_beats_hint: "beats".to_string(),
@@ -161,6 +77,141 @@ impl crate::root::Root {
             bend_corner: matches!(bend, Some(AnchorBend::Corner)),
             insert: "Insert".to_string(),
         }
+    }
+
+    /// 库条目列表（选中项名加前缀圆点）。
+    fn shape_drawer_rows(&self) -> Vec<ShapeRowModel> {
+        let state = &self.state.shape_drawer;
+        state
+            .library
+            .all()
+            .map(|drawing| {
+                let selected = state.selected.as_deref() == Some(drawing.id.as_str());
+                ShapeRowModel {
+                    id: drawing.id.clone(),
+                    label: format!("{}{}", if selected { "● " } else { "" }, drawing.name),
+                    selected,
+                }
+            })
+            .collect()
+    }
+
+    /// 当前可编辑的锚点弯折档位。
+    fn shape_drawer_bend(&self) -> Option<AnchorBend> {
+        let doc = self.state.shape_drawer.doc.borrow();
+
+        // 锚点弯折：仅当选中曲线描边上的锚点时出现。
+        doc.selected_anchor.and_then(|(stroke, anchor)| {
+            let stroke = doc.strokes.get(stroke)?;
+            if stroke.kind != StrokeKind::Curve {
+                return None;
+            }
+            stroke.anchors.get(anchor).map(|anchor| anchor.bend)
+        })
+    }
+
+    /// 文件动作按钮（新建 / 保存 / 重命名 / 删除）。
+    fn shape_drawer_file_actions() -> Vec<ShapeActionButton> {
+        vec![
+            action("New", ShapePanelAction::New),
+            action("Save", ShapePanelAction::Save),
+            action("Rename", ShapePanelAction::Rename),
+            action("Del", ShapePanelAction::Delete),
+        ]
+    }
+
+    /// 编辑动作按钮（复制 / 粘贴 / 翻转 / 旋转）。
+    fn shape_drawer_edit_actions() -> Vec<ShapeActionButton> {
+        vec![
+            action("Copy", ShapePanelAction::Copy),
+            action("Paste", ShapePanelAction::Paste),
+            action("FlipH", ShapePanelAction::FlipHorizontal),
+            action("FlipV", ShapePanelAction::FlipVertical),
+            action("Rot90", ShapePanelAction::Rotate90),
+        ]
+    }
+
+    /// 面积填充提示：可填充时显示当前色号。
+    fn shape_drawer_area_hint(&self) -> String {
+        let doc = self.state.shape_drawer.doc.borrow();
+        if doc.can_area_paint() {
+            format!("current colour: {}", doc.area_colour)
+        } else {
+            "single closed stroke only".to_string()
+        }
+    }
+
+    /// 色块列表（含最大色号）。
+    fn shape_drawer_swatches(&self) -> Vec<ShapeSwatchModel> {
+        let doc = self.state.shape_drawer.doc.borrow();
+        (0..=16u8)
+            .map(|colour| ShapeSwatchModel {
+                colour,
+                label: format!("{colour}"),
+                selected: doc.area_mode && doc.area_colour == colour,
+            })
+            .collect()
+    }
+
+    /// 填充档位三按钮（填充 / 落位 / 末端）。
+    fn shape_drawer_fill_actions(&self) -> Vec<ShapeActionButton> {
+        let doc = self.state.shape_drawer.doc.borrow();
+        let fill_label = match doc.fill {
+            ShapeFill::Empty => "Fill: Empty",
+            ShapeFill::Fill => "Fill: Fill",
+            ShapeFill::Spam => "Fill: Spam",
+            ShapeFill::OutlineSpam => "Fill: Outline",
+        };
+        let align_label = match doc.align {
+            SpamAlign::Auto => "Align: Auto",
+            SpamAlign::Aligned => "Align: Aligned",
+            SpamAlign::Centred => "Align: Centred",
+        };
+        let ends_label = match doc.ends {
+            SpamEnds::Round => "Ends: Round",
+            SpamEnds::Keep => "Ends: Keep",
+            SpamEnds::Drop => "Ends: Drop",
+            SpamEnds::Min => "Ends: Min",
+            SpamEnds::Stretch => "Ends: Stretch",
+        };
+
+        vec![
+            action(fill_label, ShapePanelAction::CycleFill),
+            action(align_label, ShapePanelAction::CycleAlign),
+            action(ends_label, ShapePanelAction::CycleEnds),
+        ]
+    }
+
+    /// 三个开关按钮（重叠填充 / 通道分离 / 颜色交界描边）。
+    fn shape_drawer_switch_actions(&self) -> Vec<ShapeActionButton> {
+        let doc = self.state.shape_drawer.doc.borrow();
+        vec![
+            action(
+                &format!("Union: {}", if doc.union { "On" } else { "Off" }),
+                ShapePanelAction::ToggleUnion,
+            ),
+            action(
+                &format!("Apart: {}", if doc.apart { "On" } else { "Off" }),
+                ShapePanelAction::ToggleApart,
+            ),
+            action(
+                &format!("Borders: {}", if doc.borders { "On" } else { "Off" }),
+                ShapePanelAction::ToggleBorders,
+            ),
+        ]
+    }
+
+    /// 首个库加载 warning 的展示文案。
+    fn shape_drawer_warning(&self) -> Option<String> {
+        let state = &self.state.shape_drawer;
+        state.warnings.first().map(|warning| {
+            format!(
+                "{} {}: {}",
+                tr!("跳过"),
+                warning.path.display(),
+                warning.message
+            )
+        })
     }
 
     /// egui 形状抽屉动作 → 生产 `Message`。

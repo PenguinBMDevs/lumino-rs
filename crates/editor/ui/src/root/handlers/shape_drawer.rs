@@ -22,92 +22,27 @@ impl Root {
                 state.name_input = name;
             }
             ShapeDrawerAction::Select(id) => select_drawing(state, &id),
-            ShapeDrawerAction::New => {
-                *state.doc.borrow_mut() = Default::default();
-                state.selected = None;
-                state.name_input = "New Shape".to_string();
-                state.status = None;
-            }
+            ShapeDrawerAction::New => reset_drawing_document(state),
             ShapeDrawerAction::Save | ShapeDrawerAction::Rename => save_current(state),
             ShapeDrawerAction::Delete => delete_current(state),
-            ShapeDrawerAction::Copy => {
-                state.clipboard = state.doc.borrow().strokes.clone();
-                state.status = Some(format!("已复制 {} 条 stroke", state.clipboard.len()));
+            ShapeDrawerAction::Copy => copy_selection(state),
+            ShapeDrawerAction::Paste => paste_clipboard(state),
+            ShapeDrawerAction::FlipHorizontal => flip_drawing_horizontal(state),
+            ShapeDrawerAction::FlipVertical => flip_drawing_vertical(state),
+            ShapeDrawerAction::Rotate90 => rotate_drawing90(state),
+            ShapeDrawerAction::Insert => {
+                prepare_insert_drawing(state, &mut self.state.dialog_result);
             }
-            ShapeDrawerAction::Paste => {
-                let clipboard = state.clipboard.clone();
-                if state.doc.borrow_mut().paste_strokes(&clipboard) {
-                    state.status = Some("已粘贴".to_string());
-                } else {
-                    state.status = Some("剪贴板为空".to_string());
-                }
-            }
-            ShapeDrawerAction::FlipHorizontal => {
-                if state.doc.borrow_mut().flip_horizontal() {
-                    state.status = Some("已水平翻转".to_string());
-                }
-            }
-            ShapeDrawerAction::FlipVertical => {
-                if state.doc.borrow_mut().flip_vertical() {
-                    state.status = Some("已垂直翻转".to_string());
-                }
-            }
-            ShapeDrawerAction::Rotate90 => {
-                if state.doc.borrow_mut().rotate90() {
-                    state.status = Some("已旋转 90°".to_string());
-                }
-            }
-            ShapeDrawerAction::Insert => match current_drawing(state) {
-                Ok(drawing) => match parse_insert_options(state) {
-                    Ok(options) => {
-                        self.state.dialog_result = Some(DialogResult::InsertShapeDrawing {
-                            drawing: Box::new(drawing),
-                            options,
-                        });
-                        state.status = Some("正在插入当前工程".to_string());
-                    }
-                    Err(error) => state.status = Some(error),
-                },
-                Err(error) => state.status = Some(error),
-            },
             ShapeDrawerAction::PanelDragStart => {
                 state.panel_dragging = true;
             }
             ShapeDrawerAction::PanelDragEnd => {
                 state.panel_dragging = false;
             }
-            ShapeDrawerAction::SetPanelWidth(width) => {
-                if state.panel_dragging && width.is_finite() {
-                    state.panel_width = width.clamp(180.0, 520.0);
-                }
-            }
-            ShapeDrawerAction::ToggleAreaMode => {
-                let enabled = !state.doc.borrow().area_mode;
-                if state.doc.borrow_mut().set_area_mode(enabled) {
-                    state.status = Some(if enabled {
-                        "区域着色：点击闭合图形内部".to_string()
-                    } else {
-                        "已退出区域着色".to_string()
-                    });
-                } else {
-                    state.status = Some("多笔画/开放图形暂不支持区域着色".to_string());
-                }
-            }
-            ShapeDrawerAction::SetAreaColour(colour) => {
-                if state.doc.borrow_mut().set_area_colour(colour) {
-                    state.status = Some(format!("区域色：{colour}"));
-                } else if colour > state.doc.borrow().max_colour {
-                    // DRAW-032：16 = GM 通道 10，需工程级开关；不静默失败
-                    state.status = Some(
-                        "16 仅用于通道 10：请先在「工程设置 → 启用通道 10」中开启".to_string(),
-                    );
-                }
-            }
-            ShapeDrawerAction::ClearAreas => {
-                if state.doc.borrow_mut().clear_areas() {
-                    state.status = Some("已清空区域色".to_string());
-                }
-            }
+            ShapeDrawerAction::SetPanelWidth(width) => set_panel_width(state, width),
+            ShapeDrawerAction::ToggleAreaMode => toggle_area_mode(state),
+            ShapeDrawerAction::SetAreaColour(colour) => apply_area_colour(state, colour),
+            ShapeDrawerAction::ClearAreas => clear_drawing_areas(state),
             ShapeDrawerAction::CycleFill => {
                 let fill = state.doc.borrow_mut().cycle_fill();
                 state.status = Some(format!("填充：{fill:?}"));
@@ -132,40 +67,149 @@ impl Root {
                 let on = state.doc.borrow_mut().toggle_borders();
                 state.status = Some(format!("交界描边：{}", if on { "开" } else { "关" }));
             }
-            ShapeDrawerAction::SetGateBeats(beats) => {
-                if state.doc.borrow_mut().set_gate_beats(beats) {
-                    state.status = Some(format!("门长：{beats:.4} 拍"));
-                } else {
-                    state.status = Some("门长需在 0.001..=8 拍之间".to_string());
-                }
-            }
+            ShapeDrawerAction::SetGateBeats(beats) => apply_gate_beats(state, beats),
             ShapeDrawerAction::SetInsertBeats(text) => state.insert_beats_text = text,
             ShapeDrawerAction::SetInsertKeys(text) => state.insert_keys_text = text,
             ShapeDrawerAction::ToggleInsertFit => {
                 state.insert_fit_contain = !state.insert_fit_contain;
             }
             ShapeDrawerAction::SetScalePercent(text) => state.scale_percent_text = text,
-            ShapeDrawerAction::ApplyScale => {
-                let percent = state.scale_percent_text.trim().parse::<f32>().ok();
-                match percent {
-                    Some(percent) if (25.0..=200.0).contains(&percent) => {
-                        if state.doc.borrow_mut().scale_selection(percent / 100.0) {
-                            state.status = Some(format!("已缩放 {percent}%"));
-                        } else {
-                            state.status = Some("没有可缩放的 stroke".to_string());
-                        }
-                    }
-                    _ => state.status = Some("缩放百分比需在 25–200".to_string()),
-                }
+            ShapeDrawerAction::ApplyScale => apply_scale(state),
+            ShapeDrawerAction::ToggleAnchorBend => toggle_anchor_bend(state),
+        }
+    }
+}
+
+/// 新建空画板：清空文档、选中与状态栏
+fn reset_drawing_document(state: &mut ShapeDrawerState) {
+    *state.doc.borrow_mut() = Default::default();
+    state.selected = None;
+    state.name_input = "New Shape".to_string();
+    state.status = None;
+}
+
+/// 复制当前图形 stroke 到抽屉剪贴板
+fn copy_selection(state: &mut ShapeDrawerState) {
+    state.clipboard = state.doc.borrow().strokes.clone();
+    state.status = Some(format!("已复制 {} 条 stroke", state.clipboard.len()));
+}
+
+/// 粘贴抽屉剪贴板
+fn paste_clipboard(state: &mut ShapeDrawerState) {
+    let clipboard = state.clipboard.clone();
+    if state.doc.borrow_mut().paste_strokes(&clipboard) {
+        state.status = Some("已粘贴".to_string());
+    } else {
+        state.status = Some("剪贴板为空".to_string());
+    }
+}
+
+/// 水平翻转当前图形
+fn flip_drawing_horizontal(state: &mut ShapeDrawerState) {
+    if state.doc.borrow_mut().flip_horizontal() {
+        state.status = Some("已水平翻转".to_string());
+    }
+}
+
+/// 垂直翻转当前图形
+fn flip_drawing_vertical(state: &mut ShapeDrawerState) {
+    if state.doc.borrow_mut().flip_vertical() {
+        state.status = Some("已垂直翻转".to_string());
+    }
+}
+
+/// 顺时针旋转当前图形 90°
+fn rotate_drawing90(state: &mut ShapeDrawerState) {
+    if state.doc.borrow_mut().rotate90() {
+        state.status = Some("已旋转 90°".to_string());
+    }
+}
+
+/// 组装插入请求：参数校验失败只回显状态，不产生 dialog 结果
+fn prepare_insert_drawing(state: &mut ShapeDrawerState, dialog_result: &mut Option<DialogResult>) {
+    match current_drawing(state) {
+        Ok(drawing) => match parse_insert_options(state) {
+            Ok(options) => {
+                *dialog_result = Some(DialogResult::InsertShapeDrawing {
+                    drawing: Box::new(drawing),
+                    options,
+                });
+                state.status = Some("正在插入当前工程".to_string());
             }
-            ShapeDrawerAction::ToggleAnchorBend => {
-                if state.doc.borrow_mut().toggle_selected_anchor_bend() {
-                    state.status = Some("已切换锚点弯折".to_string());
-                } else {
-                    state.status = Some("请先在 Select 工具下选中曲线锚点".to_string());
-                }
+            Err(error) => state.status = Some(error),
+        },
+        Err(error) => state.status = Some(error),
+    }
+}
+
+/// 拖动分割线时更新库面板宽度（仅有限值，范围 180..=520）
+fn set_panel_width(state: &mut ShapeDrawerState, width: f32) {
+    if state.panel_dragging && width.is_finite() {
+        state.panel_width = width.clamp(180.0, 520.0);
+    }
+}
+
+/// 切换区域着色模式，并说明不支持的情形
+fn toggle_area_mode(state: &mut ShapeDrawerState) {
+    let enabled = !state.doc.borrow().area_mode;
+    if state.doc.borrow_mut().set_area_mode(enabled) {
+        state.status = Some(if enabled {
+            "区域着色：点击闭合图形内部".to_string()
+        } else {
+            "已退出区域着色".to_string()
+        });
+    } else {
+        state.status = Some("多笔画/开放图形暂不支持区域着色".to_string());
+    }
+}
+
+/// 设置区域色号；通道 10 需工程级开关，不静默失败
+fn apply_area_colour(state: &mut ShapeDrawerState, colour: u8) {
+    if state.doc.borrow_mut().set_area_colour(colour) {
+        state.status = Some(format!("区域色：{colour}"));
+    } else if colour > state.doc.borrow().max_colour {
+        // DRAW-032：16 = GM 通道 10，需工程级开关；不静默失败
+        state.status = Some("16 仅用于通道 10：请先在「工程设置 → 启用通道 10」中开启".to_string());
+    }
+}
+
+/// 清空当前图形的区域点
+fn clear_drawing_areas(state: &mut ShapeDrawerState) {
+    if state.doc.borrow_mut().clear_areas() {
+        state.status = Some("已清空区域色".to_string());
+    }
+}
+
+/// 设置 Spam 门长，越界时回显允许区间
+fn apply_gate_beats(state: &mut ShapeDrawerState, beats: f32) {
+    if state.doc.borrow_mut().set_gate_beats(beats) {
+        state.status = Some(format!("门长：{beats:.4} 拍"));
+    } else {
+        state.status = Some("门长需在 0.001..=8 拍之间".to_string());
+    }
+}
+
+/// 应用抽屉内缩放百分比（25..=200）
+fn apply_scale(state: &mut ShapeDrawerState) {
+    let percent = state.scale_percent_text.trim().parse::<f32>().ok();
+    match percent {
+        Some(percent) if (25.0..=200.0).contains(&percent) => {
+            if state.doc.borrow_mut().scale_selection(percent / 100.0) {
+                state.status = Some(format!("已缩放 {percent}%"));
+            } else {
+                state.status = Some("没有可缩放的 stroke".to_string());
             }
         }
+        _ => state.status = Some("缩放百分比需在 25–200".to_string()),
+    }
+}
+
+/// 切换选中锚点的 Smooth/Corner，未选中时提示操作入口
+fn toggle_anchor_bend(state: &mut ShapeDrawerState) {
+    if state.doc.borrow_mut().toggle_selected_anchor_bend() {
+        state.status = Some("已切换锚点弯折".to_string());
+    } else {
+        state.status = Some("请先在 Select 工具下选中曲线锚点".to_string());
     }
 }
 

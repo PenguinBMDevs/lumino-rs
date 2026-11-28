@@ -58,87 +58,11 @@ impl Root {
             .document
             .as_ref()
             .map_or(0, |doc| doc.track_port(current_track));
-        let map_current = |ch: u8| -> u16 {
-            lumino_midi_model::multi_port::track_global_channel(current_port, ch)
-        };
-
-        let mut midi_events: Vec<MidiTrackEvent> = Vec::new();
-
-        // 扫描当前音轨的所有自动化 lane，生成控制事件
-        for lane in &self.editor.editor_state.data.automation_lanes {
-            if lane.track != current_track {
-                continue;
-            }
-            match &lane.target {
-                lumino_note_core::automation::AutomationTarget::CC { controller } => {
-                    for ev in &lane.events {
-                        midi_events.push(MidiTrackEvent {
-                            tick: ev.tick as f32,
-                            message: MidiMessage::ControlChange {
-                                channel: map_current(lane.channel),
-                                controller: *controller,
-                                value: ev.value as u8,
-                            },
-                        });
-                    }
-                }
-                lumino_note_core::automation::AutomationTarget::PitchBend => {
-                    // 弯音应用：按 tick 密集采样（贝塞尔曲线正确插值）。
-                    // 采样不写入 lane（只读计算），避免事件数爆炸污染数据模型。
-                    // 相邻同值合并 + 上限保护见 `AutomationLane::sample_curve`。
-                    let samples = lane.sample_curve(lumino_note_core::MAX_BEND_SAMPLE_EVENTS);
-                    for (tick, value) in samples {
-                        // AutomationEvent.value 范围 0-16383，中心 8192
-                        let pb_value = (value as f32 - 8192.0) / 8192.0;
-                        midi_events.push(MidiTrackEvent {
-                            tick: tick as f32,
-                            message: MidiMessage::PitchBend {
-                                channel: map_current(lane.channel),
-                                value: pb_value.clamp(-1.0, 1.0),
-                            },
-                        });
-                    }
-                }
-                lumino_note_core::automation::AutomationTarget::Rpn { .. }
-                | lumino_note_core::automation::AutomationTarget::Nrpn { .. } => {
-                    // RPN/NRPN 无独立事件类型，展开为 CC 序列（选择 CC → DataEntry）。
-                    for (tick, controller, value) in
-                        lane.to_midi_cc_events(lumino_note_core::MAX_BEND_SAMPLE_EVENTS)
-                    {
-                        midi_events.push(MidiTrackEvent {
-                            tick: tick as f32,
-                            message: MidiMessage::ControlChange {
-                                channel: map_current(lane.channel),
-                                controller,
-                                value,
-                            },
-                        });
-                    }
-                }
-            }
-        }
-
-        // 来源 2：从 document 中读取当前音轨的 ProgramChange 事件。
-        // ProgramChange 不存储在 automation_lanes 中（无对应 variant），
-        // 必须直接从 doc.control_events 提取，否则当前音轨无法切换乐器。
-        // （其他音轨的 PC 事件由 PlaybackEngine::process_other_tracks 直接读取）
-        // 2026-08 单一权威源：从 EditorData.document 读取（不再经 midi_state 的 Arc 视图）。
-        if let Some(doc) = self.editor.editor_state.data.document.as_ref() {
-            for ev in &doc.control_events {
-                if ev.kind == 1 && ev.track == current_track {
-                    let program = ev.as_program_change();
-                    midi_events.push(MidiTrackEvent {
-                        tick: ev.tick as f32,
-                        message: MidiMessage::ProgramChange {
-                            channel: map_current(ev.channel),
-                            program,
-                        },
-                    });
-                }
-            }
-        }
-
-        sort_midi_events(&mut midi_events);
+        let midi_events = collect_current_track_midi_events(
+            &self.editor.editor_state.data,
+            current_track,
+            current_port,
+        );
 
         // 调试：记录当前音轨的各类事件数量
         let cc_count = midi_events
@@ -274,4 +198,97 @@ impl Root {
             self.playback.manager = None;
         }
     }
+}
+
+/// 采集当前音轨的 MIDI 控制事件并按 tick 排序。
+///
+/// 顺序与 `update_playback_notes` 内联时一致：先按 lane 顺序展开（来源 1），
+/// 再按 `doc.control_events` 顺序追加 ProgramChange（来源 2），最后统一排序。
+fn collect_current_track_midi_events(
+    data: &lumino_editor_state::EditorData,
+    current_track: u16,
+    current_port: u8,
+) -> Vec<MidiTrackEvent> {
+    let map_current =
+        |ch: u8| -> u16 { lumino_midi_model::multi_port::track_global_channel(current_port, ch) };
+
+    let mut midi_events: Vec<MidiTrackEvent> = Vec::new();
+
+    // 扫描当前音轨的所有自动化 lane，生成控制事件
+    for lane in &data.automation_lanes {
+        if lane.track != current_track {
+            continue;
+        }
+        match &lane.target {
+            lumino_note_core::automation::AutomationTarget::CC { controller } => {
+                for ev in &lane.events {
+                    midi_events.push(MidiTrackEvent {
+                        tick: ev.tick as f32,
+                        message: MidiMessage::ControlChange {
+                            channel: map_current(lane.channel),
+                            controller: *controller,
+                            value: ev.value as u8,
+                        },
+                    });
+                }
+            }
+            lumino_note_core::automation::AutomationTarget::PitchBend => {
+                // 弯音应用：按 tick 密集采样（贝塞尔曲线正确插值）。
+                // 采样不写入 lane（只读计算），避免事件数爆炸污染数据模型。
+                // 相邻同值合并 + 上限保护见 `AutomationLane::sample_curve`。
+                let samples = lane.sample_curve(lumino_note_core::MAX_BEND_SAMPLE_EVENTS);
+                for (tick, value) in samples {
+                    // AutomationEvent.value 范围 0-16383，中心 8192
+                    let pb_value = (value as f32 - 8192.0) / 8192.0;
+                    midi_events.push(MidiTrackEvent {
+                        tick: tick as f32,
+                        message: MidiMessage::PitchBend {
+                            channel: map_current(lane.channel),
+                            value: pb_value.clamp(-1.0, 1.0),
+                        },
+                    });
+                }
+            }
+            lumino_note_core::automation::AutomationTarget::Rpn { .. }
+            | lumino_note_core::automation::AutomationTarget::Nrpn { .. } => {
+                // RPN/NRPN 无独立事件类型，展开为 CC 序列（选择 CC → DataEntry）。
+                for (tick, controller, value) in
+                    lane.to_midi_cc_events(lumino_note_core::MAX_BEND_SAMPLE_EVENTS)
+                {
+                    midi_events.push(MidiTrackEvent {
+                        tick: tick as f32,
+                        message: MidiMessage::ControlChange {
+                            channel: map_current(lane.channel),
+                            controller,
+                            value,
+                        },
+                    });
+                }
+            }
+        }
+    }
+
+    // 来源 2：从 document 中读取当前音轨的 ProgramChange 事件。
+    // ProgramChange 不存储在 automation_lanes 中（无对应 variant），
+    // 必须直接从 doc.control_events 提取，否则当前音轨无法切换乐器。
+    // （其他音轨的 PC 事件由 PlaybackEngine::process_other_tracks 直接读取）
+    // 2026-08 单一权威源：从 EditorData.document 读取（不再经 midi_state 的 Arc 视图）。
+    if let Some(doc) = data.document.as_ref() {
+        for ev in &doc.control_events {
+            if ev.kind == 1 && ev.track == current_track {
+                let program = ev.as_program_change();
+                midi_events.push(MidiTrackEvent {
+                    tick: ev.tick as f32,
+                    message: MidiMessage::ProgramChange {
+                        channel: map_current(ev.channel),
+                        program,
+                    },
+                });
+            }
+        }
+    }
+
+    sort_midi_events(&mut midi_events);
+
+    midi_events
 }

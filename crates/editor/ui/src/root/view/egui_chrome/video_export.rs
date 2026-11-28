@@ -11,7 +11,8 @@ mod rows;
 use lumino_core::tr;
 use lumino_message::events::window::video::RenderMode;
 use lumino_ui_egui::chrome::{
-    TextPairCell, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoRow, VideoSection,
+    TextPairCell, VideoButtonFill, VideoExportModel, VideoExportPanelModel, VideoRow, VideoRowId,
+    VideoSection,
 };
 use lumino_ui_egui::video_export::VideoExportAction as EguiAction;
 
@@ -37,89 +38,9 @@ impl crate::root::Root {
         use rows::ids;
         let state = &self.state.video_export_dialog;
         let prod = match action {
-            EguiAction::Pick { id, index } => match *id {
-                ids::CONTAINER => {
-                    Prod::ContainerChanged(["MP4", "MOV", "MKV", "AVI"].get(*index)?.to_string())
-                }
-                ids::CODEC => Prod::CodecChanged(
-                    ["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
-                        .get(*index)?
-                        .to_string(),
-                ),
-                ids::BACKEND => Prod::BackendChanged(available_backends().get(*index)?.clone()),
-                ids::QUALITY => Prod::QualityChanged(["低", "中", "高"].get(*index)?.to_string()),
-                ids::RENDER_MODE => {
-                    Prod::RenderModeChanged(RenderMode::ALL.get(*index)?.to_string())
-                }
-                ids::MIDITRAIL_VIEW_MODE => {
-                    Prod::MiditrailViewModeChanged(["Normal", "Top"].get(*index)?.to_string())
-                }
-                ids::FPS => Prod::FpsChanged(*[24u32, 30, 60, 120].get(*index)?),
-                ids::MIDI_CONSOLE_BACKEND => {
-                    Prod::MidiConsoleBackendChanged(["GPU", "CPU"].get(*index)?.to_string())
-                }
-                ids::COUNTER_FONT_MODE => {
-                    Prod::CounterFontModeChanged(counter::FONT_MODES.get(*index)?.to_string())
-                }
-                ids::COUNTER_FONT_FAMILY => {
-                    Prod::CounterFontFamilyChanged(SYSTEM_FONT_FAMILIES.get(*index)?.to_string())
-                }
-                ids::COUNTER_ALIGNMENT => {
-                    Prod::CounterAlignmentChanged(counter::ALIGNMENTS.get(*index)?.to_string())
-                }
-                ids::DC_METRIC => Prod::DataCurveTextChanged {
-                    field: "metric".to_string(),
-                    value: data_curve::METRICS.get(*index)?.to_string(),
-                },
-                ids::DC_FONT_MODE => {
-                    Prod::DataCurveFontModeChanged(counter::FONT_MODES.get(*index)?.to_string())
-                }
-                ids::DC_FONT_FAMILY => Prod::DataCurveTextChanged {
-                    field: "font_family".to_string(),
-                    value: SYSTEM_FONT_FAMILIES.get(*index)?.to_string(),
-                },
-                _ => return None,
-            },
-            EguiAction::Slider { id, value } => match *id {
-                ids::WATERFALL_SPEED => {
-                    if state.basic.render_mode == "MIDITrail" {
-                        if state.miditrail.view_mode == "Top" {
-                            Prod::MiditrailTopSpeedChanged(*value)
-                        } else {
-                            Prod::MiditrailNormalSpeedChanged(*value)
-                        }
-                    } else {
-                        Prod::WaterfallSpeedChanged(*value)
-                    }
-                }
-                ids::MIDITRAIL_Z_FAR => Prod::MiditrailZFarChanged(*value),
-                ids::COUNTER_FONT_SIZE => {
-                    Prod::CounterFontSizeChanged(value.round().clamp(7.0, 256.0) as u32)
-                }
-                ids::DC_FONT_SIZE => {
-                    Prod::DataCurveFontSizeChanged(value.round().clamp(7.0, 256.0) as u32)
-                }
-                _ => return None,
-            },
-            EguiAction::Toggle { id, value } => match *id {
-                ids::MIDITRAIL_3D_NOTES => Prod::Miditrail3DNotesChanged(*value),
-                ids::COUNTER_USE_COMMAS => Prod::CounterUseCommasChanged(*value),
-                ids::COUNTER_PADDING_ZEROES => Prod::CounterPaddingZeroesChanged(*value),
-                ids::COUNTER_SAVE_CSV => Prod::CounterSaveCsvChanged(*value),
-                ids::DC_ABBREVIATE => Prod::DataCurveBoolChanged {
-                    field: "abbreviate".to_string(),
-                    value: *value,
-                },
-                ids::DC_SHOW_TEXT => Prod::DataCurveBoolChanged {
-                    field: "show_text".to_string(),
-                    value: *value,
-                },
-                ids::DC_SHOW_BARS => Prod::DataCurveBoolChanged {
-                    field: "show_bars".to_string(),
-                    value: *value,
-                },
-                _ => return None,
-            },
+            EguiAction::Pick { id, index } => pick_message(id, index)?,
+            EguiAction::Slider { id, value } => slider_message(state, id, value)?,
+            EguiAction::Toggle { id, value } => toggle_message(id, value)?,
             EguiAction::Text { id, value } => match *id {
                 ids::WIDTH => Prod::WidthChanged(value.clone()),
                 ids::HEIGHT => Prod::HeightChanged(value.clone()),
@@ -155,22 +76,126 @@ impl crate::root::Root {
                 ids::DC_ABBREVIATE_DIGITS => curve_number("abbreviate_digits", value)?,
                 _ => return None,
             },
-            EguiAction::Button { id } => match *id {
-                ids::BROWSE_MIDI => Prod::BrowseMidi,
-                ids::BROWSE_OUTPUT => Prod::BrowseOutput,
-                ids::CLOSE_PANEL => Prod::ClosePanel,
-                ids::START_EXPORT => Prod::StartExport,
-                ids::COUNTER_TEMPLATE_DEFAULT => Prod::CounterLoadTemplate("default".to_string()),
-                ids::COUNTER_TEMPLATE_FULL => Prod::CounterLoadTemplate("full".to_string()),
-                ids::COUNTER_BROWSE_FONT => Prod::CounterBrowseFont,
-                ids::COUNTER_BROWSE_CSV => Prod::CounterBrowseCsv,
-                ids::COUNTER_RESET_PADDING => Prod::CounterResetPadding,
-                ids::DC_BROWSE_FONT => Prod::DataCurveBrowseFont,
-                _ => return None,
-            },
+            EguiAction::Button { id } => button_message(id)?,
         };
         Some(Message::VideoExport(prod))
     }
+}
+
+/// 下拉选择动作 → 生产动作；`index` 越界或行 id 未知时返回 `None`。
+fn pick_message(id: &VideoRowId, index: &usize) -> Option<Prod> {
+    use rows::ids;
+    let prod = match *id {
+        ids::CONTAINER => {
+            Prod::ContainerChanged(["MP4", "MOV", "MKV", "AVI"].get(*index)?.to_string())
+        }
+        ids::CODEC => Prod::CodecChanged(
+            ["H.264", "H.265 / HEVC", "ProRes", "VP9", "AV1"]
+                .get(*index)?
+                .to_string(),
+        ),
+        ids::BACKEND => Prod::BackendChanged(available_backends().get(*index)?.clone()),
+        ids::QUALITY => Prod::QualityChanged(["低", "中", "高"].get(*index)?.to_string()),
+        ids::RENDER_MODE => Prod::RenderModeChanged(RenderMode::ALL.get(*index)?.to_string()),
+        ids::MIDITRAIL_VIEW_MODE => {
+            Prod::MiditrailViewModeChanged(["Normal", "Top"].get(*index)?.to_string())
+        }
+        ids::FPS => Prod::FpsChanged(*[24u32, 30, 60, 120].get(*index)?),
+        ids::MIDI_CONSOLE_BACKEND => {
+            Prod::MidiConsoleBackendChanged(["GPU", "CPU"].get(*index)?.to_string())
+        }
+        ids::COUNTER_FONT_MODE => {
+            Prod::CounterFontModeChanged(counter::FONT_MODES.get(*index)?.to_string())
+        }
+        ids::COUNTER_FONT_FAMILY => {
+            Prod::CounterFontFamilyChanged(SYSTEM_FONT_FAMILIES.get(*index)?.to_string())
+        }
+        ids::COUNTER_ALIGNMENT => {
+            Prod::CounterAlignmentChanged(counter::ALIGNMENTS.get(*index)?.to_string())
+        }
+        ids::DC_METRIC => Prod::DataCurveTextChanged {
+            field: "metric".to_string(),
+            value: data_curve::METRICS.get(*index)?.to_string(),
+        },
+        ids::DC_FONT_MODE => {
+            Prod::DataCurveFontModeChanged(counter::FONT_MODES.get(*index)?.to_string())
+        }
+        ids::DC_FONT_FAMILY => Prod::DataCurveTextChanged {
+            field: "font_family".to_string(),
+            value: SYSTEM_FONT_FAMILIES.get(*index)?.to_string(),
+        },
+        _ => return None,
+    };
+    Some(prod)
+}
+
+/// 滑杆动作 → 生产动作；行 id 未知时返回 `None`。
+fn slider_message(state: &VideoExportDialogState, id: &VideoRowId, value: &f32) -> Option<Prod> {
+    use rows::ids;
+    let prod = match *id {
+        ids::WATERFALL_SPEED => {
+            if state.basic.render_mode == "MIDITrail" {
+                if state.miditrail.view_mode == "Top" {
+                    Prod::MiditrailTopSpeedChanged(*value)
+                } else {
+                    Prod::MiditrailNormalSpeedChanged(*value)
+                }
+            } else {
+                Prod::WaterfallSpeedChanged(*value)
+            }
+        }
+        ids::MIDITRAIL_Z_FAR => Prod::MiditrailZFarChanged(*value),
+        ids::COUNTER_FONT_SIZE => {
+            Prod::CounterFontSizeChanged(value.round().clamp(7.0, 256.0) as u32)
+        }
+        ids::DC_FONT_SIZE => Prod::DataCurveFontSizeChanged(value.round().clamp(7.0, 256.0) as u32),
+        _ => return None,
+    };
+    Some(prod)
+}
+
+/// 开关动作 → 生产动作；行 id 未知时返回 `None`。
+fn toggle_message(id: &VideoRowId, value: &bool) -> Option<Prod> {
+    use rows::ids;
+    let prod = match *id {
+        ids::MIDITRAIL_3D_NOTES => Prod::Miditrail3DNotesChanged(*value),
+        ids::COUNTER_USE_COMMAS => Prod::CounterUseCommasChanged(*value),
+        ids::COUNTER_PADDING_ZEROES => Prod::CounterPaddingZeroesChanged(*value),
+        ids::COUNTER_SAVE_CSV => Prod::CounterSaveCsvChanged(*value),
+        ids::DC_ABBREVIATE => Prod::DataCurveBoolChanged {
+            field: "abbreviate".to_string(),
+            value: *value,
+        },
+        ids::DC_SHOW_TEXT => Prod::DataCurveBoolChanged {
+            field: "show_text".to_string(),
+            value: *value,
+        },
+        ids::DC_SHOW_BARS => Prod::DataCurveBoolChanged {
+            field: "show_bars".to_string(),
+            value: *value,
+        },
+        _ => return None,
+    };
+    Some(prod)
+}
+
+/// 按钮动作 → 生产动作；行 id 未知时返回 `None`。
+fn button_message(id: &VideoRowId) -> Option<Prod> {
+    use rows::ids;
+    let prod = match *id {
+        ids::BROWSE_MIDI => Prod::BrowseMidi,
+        ids::BROWSE_OUTPUT => Prod::BrowseOutput,
+        ids::CLOSE_PANEL => Prod::ClosePanel,
+        ids::START_EXPORT => Prod::StartExport,
+        ids::COUNTER_TEMPLATE_DEFAULT => Prod::CounterLoadTemplate("default".to_string()),
+        ids::COUNTER_TEMPLATE_FULL => Prod::CounterLoadTemplate("full".to_string()),
+        ids::COUNTER_BROWSE_FONT => Prod::CounterBrowseFont,
+        ids::COUNTER_BROWSE_CSV => Prod::CounterBrowseCsv,
+        ids::COUNTER_RESET_PADDING => Prod::CounterResetPadding,
+        ids::DC_BROWSE_FONT => Prod::DataCurveBrowseFont,
+        _ => return None,
+    };
+    Some(prod)
 }
 
 /// 数据曲线数值型字段（解析失败按 0 处理，与 上一代 视图同口径）。
