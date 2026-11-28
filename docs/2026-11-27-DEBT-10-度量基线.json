@@ -1,6 +1,6 @@
 {
   "files_total": 2332,
-  "lines_total": 420725,
+  "lines_total": 421057,
   "files_over_600": [
     {
       "path": "crates/audio/midi-io/src/ui_sfx.rs",
@@ -91,31 +91,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
-      "name": "handle_video_export",
-      "line": 21,
-      "lines": 352,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/file.rs",
-      "name": "handle_file_menu_event",
-      "line": 48,
-      "lines": 332,
-      "test": false
-    },
-    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
       "name": "execute_render_pass",
       "line": 10,
       "lines": 330,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
-      "name": "handle_piano_roll_context_menu",
-      "line": 107,
-      "lines": 324,
       "test": false
     },
     {
@@ -1815,31 +1794,10 @@
       "test": false
     },
     {
-      "path": "crates/editor/ui/src/root/handlers/dialog/video_export.rs",
-      "name": "handle_video_export",
-      "line": 21,
-      "lines": 352,
-      "test": false
-    },
-    {
-      "path": "src/runner/menu/file.rs",
-      "name": "handle_file_menu_event",
-      "line": 48,
-      "lines": 332,
-      "test": false
-    },
-    {
       "path": "crates/editor/gfx/src/render_thread/render_loop/render_pass.rs",
       "name": "execute_render_pass",
       "line": 10,
       "lines": 330,
-      "test": false
-    },
-    {
-      "path": "crates/editor/ui/src/root/handlers/editor_action.rs",
-      "name": "handle_piano_roll_context_menu",
-      "line": 107,
-      "lines": 324,
       "test": false
     },
     {
@@ -2187,7 +2145,7 @@
     ],
     [
       "Root",
-      331
+      340
     ],
     [
       "Host",
@@ -2199,7 +2157,7 @@
     ],
     [
       "RunnerInner",
-      161
+      172
     ],
     [
       "Default",
